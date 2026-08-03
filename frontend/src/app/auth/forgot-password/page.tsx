@@ -3,6 +3,16 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -26,51 +36,58 @@ export default function ForgotPasswordPage() {
 
   return (
     <main className="min-h-screen flex items-center justify-center bg-paper px-4 py-16">
-      <div className="max-w-md w-full p-8 bg-white rounded-2xl shadow-card border border-green-900/5">
-        <p className="font-mono text-sm text-green-700/60 uppercase tracking-widest mb-2 text-center">
-          // mot de passe oublié
-        </p>
-        <h1 className="font-display text-3xl font-bold text-center text-green-950">
-          Réinitialiser le mot de passe
-        </h1>
+      <Card className="w-full max-w-md shadow-lift border-green-900/5">
+        <CardHeader>
+          <p className="font-mono text-sm text-green-700/60 uppercase tracking-widest text-center">
+            // mot de passe oublié
+          </p>
+          <CardTitle className="font-display text-3xl font-bold text-center text-green-950">
+            Réinitialiser le mot de passe
+          </CardTitle>
+          <CardDescription className="text-center text-green-900/60">
+            Entrez votre email pour recevoir un lien de réinitialisation
+          </CardDescription>
+        </CardHeader>
 
-        {sent ? (
-          <div className="mt-6 p-4 bg-green-50 text-green-800 rounded-lg text-sm">
-            Si un compte existe avec cet email, un lien de réinitialisation vient d&apos;être envoyé.
-          </div>
-        ) : (
-          <>
-            {error && (
-              <div className="mt-6 mb-2 p-3 bg-red-50 text-red-600 rounded-lg text-sm">{error}</div>
-            )}
-            <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-              <div>
-                <label className="block text-sm font-medium mb-1 text-green-900/80">Email</label>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  className="w-full p-3 border border-green-900/10 rounded-lg focus:border-green-500 focus:shadow-glow transition-all"
-                  required
-                />
-              </div>
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full py-3 gradient-green text-white font-semibold rounded-lg hover:opacity-95 transition-opacity disabled:opacity-50"
-              >
-                {loading ? 'Envoi...' : 'Recevoir un lien de réinitialisation'}
-              </button>
-            </form>
-          </>
-        )}
+        <CardContent>
+          {sent ? (
+            <div className="p-4 bg-green-50 text-green-800 rounded-lg text-sm">
+              Si un compte existe avec cet email, un lien de réinitialisation vient d&apos;être
+              envoyé.
+            </div>
+          ) : (
+            <>
+              {error && (
+                <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded-lg text-sm">
+                  {error}
+                </div>
+              )}
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="vous@exemple.com"
+                    required
+                  />
+                </div>
+                <Button type="submit" disabled={loading} className="w-full h-10 font-semibold">
+                  {loading ? 'Envoi...' : 'Recevoir un lien de réinitialisation'}
+                </Button>
+              </form>
+            </>
+          )}
 
-        <p className="mt-4 text-center text-sm text-green-900/70">
-          <Link href="/auth/login" className="text-green-600 font-semibold hover:text-green-500">
-            ← Retour à la connexion
-          </Link>
-        </p>
-      </div>
+          <p className="mt-4 text-center text-sm text-green-900/70">
+            <Link href="/auth/login" className="text-green-600 font-semibold hover:text-green-500">
+              ← Retour à la connexion
+            </Link>
+          </p>
+        </CardContent>
+      </Card>
     </main>
   );
 }

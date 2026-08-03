@@ -1,22 +1,21 @@
 {
+  "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "diarra-worker",
-  "compatibility_date": "2024-07-01",
+  "compatibility_date": "2026-01-01",
   "main": "src/index.ts",
 
   "vars": {
+    // URL du backend (via tunnel/docker au déploiement).
     "BACKEND_URL": "http://backend:8080"
   },
 
-  "routes": [
-    { "pattern": "diarra.example.com", "zone_name": "example.com" }
-  ],
+  // Domaines personnalisés — à configurer au déploiement (ex. api.diarra.sn).
+  // "routes": [
+  //   { "pattern": "api.diarra.sn", "zone_name": "diarra.sn" }
+  // ],
 
   "kv_namespaces": [
-    { "binding": "RATE_LIMITS", "id": "your-kv-namespace-id" }
-  ],
-
-  "r2_buckets": [
-    { "binding": "DIARRA_BUCKET", "bucket_name": "diarra-files" }
+    { "binding": "RATE_LIMITS", "id": "a07ad8fee1694782af048ca6eb17981f" }
   ],
 
   "queues": {

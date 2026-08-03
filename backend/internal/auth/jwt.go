@@ -10,8 +10,9 @@ import (
 var ErrInvalidToken = errors.New("invalid token")
 
 type Claims struct {
-	UserID  string `json:"user_id"`
-	IsAdmin bool   `json:"is_admin"`
+	UserID  string   `json:"user_id"`
+	IsAdmin bool     `json:"is_admin"`
+	Roles   []string `json:"roles,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -31,10 +32,17 @@ func NewJWTManager(accessSecret, refreshSecret string) *JWTManager {
 	}
 }
 
-func (m *JWTManager) GenerateAccessToken(userID string, isAdmin bool) (string, error) {
+// RefreshTTL retourne la durée de validité des refresh tokens (utile pour
+// enregistrer l'expiration en base).
+func (m *JWTManager) RefreshTTL() time.Duration {
+	return m.refreshTTL
+}
+
+func (m *JWTManager) GenerateAccessToken(userID string, isAdmin bool, roles []string) (string, error) {
 	claims := Claims{
 		UserID:  userID,
 		IsAdmin: isAdmin,
+		Roles:   roles,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(m.accessTTL)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

@@ -20,6 +20,8 @@ type Sale struct {
 
 type CreateOrderInput struct {
 	ProductID string `json:"product_id"`
+	// ReferralLinkID (optionnel) : vente réalisée via un lien d'affiliation.
+	ReferralLinkID *string `json:"referral_link_id,omitempty"`
 }
 
 type SaleStatus string

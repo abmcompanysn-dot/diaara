@@ -17,48 +17,47 @@ import (
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 )
 
-type R2Storage struct {
-	client    *s3.Client
-	bucket    string
-	publicURL string
+type S3Storage struct {
+	client *s3.Client
+	bucket string
 }
 
-type R2Config struct {
-	AccountID       string
+type S3Config struct {
 	AccessKeyID     string
 	SecretAccessKey string
 	Bucket          string
-	Endpoint        string // optionnel (MinIO local)
+	Endpoint        string // ex: https://fly.storage.tigris.dev (Tigris) ou https://<ACCOUNT>.r2.cloudflarestorage.com (R2)
+	Region          string // défaut: auto
 }
 
-func NewR2Storage(cfg R2Config) (*R2Storage, error) {
-	endpoint := cfg.Endpoint
-	if endpoint == "" {
-		endpoint = fmt.Sprintf("https://%s.r2.cloudflarestorage.com", cfg.AccountID)
+func NewS3Storage(cfg S3Config) (*S3Storage, error) {
+	region := cfg.Region
+	if region == "" {
+		region = "auto"
 	}
 
 	creds := credentials.NewStaticCredentialsProvider(cfg.AccessKeyID, cfg.SecretAccessKey, "")
 
 	awsCfg, err := config.LoadDefaultConfig(context.Background(),
 		config.WithCredentialsProvider(creds),
-		config.WithRegion("auto"),
+		config.WithRegion(region),
 	)
 	if err != nil {
 		return nil, err
 	}
 
 	client := s3.NewFromConfig(awsCfg, func(o *s3.Options) {
-		o.BaseEndpoint = aws.String(endpoint)
+		o.BaseEndpoint = aws.String(cfg.Endpoint)
 		o.UsePathStyle = true
 	})
 
-	return &R2Storage{
+	return &S3Storage{
 		client: client,
 		bucket: cfg.Bucket,
 	}, nil
 }
 
-func (s *R2Storage) Upload(ctx context.Context, key string, data []byte) error {
+func (s *S3Storage) Upload(ctx context.Context, key string, data []byte) error {
 	_, err := s.client.PutObject(ctx, &s3.PutObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(key),
@@ -67,7 +66,7 @@ func (s *R2Storage) Upload(ctx context.Context, key string, data []byte) error {
 	return err
 }
 
-func (s *R2Storage) Download(ctx context.Context, key string) ([]byte, error) {
+func (s *S3Storage) Download(ctx context.Context, key string) ([]byte, error) {
 	out, err := s.client.GetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(key),
@@ -79,7 +78,7 @@ func (s *R2Storage) Download(ctx context.Context, key string) ([]byte, error) {
 	return io.ReadAll(out.Body)
 }
 
-func (s *R2Storage) Delete(ctx context.Context, key string) error {
+func (s *S3Storage) Delete(ctx context.Context, key string) error {
 	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(key),
@@ -87,7 +86,7 @@ func (s *R2Storage) Delete(ctx context.Context, key string) error {
 	return err
 }
 
-func (s *R2Storage) GenerateSignedURL(ctx context.Context, key string, expiry time.Duration) (string, error) {
+func (s *S3Storage) GenerateSignedURL(ctx context.Context, key string, expiry time.Duration) (string, error) {
 	presigner := s3.NewPresignClient(s.client)
 	req, err := presigner.PresignGetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
@@ -101,7 +100,7 @@ func (s *R2Storage) GenerateSignedURL(ctx context.Context, key string, expiry ti
 	return req.URL, nil
 }
 
-func (s *R2Storage) ObjectExists(ctx context.Context, key string) (bool, error) {
+func (s *S3Storage) ObjectExists(ctx context.Context, key string) (bool, error) {
 	_, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(key),
@@ -116,7 +115,7 @@ func (s *R2Storage) ObjectExists(ctx context.Context, key string) (bool, error) 
 	return true, nil
 }
 
-// NewFileKey génère une clé objet unique pour R2.
+// NewFileKey génère une clé objet unique pour le stockage objet.
 func NewFileKey(vendorID, filename string) string {
 	buf := make([]byte, 8)
 	rand.Read(buf)

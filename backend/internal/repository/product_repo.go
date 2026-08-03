@@ -40,10 +40,12 @@ func scanProduct(row pgx.Row) (*model.Product, error) {
 
 func (r *ProductRepo) Create(ctx context.Context, input model.CreateProductInput, vendorID string) (*model.Product, error) {
 	row := r.pool.QueryRow(ctx,
-		`INSERT INTO products (vendor_id, title, description, price_cfa, category, file_key)
-		 VALUES ($1, $2, $3, $4, $5, $6)
+		`INSERT INTO products (vendor_id, title, description, price_cfa, category, file_key,
+			affiliate_enabled, max_closer_commission_pct)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 		 RETURNING `+productColumns,
 		vendorID, input.Title, input.Description, input.PriceCFA, input.Category, input.FileKey,
+		input.AffiliateEnabled, input.MaxCloserCommissionPct,
 	)
 	return scanProduct(row)
 }
@@ -155,6 +157,16 @@ func (r *ProductRepo) Update(ctx context.Context, id string, input model.UpdateP
 	if input.Category != nil {
 		sets = append(sets, `category = $`+itoa(argIdx))
 		args = append(args, *input.Category)
+		argIdx++
+	}
+	if input.AffiliateEnabled != nil {
+		sets = append(sets, `affiliate_enabled = $`+itoa(argIdx))
+		args = append(args, *input.AffiliateEnabled)
+		argIdx++
+	}
+	if input.MaxCloserCommissionPct != nil {
+		sets = append(sets, `max_closer_commission_pct = $`+itoa(argIdx))
+		args = append(args, *input.MaxCloserCommissionPct)
 		argIdx++
 	}
 

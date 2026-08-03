@@ -3,6 +3,10 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
 
 interface Ticket {
   id: string;
@@ -67,41 +71,32 @@ export default function SupportPage() {
           <h1 className="text-3xl font-bold">Support</h1>
           <p className="text-green-700">Besoin d&apos;aide ? Ouvrez un ticket</p>
         </div>
-        <button
-          onClick={() => setShowForm(!showForm)}
-          className="px-4 py-2 rounded gradient-green text-white"
-        >
+        <Button onClick={() => setShowForm(!showForm)}>
           {showForm ? 'Annuler' : 'Nouveau ticket'}
-        </button>
+        </Button>
       </header>
 
-      {error && <div className="mb-4 p-3 bg-red-50 text-red-600 rounded">{error}</div>}
+      {error && <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded">{error}</div>}
 
       {showForm && (
-        <form onSubmit={handleCreate} className="mb-6 p-4 border rounded-lg">
-          <input
+        <form onSubmit={handleCreate} className="mb-6 p-4 border rounded-lg space-y-3">
+          <Input
             type="text"
             placeholder="Sujet du ticket"
             value={subject}
             onChange={(e) => setSubject(e.target.value)}
             required
-            className="w-full mb-3 p-2 border rounded"
           />
-          <textarea
+          <Textarea
             placeholder="Décrivez votre problème..."
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             required
             rows={4}
-            className="w-full mb-3 p-2 border rounded"
           />
-          <button
-            type="submit"
-            disabled={submitting}
-            className="px-4 py-2 rounded bg-green-600 text-white disabled:opacity-50"
-          >
+          <Button type="submit" disabled={submitting}>
             {submitting ? 'Envoi...' : 'Envoyer'}
-          </button>
+          </Button>
         </form>
       )}
 
@@ -114,16 +109,14 @@ export default function SupportPage() {
         <ul className="divide-y">
           {tickets.map((ticket) => (
             <li key={ticket.id} className="py-3 flex items-center justify-between">
-              <Link href={`/support/ticket?id=${ticket.id}`} className="text-green-600 font-medium">
+              <Link href={`/support/ticket?id=${ticket.id}`} className="text-primary font-medium">
                 {ticket.subject}
               </Link>
               <div className="flex items-center gap-3">
-                <span className="text-sm text-green-900/50">
+                <span className="text-sm text-muted-foreground">
                   {new Date(ticket.created_at).toLocaleDateString('fr-FR')}
                 </span>
-                <span className="px-2 py-1 rounded text-xs bg-green-100">
-                  {STATUS_LABELS[ticket.status] || ticket.status}
-                </span>
+                <Badge>{STATUS_LABELS[ticket.status] || ticket.status}</Badge>
               </div>
             </li>
           ))}

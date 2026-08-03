@@ -21,7 +21,9 @@ export function useWebSocket<T = any>(path: string, onUpdate?: (data: T) => void
       const token = localStorage.getItem('access_token');
       if (!token) return;
 
-      const ws = new WebSocket(`${WS_BASE}${path}`);
+      const base = WS_BASE.replace(/\/$/, '');
+      const separator = path.includes('?') ? '&' : '?';
+      const ws = new WebSocket(`${base}${path}${separator}token=${encodeURIComponent(token)}`);
       socketRef.current = ws;
 
       ws.onopen = () => setConnected(true);

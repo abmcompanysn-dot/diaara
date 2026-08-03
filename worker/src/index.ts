@@ -2,7 +2,6 @@ export interface Env {
   ASSETS: Fetcher;
   BACKEND_URL: string;
   RATE_LIMITS: KVNamespace;
-  DIARRA_BUCKET: R2Bucket;
   DELIVERY_QUEUE: Queue;
 }
 
@@ -10,7 +9,9 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
-    if (url.pathname.startsWith('/api/') || url.pathname.startsWith('/ws/')) {
+    const isReferral = url.pathname.startsWith('/r/');
+    const isApi = url.pathname.startsWith('/api/') || url.pathname.startsWith('/ws/');
+    if (isApi || isReferral) {
       const isRateLimited = await checkRateLimit(request, env);
       if (isRateLimited) {
         return new Response(JSON.stringify({ error: 'rate_limited' }), {
@@ -27,10 +28,13 @@ export default {
       headers.delete('CF-Connecting-IP');
 
       try {
+        // Pour /r/ on transmet la 302 au navigateur (pas de suivi côté Worker)
+        // afin que l'utilisateur atterrisse sur le produit du frontend.
         const response = await fetch(targetUrl, {
           method: request.method,
           headers,
           body: request.body,
+          redirect: isReferral ? 'manual' : 'follow',
         });
 
         return new Response(response.body, {

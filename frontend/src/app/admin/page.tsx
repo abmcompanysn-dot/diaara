@@ -62,7 +62,11 @@ export default function AdminDashboardPage() {
         </Link>
         <Link href="/admin/users" className="p-6 border rounded-lg hover:bg-green-50">
           <h2 className="font-semibold text-lg mb-2">Gestion des utilisateurs</h2>
-          <p className="text-green-700">Suspendre des comptes</p>
+          <p className="text-green-700">Attribuer les rôles vendeur/affilié, suspendre des comptes</p>
+        </Link>
+        <Link href="/admin/sales" className="p-6 border rounded-lg hover:bg-green-50">
+          <h2 className="font-semibold text-lg mb-2">Ventes</h2>
+          <p className="text-green-700">Suivre les ventes, frais et commissions d'affiliation</p>
         </Link>
       </div>
     </main>

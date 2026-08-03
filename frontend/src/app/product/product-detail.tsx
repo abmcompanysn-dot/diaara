@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 
 interface Product {
   id: string;
@@ -60,8 +62,10 @@ export default function ProductDetailPage() {
   if (!product) {
     return (
       <main className="p-8 text-center">
-        <p className="text-red-600">{error}</p>
-        <Link href="/catalog" className="text-green-600">Retour au catalogue</Link>
+        <p className="text-destructive">{error}</p>
+        <Button variant="link" render={<Link href="/catalog" />}>
+          Retour au catalogue
+        </Button>
       </main>
     );
   }
@@ -71,32 +75,32 @@ export default function ProductDetailPage() {
   return (
     <main className="min-h-screen p-8 max-w-3xl mx-auto">
       <nav className="mb-6">
-        <Link href="/catalog" className="text-green-600">← Catalogue</Link>
+        <Button variant="outline" size="sm" render={<Link href="/catalog" />}>
+          ← Catalogue
+        </Button>
       </nav>
 
       <div className="border rounded-lg p-8">
         <div className="flex justify-between items-start mb-4">
           <h1 className="text-3xl font-bold">{product.title}</h1>
-          <span className="text-2xl text-green-600 font-bold">{formatPrice(product.price_cfa)}</span>
+          <span className="text-2xl text-primary font-bold">{formatPrice(product.price_cfa)}</span>
         </div>
 
-        <span className="inline-block mb-4 px-2 py-1 bg-green-100 rounded text-sm text-green-800">
-          {product.category}
-        </span>
+        <Badge className="mb-4">{product.category}</Badge>
 
-        <p className="text-green-800 mb-8 whitespace-pre-line">
+        <p className="text-muted-foreground mb-8 whitespace-pre-line">
           {product.description || 'Pas de description pour ce produit.'}
         </p>
 
-        {error && <div className="mb-4 p-3 bg-red-50 text-red-600 rounded">{error}</div>}
+        {error && <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded">{error}</div>}
 
-        <button
+        <Button
           onClick={handleBuy}
           disabled={buying}
-          className="w-full py-3 gradient-green text-white rounded-lg font-semibold hover:opacity-95 disabled:opacity-50"
+          className="w-full h-11 font-semibold"
         >
           {buying ? 'Redirection vers le paiement...' : 'Acheter maintenant'}
-        </button>
+        </Button>
 
         <p className="mt-4 text-sm text-green-900/50 text-center">
           Paiement sécurisé par mobile money (Wave, Orange Money, MTN MoMo)

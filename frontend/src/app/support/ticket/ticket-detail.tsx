@@ -1,8 +1,12 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { useRouter, useSearchParams } from 'next/navigation';
+import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { api } from '@/lib/api';
+import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
 
 interface Message {
   id: string;
@@ -20,7 +24,6 @@ interface Ticket {
 
 export default function TicketDetailPage() {
   const searchParams = useSearchParams();
-  const router = useRouter();
   const id = searchParams.get('id') || '';
 
   const [ticket, setTicket] = useState<Ticket | null>(null);
@@ -67,14 +70,21 @@ export default function TicketDetailPage() {
   return (
     <main className="min-h-screen p-8 max-w-3xl mx-auto">
       <header className="mb-6">
-        <button onClick={() => router.push('/support')} className="text-sm text-green-600 mb-2">
+        <Button
+          variant="outline"
+          size="sm"
+          className="mb-2"
+          render={<Link href="/support" />}
+        >
           ← Retour au support
-        </button>
+        </Button>
         <h1 className="text-2xl font-bold">{ticket?.subject}</h1>
-        <p className="text-green-900/50 text-sm">Statut : {ticket?.status}</p>
+        <p className="text-muted-foreground text-sm">
+          Statut : <Badge variant="outline">{ticket?.status}</Badge>
+        </p>
       </header>
 
-      {error && <div className="mb-4 p-3 bg-red-50 text-red-600 rounded">{error}</div>}
+      {error && <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded">{error}</div>}
 
       <div className="space-y-3 mb-6">
         {messages.map((msg) => (
@@ -97,20 +107,16 @@ export default function TicketDetailPage() {
 
       {ticket?.status !== 'closed' && (
         <form onSubmit={handleSend} className="flex gap-2">
-          <textarea
+          <Textarea
             placeholder="Votre réponse..."
             value={body}
             onChange={(e) => setBody(e.target.value)}
             rows={3}
-            className="flex-1 p-2 border rounded"
+            className="flex-1"
           />
-          <button
-            type="submit"
-            disabled={sending}
-            className="px-4 py-2 rounded gradient-green text-white disabled:opacity-50"
-          >
+          <Button type="submit" disabled={sending} className="self-start">
             {sending ? 'Envoi...' : 'Envoyer'}
-          </button>
+          </Button>
         </form>
       )}
     </main>

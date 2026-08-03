@@ -25,14 +25,14 @@ type DeliveryHandler struct {
 	deliveryRepo *repository.DeliveryRepo
 	saleRepo     *repository.SaleRepo
 	productRepo  *repository.ProductRepo
-	storage      *storage.R2Storage
+	storage      *storage.S3Storage
 }
 
 func NewDeliveryHandler(
 	deliveryRepo *repository.DeliveryRepo,
 	saleRepo *repository.SaleRepo,
 	productRepo *repository.ProductRepo,
-	storage *storage.R2Storage,
+	storage *storage.S3Storage,
 ) *DeliveryHandler {
 	return &DeliveryHandler{
 		deliveryRepo: deliveryRepo,
@@ -109,7 +109,7 @@ func (h *DeliveryHandler) Generate(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Download — GET /api/delivery/{token} → redirige vers l'URL signée R2.
+// Download — GET /api/delivery/{token} → redirige vers l'URL signée du stockage objet.
 func (h *DeliveryHandler) Download(w http.ResponseWriter, r *http.Request) {
 	token := chi.URLParam(r, "token")
 

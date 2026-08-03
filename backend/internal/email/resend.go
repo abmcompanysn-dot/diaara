@@ -22,6 +22,8 @@ type ResendConfig struct {
 	From   string // ex: "DIARRA <no-reply@diarra.example>"
 }
 
+var _ MailSender = (*ResendClient)(nil)
+
 func NewResendClient(cfg ResendConfig) *ResendClient {
 	return &ResendClient{
 		apiKey:  cfg.APIKey,

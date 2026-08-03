@@ -1,6 +1,75 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+
+@theme {
+  /* Vert = couleur de l'argent, de la croissance et du mobile money en Afrique */
+  --color-green-950: #052018;
+  --color-green-900: #0a3225;
+  --color-green-800: #0e4431;
+  --color-green-700: #115e40;
+  --color-green-600: #0f7a50;
+  --color-green-500: #10a05f;
+  --color-green-400: #17c26f;
+  --color-green-300: #46e092;
+  --color-green-200: #8af0bb;
+  --color-green-100: #c6f8e0;
+  --color-green-50: #ebfbf2;
+  --color-lime: #c9f22e;
+  --color-lime-dark: #a8cf18;
+  --color-paper: #f2f7f4;
+  --color-paper-cream: #fafdfb;
+  --color-money-orange: #ff7a3d;
+  --color-money-wave: #17c26f;
+  --color-money-om: #ff6a00;
+  --color-money-mtn: #ffc602;
+
+  --font-display: 'Bricolage Grotesque', sans-serif;
+  --font-body: 'Work Sans', sans-serif;
+  --font-mono: 'Space Mono', monospace;
+
+  --shadow-card: 0 1px 2px rgba(5, 32, 24, 0.06), 0 8px 24px rgba(5, 32, 24, 0.08);
+  --shadow-lift: 0 2px 4px rgba(5, 32, 24, 0.08), 0 16px 40px rgba(5, 32, 24, 0.16);
+  --shadow-glow: 0 0 0 3px rgba(23, 194, 111, 0.25);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+}
 
 :root {
   --ink: #052018;
@@ -10,6 +79,39 @@
   --lime: #c9f22e;
   --paper: #f2f7f4;
   --orange: #ff7a3d;
+
+  --background: #f2f7f4;
+  --foreground: #052018;
+  --card: #ffffff;
+  --card-foreground: #052018;
+  --popover: #ffffff;
+  --popover-foreground: #052018;
+  --primary: #0f7a50;
+  --primary-foreground: #ffffff;
+  --secondary: #ebfbf2;
+  --secondary-foreground: #052018;
+  --muted: #ebfbf2;
+  --muted-foreground: #0a3225;
+  --accent: #c6f8e0;
+  --accent-foreground: #052018;
+  --destructive: #b3261e;
+  --border: #0a322514;
+  --input: #0a32251f;
+  --ring: #17c26f;
+  --chart-1: #0f7a50;
+  --chart-2: #17c26f;
+  --chart-3: #c9f22e;
+  --chart-4: #ff7a3d;
+  --chart-5: #052018;
+  --radius: 0.625rem;
+  --sidebar: #fafdfb;
+  --sidebar-foreground: #052018;
+  --sidebar-primary: #0f7a50;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #ebfbf2;
+  --sidebar-accent-foreground: #052018;
+  --sidebar-border: #0a322514;
+  --sidebar-ring: #17c26f;
 }
 
 html {
@@ -93,6 +195,15 @@ textarea:focus-visible {
   outline: 2px solid var(--green-bright);
   outline-offset: 2px;
   border-radius: 4px;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {

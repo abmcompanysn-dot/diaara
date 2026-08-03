@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"syscall"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/diarra/backend/internal/email"
 	"github.com/diarra/backend/internal/handler"
 	"github.com/diarra/backend/internal/middleware"
+	"github.com/diarra/backend/internal/model"
 	"github.com/diarra/backend/internal/payment"
 	"github.com/diarra/backend/internal/realtime"
 	"github.com/diarra/backend/internal/repository"
@@ -53,20 +55,21 @@ func main() {
 		log.Fatalf("Unable to ping database: %v", err)
 	}
 
-	// Storage R2 (optionnel en dev local)
+	// Storage objet (S3-compatible: Tigris, MinIO, R2... — optionnel en dev local)
 	var storageService handler.StorageService
-	r2, err := storage.NewR2Storage(storage.R2Config{
-		AccountID:       os.Getenv("R2_ACCOUNT_ID"),
-		AccessKeyID:     os.Getenv("R2_ACCESS_KEY_ID"),
-		SecretAccessKey: os.Getenv("R2_SECRET_ACCESS_KEY"),
-		Bucket:          os.Getenv("R2_BUCKET"),
-		Endpoint:        os.Getenv("R2_ENDPOINT"),
+	s3, err := storage.NewS3Storage(storage.S3Config{
+		Endpoint:        os.Getenv("S3_ENDPOINT"),
+		AccessKeyID:     os.Getenv("S3_ACCESS_KEY_ID"),
+		SecretAccessKey: os.Getenv("S3_SECRET_ACCESS_KEY"),
+		Bucket:          os.Getenv("S3_BUCKET"),
+		Region:          os.Getenv("S3_REGION"),
 	})
-	if err != nil || os.Getenv("R2_ACCOUNT_ID") == "" {
-		log.Println("WARNING: R2 storage non configuré, upload désactivé")
+	if err != nil || os.Getenv("S3_ENDPOINT") == "" {
+		log.Println("WARNING: stockage objet non configuré, upload désactivé")
 		storageService = nil
+		s3 = nil
 	} else {
-		storageService = r2
+		storageService = s3
 	}
 
 	// Repositories
@@ -75,21 +78,59 @@ func main() {
 	saleRepo := repository.NewSaleRepo(pool)
 	deliveryRepo := repository.NewDeliveryRepo(pool)
 	payoutRepo := repository.NewPayoutRepo(pool)
+	referralRepo := repository.NewReferralRepo(pool)
 
 	// Notifications email (optionnel en dev local)
 	var notifications *email.NotificationService
-	if os.Getenv("RESEND_API_KEY") != "" {
+	switch {
+	case os.Getenv("SMTP_HOST") != "":
+		port := 587
+		if p := os.Getenv("SMTP_PORT"); p != "" {
+			if parsed, err := strconv.Atoi(p); err == nil {
+				port = parsed
+			}
+		}
+		smtp, err := email.NewSMTPClient(email.SMTPConfig{
+			Host:     os.Getenv("SMTP_HOST"),
+			Port:     port,
+			Username: os.Getenv("SMTP_USER"),
+			Password: os.Getenv("SMTP_PASS"),
+			From:     os.Getenv("SMTP_FROM"),
+		})
+		if err != nil {
+			log.Fatalf("SMTP config invalide: %v", err)
+		}
+		notifications = email.NewNotificationService(smtp, os.Getenv("FRONTEND_URL"))
+		log.Printf("Emails via SMTP (%s:%d)", os.Getenv("SMTP_HOST"), port)
+	case os.Getenv("RESEND_API_KEY") != "":
 		resend := email.NewResendClient(email.ResendConfig{
 			APIKey: os.Getenv("RESEND_API_KEY"),
 			From:   os.Getenv("RESEND_FROM"),
 		})
 		notifications = email.NewNotificationService(resend, os.Getenv("FRONTEND_URL"))
-	} else {
-		log.Println("WARNING: Resend non configuré, emails désactivés")
+	case os.Getenv("MAILTRAP_API_KEY") != "":
+		fromEmail := os.Getenv("MAILTRAP_FROM")
+		if fromEmail == "" {
+			fromEmail = "hello@demomailtrap.co"
+		}
+		mailtrap := email.NewMailtrapClient(email.MailtrapConfig{
+			APIKey:    os.Getenv("MAILTRAP_API_KEY"),
+			FromEmail: fromEmail,
+			FromName:  "DIARRA",
+			SandboxID: os.Getenv("MAILTRAP_SANDBOX_ID"),
+		})
+		notifications = email.NewNotificationService(mailtrap, os.Getenv("FRONTEND_URL"))
+		mode := "send.api"
+		if os.Getenv("MAILTRAP_SANDBOX_ID") != "" {
+			mode = "sandbox (bac de test)"
+		}
+		log.Printf("Emails via Mailtrap (%s)", mode)
+	default:
+		log.Println("WARNING: aucun fournisseur email (SMTP_HOST, RESEND_API_KEY ou MAILTRAP_API_KEY), emails désactivés")
 	}
 
 	// Services
-	authService := service.NewAuthService(userRepo, jwtManager)
+	authService := service.NewAuthService(userRepo, jwtManager, notifications)
 
 	// Paiement PayDunya (optionnel en dev local)
 	var paydunya *payment.PayDunyaClient
@@ -110,20 +151,21 @@ func main() {
 	healthHandler := handler.NewHealthHandler(pool)
 	authHandler := handler.NewAuthHandler(authService)
 	productHandler := handler.NewProductHandler(productRepo, storageService)
-	saleHandler := handler.NewSaleHandler(saleRepo, productRepo, paydunya)
+	saleHandler := handler.NewSaleHandler(saleRepo, productRepo, referralRepo, paydunya)
+	closerHandler := handler.NewCloserHandler(referralRepo, productRepo, os.Getenv("FRONTEND_URL"))
 	webhookHandler := handler.NewWebhookHandler(saleRepo, userRepo, productRepo, notifications, os.Getenv("PAYDUNYA_WEBHOOK_SECRET"))
 
 	// Temps réel (LISTEN/NOTIFY + WebSocket)
 	hub := realtime.NewHub(pool)
 	realtimeHandler := handler.NewRealtimeHandler(hub)
 
-	// Livraison (liens signés R2)
+	// Livraison (liens signés du stockage objet)
 	var deliveryHandler *handler.DeliveryHandler
-	if r2 != nil {
-		deliveryHandler = handler.NewDeliveryHandler(deliveryRepo, saleRepo, productRepo, r2)
+	if s3 != nil {
+		deliveryHandler = handler.NewDeliveryHandler(deliveryRepo, saleRepo, productRepo, s3)
 	} else {
 		deliveryHandler = nil
-		log.Println("WARNING: livraison désactivée (R2 non configuré)")
+		log.Println("WARNING: livraison désactivée (stockage objet non configuré)")
 	}
 
 	// Versements & revenus vendeur
@@ -162,6 +204,7 @@ func main() {
 		r.Post("/verify-email", authHandler.VerifyEmail)
 		r.Post("/forgot-password", authHandler.ForgotPassword)
 		r.Post("/reset-password", authHandler.ResetPassword)
+		r.With(middleware.RequireAuth(jwtManager)).Get("/me", authHandler.Me)
 	})
 
 	// Public product routes
@@ -170,9 +213,10 @@ func main() {
 		r.Get("/{id}", productHandler.Get)
 	})
 
-	// Vendor product routes (authentifié)
+	// Vendor product routes (vendeur authentifié)
 	r.Route("/api/vendor/products", func(r chi.Router) {
 		r.Use(middleware.RequireAuth(jwtManager))
+		r.Use(middleware.RequireRole(model.RoleVendeur))
 		r.Get("/", productHandler.ListVendor)
 		r.Post("/", productHandler.Create)
 		r.Post("/upload", productHandler.Upload)
@@ -187,6 +231,17 @@ func main() {
 		r.Get("/", saleHandler.List)
 		r.Get("/{id}", saleHandler.Get)
 	})
+
+	// Closer (affiliation) — liens + stats
+	r.Route("/api/closer", func(r chi.Router) {
+		r.Use(middleware.RequireAuth(jwtManager))
+		r.Use(middleware.RequireRole(model.RoleCloser))
+		r.Post("/links", closerHandler.CreateLink)
+		r.Get("/links", closerHandler.ListLinks)
+	})
+
+	// Redirection publique d'un lien d'affiliation (compte les clics)
+	r.Get("/r/{slug}", closerHandler.Redirect)
 
 	// Webhooks (pas de JWT)
 	r.Route("/api/webhooks", func(r chi.Router) {
@@ -218,6 +273,7 @@ func main() {
 	// Versements vendeur
 	r.Route("/api/vendor", func(r chi.Router) {
 		r.Use(middleware.RequireAuth(jwtManager))
+		r.Use(middleware.RequireRole(model.RoleVendeur))
 		r.Get("/earnings", payoutHandler.Earnings)
 		r.Post("/payouts", payoutHandler.Create)
 		r.Get("/payouts", payoutHandler.Earnings)
@@ -230,6 +286,7 @@ func main() {
 		r.Get("/products/pending", adminHandler.PendingProducts)
 		r.Put("/products/{id}/moderate", adminHandler.Moderate)
 		r.Get("/users", adminHandler.Users)
+		r.Put("/users/{id}/role", adminHandler.SetRole)
 		r.Put("/users/{id}/suspend", adminHandler.SuspendUser)
 		r.Get("/stats", adminHandler.Stats)
 		r.Get("/sales", adminHandler.Sales)

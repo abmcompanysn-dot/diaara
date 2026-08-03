@@ -5,6 +5,8 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useWebSocket } from '@/lib/use-websocket';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 
 interface Order {
   id: string;
@@ -75,8 +77,10 @@ export default function OrderDetailPage() {
   if (!order) {
     return (
       <main className="p-8 text-center">
-        <p className="text-red-600">{error}</p>
-        <Link href="/orders" className="text-green-600">Mes commandes</Link>
+        <p className="text-destructive">{error}</p>
+        <Button variant="link" render={<Link href="/orders" />}>
+          Mes commandes
+        </Button>
       </main>
     );
   }
@@ -87,15 +91,19 @@ export default function OrderDetailPage() {
   return (
     <main className="min-h-screen p-8 max-w-2xl mx-auto">
       <nav className="mb-6">
-        <Link href="/orders" className="text-green-600">← Mes commandes</Link>
+        <Button variant="outline" size="sm" render={<Link href="/orders" />}>
+          ← Mes commandes
+        </Button>
       </nav>
 
       <h1 className="text-3xl font-bold mb-6">Commande</h1>
 
       <div className="border rounded-lg p-8">
         <div className="flex justify-between items-center mb-6">
-          <span className="text-green-900/50 text-sm">Réf. {order.payment_reference.slice(0, 12)}...</span>
-          <span className={`px-3 py-1 rounded ${status.color}`}>{status.label}</span>
+          <span className="text-muted-foreground text-sm">
+            Réf. {order.payment_reference.slice(0, 12)}...
+          </span>
+          <Badge className={status.color}>{status.label}</Badge>
         </div>
 
         {connected && (
@@ -138,23 +146,24 @@ export default function OrderDetailPage() {
         {(order.status === 'paid' || order.status === 'delivered') && (
           <div className="mt-6">
             {deliveryUrl ? (
-              <a
-                href={deliveryUrl}
-                download
-                className="block w-full py-3 bg-green-600 text-white rounded-lg text-center font-semibold hover:bg-green-700"
-              >
-                Télécharger mon fichier
-              </a>
+              <Button
+                render={
+                  <a href={deliveryUrl} download className="block w-full">
+                    Télécharger mon fichier
+                  </a>
+                }
+                className="w-full h-11 font-semibold"
+              />
             ) : (
-              <button
+              <Button
                 onClick={handleDownload}
                 disabled={delivering}
-                className="w-full py-3 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 disabled:opacity-50"
+                className="w-full h-11 font-semibold"
               >
                 {delivering ? 'Préparation du téléchargement...' : 'Télécharger mon fichier'}
-              </button>
+              </Button>
             )}
-            <p className="mt-2 text-xs text-green-900/50 text-center">
+            <p className="mt-2 text-xs text-muted-foreground text-center">
               Lien valable 5 minutes · 3 téléchargements maximum
             </p>
           </div>

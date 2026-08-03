@@ -27,6 +27,7 @@ func uuidString() string {
 type SaleHandler struct {
 	saleRepo      *repository.SaleRepo
 	productRepo   *repository.ProductRepo
+	referralRepo  *repository.ReferralRepo
 	paydunya      *payment.PayDunyaClient
 	commissionSvc *service.CommissionService
 }
@@ -34,11 +35,13 @@ type SaleHandler struct {
 func NewSaleHandler(
 	saleRepo *repository.SaleRepo,
 	productRepo *repository.ProductRepo,
+	referralRepo *repository.ReferralRepo,
 	paydunya *payment.PayDunyaClient,
 ) *SaleHandler {
 	return &SaleHandler{
 		saleRepo:      saleRepo,
 		productRepo:   productRepo,
+		referralRepo:  referralRepo,
 		paydunya:      paydunya,
 		commissionSvc: service.NewCommissionService(),
 	}
@@ -69,8 +72,8 @@ func (h *SaleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Commission : avec ou sans lien d'affiliation (closer).
 	comm := h.commissionSvc.Calculate(product.PriceCFA)
-
 	sale := &model.Sale{
 		ProductID:       product.ID,
 		BuyerID:         userID,
@@ -79,6 +82,34 @@ func (h *SaleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		VendorAmountCFA: comm.VendorAmountCFA,
 		PaymentProvider: "paydunya",
 		Status:          string(model.SalePending),
+	}
+
+	if input.ReferralLinkID != nil && *input.ReferralLinkID != "" {
+		link, err := h.referralRepo.FindByID(r.Context(), *input.ReferralLinkID)
+		if err != nil {
+			http.Error(w, `{"error":"referral_link_not_found"}`, http.StatusNotFound)
+			return
+		}
+		// Le lien doit concerner le produit acheté.
+		if link.ProductID != product.ID {
+			http.Error(w, `{"error":"referral_link_mismatch"}`, http.StatusBadRequest)
+			return
+		}
+		// Anti-fraude : le closer ne peut pas s'acheter via son propre lien.
+		if link.CloserID == userID {
+			http.Error(w, `{"error":"self_referral_forbidden"}`, http.StatusBadRequest)
+			return
+		}
+		// Le closer ne peut pas promouvoir son propre produit (voir CreateLink).
+		if link.CloserID == product.VendorID {
+			http.Error(w, `{"error":"self_referral_forbidden"}`, http.StatusBadRequest)
+			return
+		}
+
+		commCloser := h.commissionSvc.CalculateWithCloser(product.PriceCFA, link.CommissionPct)
+		sale.ReferralLinkID = &link.ID
+		sale.CloserCommissionCFA = commCloser.CloserCommissionCFA
+		sale.VendorAmountCFA = commCloser.VendorAmountCFA
 	}
 
 	// payment_reference doit être unique : on crée un identifiant provisoire puis on met à jour

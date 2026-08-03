@@ -10,6 +10,7 @@ import (
 	"github.com/diarra/backend/internal/middleware"
 	"github.com/diarra/backend/internal/model"
 	"github.com/diarra/backend/internal/repository"
+	"github.com/diarra/backend/internal/service"
 	"github.com/diarra/backend/internal/storage"
 	"github.com/go-chi/chi/v5"
 )
@@ -109,6 +110,11 @@ func (h *ProductHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.storage == nil {
+		http.Error(w, `{"error":"storage_not_configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+
 	if err := r.ParseMultipartForm(50 << 20); err != nil { // 50MB max
 		http.Error(w, `{"error":"file_too_large"}`, http.StatusBadRequest)
 		return
@@ -160,6 +166,11 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !validAffiliateConfig(input.AffiliateEnabled, input.MaxCloserCommissionPct) {
+		http.Error(w, `{"error":"invalid_affiliate_config"}`, http.StatusBadRequest)
+		return
+	}
+
 	product, err := h.productRepo.Create(r.Context(), input, userID)
 	if err != nil {
 		http.Error(w, `{"error":"creation_failed"}`, http.StatusInternalServerError)
@@ -190,6 +201,18 @@ func (h *ProductHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
 		return
+	}
+
+	// Si le statut d'affiliation est modifié, vérifier la cohérence du plafond.
+	if input.AffiliateEnabled != nil {
+		capVal := product.MaxCloserCommissionPct
+		if input.MaxCloserCommissionPct != nil {
+			capVal = *input.MaxCloserCommissionPct
+		}
+		if !validAffiliateConfig(*input.AffiliateEnabled, capVal) {
+			http.Error(w, `{"error":"invalid_affiliate_config"}`, http.StatusBadRequest)
+			return
+		}
 	}
 
 	updated, err := h.productRepo.Update(r.Context(), id, input)
@@ -225,4 +248,14 @@ func (h *ProductHandler) Delete(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
+}
+
+// validAffiliateConfig vérifie la cohérence des paramètres d'affiliation :
+// si le produit est ouvert à l'affiliation, le plafond doit être strictement
+// positif et ne pas dépasser la part vendeur (100% - 15% plateforme).
+func validAffiliateConfig(enabled bool, maxPct float64) bool {
+	if !enabled {
+		return true
+	}
+	return maxPct > 0 && maxPct <= (100-float64(service.PlatformFeePct))
 }

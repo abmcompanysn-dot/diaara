@@ -85,6 +85,45 @@ func (h *AdminHandler) SuspendUser(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "suspended"})
 }
 
+// SetRole — PUT /api/admin/users/{id}/role
+// Accord (grant) ou retire (revoke) un rôle cumulable (vendeur/closer).
+// Les sessions existantes de l'utilisateur sont révoquées pour qu'il se
+// reconnecte avec un token reflétant ses nouveaux rôles.
+func (h *AdminHandler) SetRole(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	var input model.RoleInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+
+	if !model.ValidRole(input.Role) {
+		http.Error(w, `{"error":"invalid_role"}`, http.StatusBadRequest)
+		return
+	}
+
+	var err error
+	switch input.Action {
+	case "grant":
+		err = h.userRepo.AddRole(r.Context(), id, input.Role)
+	case "revoke":
+		err = h.userRepo.RemoveRole(r.Context(), id, input.Role)
+	default:
+		http.Error(w, `{"error":"invalid_action"}`, http.StatusBadRequest)
+		return
+	}
+	if err != nil {
+		http.Error(w, `{"error":"role_update_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	_ = h.userRepo.RevokeAllUserRefreshTokens(r.Context(), id)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "role_updated"})
+}
+
 // Users — GET /api/admin/users
 func (h *AdminHandler) Users(w http.ResponseWriter, r *http.Request) {
 	users, err := h.userRepo.ListAllUsers(r.Context())

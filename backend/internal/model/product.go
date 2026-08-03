@@ -3,19 +3,19 @@ package model
 import "time"
 
 type Product struct {
-	ID                      string     `json:"id"`
-	VendorID                string     `json:"vendor_id"`
-	Title                   string     `json:"title"`
-	Description             *string    `json:"description,omitempty"`
-	PriceCFA                int        `json:"price_cfa"`
-	Category                string     `json:"category"`
-	FileKey                 string     `json:"file_key"`
-	ModerationStatus        string     `json:"moderation_status"`
-	ModerationNote          *string    `json:"moderation_note,omitempty"`
-	AffiliateEnabled        bool       `json:"affiliate_enabled"`
-	MaxCloserCommissionPct float64    `json:"max_closer_commission_pct"`
-	CreatedAt               time.Time  `json:"created_at"`
-	UpdatedAt               time.Time  `json:"updated_at"`
+	ID                     string    `json:"id"`
+	VendorID               string    `json:"vendor_id"`
+	Title                  string    `json:"title"`
+	Description            *string   `json:"description,omitempty"`
+	PriceCFA               int       `json:"price_cfa"`
+	Category               string    `json:"category"`
+	FileKey                string    `json:"file_key"`
+	ModerationStatus       string    `json:"moderation_status"`
+	ModerationNote         *string   `json:"moderation_note,omitempty"`
+	AffiliateEnabled       bool      `json:"affiliate_enabled"`
+	MaxCloserCommissionPct float64   `json:"max_closer_commission_pct"`
+	CreatedAt              time.Time `json:"created_at"`
+	UpdatedAt              time.Time `json:"updated_at"`
 }
 
 type CreateProductInput struct {
@@ -24,13 +24,19 @@ type CreateProductInput struct {
 	PriceCFA    int     `json:"price_cfa"`
 	Category    string  `json:"category"`
 	FileKey     string  `json:"file_key"`
+	// Affiliation (closer) : si AffiliateEnabled, les closers peuvent générer
+	// un lien avec une commission ≤ MaxCloserCommissionPct.
+	AffiliateEnabled       bool    `json:"affiliate_enabled"`
+	MaxCloserCommissionPct float64 `json:"max_closer_commission_pct"`
 }
 
 type UpdateProductInput struct {
-	Title       *string `json:"title,omitempty"`
-	Description *string `json:"description,omitempty"`
-	PriceCFA    *int    `json:"price_cfa,omitempty"`
-	Category    *string `json:"category,omitempty"`
+	Title                  *string  `json:"title,omitempty"`
+	Description            *string  `json:"description,omitempty"`
+	PriceCFA               *int     `json:"price_cfa,omitempty"`
+	Category               *string  `json:"category,omitempty"`
+	AffiliateEnabled       *bool    `json:"affiliate_enabled,omitempty"`
+	MaxCloserCommissionPct *float64 `json:"max_closer_commission_pct,omitempty"`
 }
 
 type ModerateProductInput struct {

@@ -3,6 +3,15 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 
 interface Product {
   id: string;
@@ -66,32 +75,36 @@ export default function CatalogPage() {
           </p>
 
           <div className="mt-8 flex flex-col sm:flex-row gap-3 max-w-2xl">
-            <input
+            <Input
               type="text"
               placeholder="Rechercher un produit..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && loadProducts()}
-              className="flex-1 px-4 py-3 rounded-full bg-white text-green-950 placeholder-green-900/40 border border-transparent focus:border-lime focus:shadow-glow outline-none"
+              className="flex-1 rounded-full bg-white text-green-950 placeholder-green-900/40 border border-transparent focus:border-lime focus:shadow-glow outline-none"
             />
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="px-4 py-3 rounded-full bg-white text-green-950 border border-transparent outline-none"
+            <Select
+              value={category || 'all'}
+              onValueChange={(v) => setCategory(v === 'all' ? '' : (v || ''))}
             >
-              <option value="">Toutes catégories</option>
-              {Object.entries(CATEGORY_LABELS).map(([value, label]) => (
-                <option key={value} value={value}>
-                  {label}
-                </option>
-              ))}
-            </select>
-            <button
+              <SelectTrigger className="rounded-full bg-white text-green-950 hover:bg-white">
+                <SelectValue placeholder="Toutes catégories" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Toutes catégories</SelectItem>
+                {Object.entries(CATEGORY_LABELS).map(([value, label]) => (
+                  <SelectItem key={value} value={value}>
+                    {label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Button
               onClick={loadProducts}
-              className="px-6 py-3 rounded-full bg-lime text-green-950 font-semibold hover:bg-green-300 transition-colors"
+              className="px-6 rounded-full bg-lime text-green-950 font-semibold hover:bg-green-300"
             >
               Rechercher
-            </button>
+            </Button>
           </div>
         </div>
       </section>

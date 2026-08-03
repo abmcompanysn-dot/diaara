@@ -1,61 +1,18 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import { AuthProvider } from '@/lib/auth';
+import { Header } from '@/components/header';
 import './globals.css';
+import { Geist } from "next/font/google";
+import { cn } from "@/lib/utils";
+
+const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 
 export const metadata: Metadata = {
   title: 'DIARRA - Le marché des biens numériques',
   description:
     'Achetez et vendez des produits numériques en Afrique : clés d\'abonnement, comptes, ebooks, PDF. Paiement sécurisé par mobile money.',
 };
-
-const NAV_LINKS = [
-  { href: '/catalog', label: 'Catalogue' },
-  { href: '/how-it-works', label: 'Comment ça marche' },
-  { href: '/sell', label: 'Vendre' },
-  { href: '/closer', label: 'Affiliation' },
-];
-
-function Header() {
-  return (
-    <header className="sticky top-0 z-50 bg-green-950/95 backdrop-blur border-b border-green-400/20">
-      <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-2 group">
-          <span className="font-display text-2xl font-bold text-white tracking-tight">
-            DIARRA
-          </span>
-          <span className="w-2 h-2 rounded-full bg-green-400 inline-block group-hover:scale-150 transition-transform" aria-hidden />
-        </Link>
-
-        <nav className="hidden md:flex items-center gap-8" aria-label="Navigation principale">
-          {NAV_LINKS.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className="text-sm text-white/80 hover:text-green-300 transition-colors"
-            >
-              {link.label}
-            </Link>
-          ))}
-        </nav>
-
-        <div className="flex items-center gap-3">
-          <Link
-            href="/auth/login"
-            className="hidden sm:inline text-sm text-white/80 hover:text-green-300 transition-colors"
-          >
-            Connexion
-          </Link>
-          <Link
-            href="/auth/register"
-            className="px-4 py-2 rounded-full bg-green-400 text-green-950 text-sm font-semibold hover:bg-green-300 transition-colors"
-          >
-            Créer un compte
-          </Link>
-        </div>
-      </div>
-    </header>
-  );
-}
 
 function Footer() {
   return (
@@ -110,7 +67,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="fr">
+    <html lang="fr" className={cn("font-sans", geist.variable)}>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
@@ -120,9 +77,11 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-screen flex flex-col">
-        <Header />
-        <div className="flex-1">{children}</div>
-        <Footer />
+        <AuthProvider>
+          <Header />
+          <div className="flex-1">{children}</div>
+          <Footer />
+        </AuthProvider>
       </body>
     </html>
   );

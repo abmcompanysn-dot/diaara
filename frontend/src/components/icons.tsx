@@ -123,3 +123,23 @@ export const CheckIcon = (props: IconProps) => (
     <path d="m4.5 12.5 5 5 10-11" />
   </svg>
 );
+
+export const MegaphoneIcon = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M3 11v2a2 2 0 0 0 2 2h1l1 5h2l-1-5h1l6 3a1 1 0 0 0 1-1V6a1 1 0 0 0-1-1l-6 3H5a2 2 0 0 0-2 2z" />
+  </svg>
+);
+
+export const ShieldIcon = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M12 2.5 4.5 5.5v6c0 4.6 3.2 8.3 7.5 10 4.3-1.7 7.5-5.4 7.5-10v-6z" />
+    <path d="m9 11.5 2 2 4-4.5" />
+  </svg>
+);
+
+export const LinkIcon = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M10 13a5 5 0 0 0 7.5.5l2.5-2.5a5 5 0 0 0-7-7l-1.5 1.5" />
+    <path d="M14 11a5 5 0 0 0-7.5-.5L4 13a5 5 0 0 0 7 7l1.5-1.5" />
+  </svg>
+);

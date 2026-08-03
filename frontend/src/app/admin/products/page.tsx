@@ -3,6 +3,8 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 
 interface Product {
   id: string;
@@ -54,10 +56,12 @@ export default function AdminProductsPage() {
           <h1 className="text-3xl font-bold">Modération</h1>
           <p className="text-green-700">Produits en attente de validation</p>
         </div>
-        <Link href="/admin" className="text-green-600">← Dashboard</Link>
+        <Button variant="outline" size="sm" render={<Link href="/admin" />}>
+          ← Dashboard
+        </Button>
       </header>
 
-      {error && <div className="mb-4 p-3 bg-red-50 text-red-600 rounded">{error}</div>}
+      {error && <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded">{error}</div>}
 
       {products.length === 0 ? (
         <div className="text-center py-12 border rounded-lg">
@@ -69,29 +73,28 @@ export default function AdminProductsPage() {
             <div key={product.id} className="p-6 border rounded-lg">
               <div className="flex justify-between items-start mb-2">
                 <h2 className="font-semibold text-lg">{product.title}</h2>
-                <span className="text-green-600 font-bold">{product.price_cfa.toLocaleString()} FCFA</span>
+                <span className="text-primary font-bold">
+                  {product.price_cfa.toLocaleString()} FCFA
+                </span>
               </div>
-              <p className="text-green-700 text-sm mb-2">
+              <p className="text-muted-foreground text-sm mb-2">
                 {product.description || 'Pas de description'}
               </p>
-              <div className="flex items-center gap-4 text-sm text-green-900/50 mb-4">
-                <span>{product.category}</span>
+              <div className="flex items-center gap-4 text-sm text-muted-foreground mb-4">
+                <Badge variant="outline">{product.category}</Badge>
                 <span>Vendeur : {product.vendor_id.slice(0, 8)}...</span>
                 <span>{new Date(product.created_at).toLocaleDateString('fr-FR')}</span>
               </div>
               <div className="flex gap-3">
-                <button
-                  onClick={() => handleModerate(product.id, 'approved')}
-                  className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700"
-                >
+                <Button onClick={() => handleModerate(product.id, 'approved')}>
                   Approuver
-                </button>
-                <button
+                </Button>
+                <Button
+                  variant="destructive"
                   onClick={() => handleModerate(product.id, 'rejected')}
-                  className="px-4 py-2 bg-red-600 text-white rounded hover:bg-red-700"
                 >
                   Refuser
-                </button>
+                </Button>
               </div>
             </div>
           ))}

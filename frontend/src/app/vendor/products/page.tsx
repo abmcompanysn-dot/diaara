@@ -3,6 +3,16 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
+import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 
 interface Product {
   id: string;
@@ -11,6 +21,18 @@ interface Product {
   category: string;
   moderation_status: string;
 }
+
+const STATUS_BADGE: Record<string, string> = {
+  pending: 'bg-yellow-100 text-yellow-700 hover:bg-yellow-100',
+  approved: 'bg-green-100 text-green-700 hover:bg-green-100',
+  rejected: 'bg-red-100 text-red-700 hover:bg-red-100',
+};
+
+const STATUS_LABELS: Record<string, string> = {
+  pending: 'En attente',
+  approved: 'Approuvé',
+  rejected: 'Refusé',
+};
 
 export default function VendorProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
@@ -43,24 +65,6 @@ export default function VendorProductsPage() {
     }
   };
 
-  const statusBadge = (status: string) => {
-    const colors: Record<string, string> = {
-      pending: 'bg-yellow-100 text-yellow-700',
-      approved: 'bg-green-100 text-green-700',
-      rejected: 'bg-red-100 text-red-700',
-    };
-    const labels: Record<string, string> = {
-      pending: 'En attente',
-      approved: 'Approuvé',
-      rejected: 'Refusé',
-    };
-    return (
-      <span className={`px-2 py-1 rounded text-xs ${colors[status] || 'bg-green-100'}`}>
-        {labels[status] || status}
-      </span>
-    );
-  };
-
   if (loading) return <main className="p-8 text-center">Chargement...</main>;
 
   return (
@@ -71,59 +75,65 @@ export default function VendorProductsPage() {
           <p className="text-green-700">{products.length} produit(s) en boutique</p>
         </div>
         <div className="flex gap-3">
-          <Link href="/vendor/earnings" className="px-4 py-2 border rounded hover:bg-green-50">
+          <Button variant="outline" size="sm" render={<Link href="/vendor/earnings" />}>
             Revenus
-          </Link>
-          <Link href="/vendor/products/new" className="px-4 py-2 gradient-green text-white rounded">
+          </Button>
+          <Button size="sm" render={<Link href="/vendor/products/new" />}>
             + Nouveau produit
-          </Link>
+          </Button>
         </div>
       </header>
 
-      {error && <div className="mb-4 p-3 bg-red-50 text-red-600 rounded">{error}</div>}
+      {error && <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded">{error}</div>}
 
       {products.length === 0 ? (
         <div className="text-center py-12 border rounded-lg">
           <p className="text-green-900/50 mb-4">Aucun produit pour le moment.</p>
-          <Link href="/vendor/products/new" className="text-green-600">
+          <Button variant="link" render={<Link href="/vendor/products/new" />}>
             Déposer mon premier produit
-          </Link>
+          </Button>
         </div>
       ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full border rounded">
-            <thead className="bg-green-50">
-              <tr>
-                <th className="p-3 text-left">Produit</th>
-                <th className="p-3 text-left">Prix</th>
-                <th className="p-3 text-left">Catégorie</th>
-                <th className="p-3 text-left">Statut</th>
-                <th className="p-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
+        <div className="rounded-lg border">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Produit</TableHead>
+                <TableHead>Prix</TableHead>
+                <TableHead>Catégorie</TableHead>
+                <TableHead>Statut</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
               {products.map((product) => (
-                <tr key={product.id} className="border-t">
-                  <td className="p-3">
-                    <Link href={`/product?id=${product.id}`} className="font-medium text-green-600">
+                <TableRow key={product.id}>
+                  <TableCell>
+                    <Link href={`/product?id=${product.id}`} className="font-medium text-primary">
                       {product.title}
                     </Link>
-                  </td>
-                  <td className="p-3">{product.price_cfa.toLocaleString()} FCFA</td>
-                  <td className="p-3">{product.category}</td>
-                  <td className="p-3">{statusBadge(product.moderation_status)}</td>
-                  <td className="p-3 text-right">
-                    <button
+                  </TableCell>
+                  <TableCell>{product.price_cfa.toLocaleString()} FCFA</TableCell>
+                  <TableCell>{product.category}</TableCell>
+                  <TableCell>
+                    <Badge className={STATUS_BADGE[product.moderation_status]}>
+                      {STATUS_LABELS[product.moderation_status] || product.moderation_status}
+                    </Badge>
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
                       onClick={() => handleDelete(product.id)}
-                      className="text-red-600 hover:underline text-sm"
                     >
                       Supprimer
-                    </button>
-                  </td>
-                </tr>
+                    </Button>
+                  </TableCell>
+                </TableRow>
               ))}
-            </tbody>
-          </table>
+            </TableBody>
+          </Table>
         </div>
       )}
     </main>

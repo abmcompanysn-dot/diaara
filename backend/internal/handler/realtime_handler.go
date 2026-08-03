@@ -2,6 +2,7 @@ package handler
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"time"
 
@@ -57,7 +58,7 @@ func (h *RealtimeHandler) OrderWS(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
 
-	// Goroutine d'écriture : envoie les notifications du hub vers la socket.
+	// Goroutine d'écriture : envoie uniquement les notifications de CETTE commande.
 	writeDone := make(chan struct{})
 	go func() {
 		defer close(writeDone)
@@ -66,6 +67,9 @@ func (h *RealtimeHandler) OrderWS(w http.ResponseWriter, r *http.Request) {
 			case msg, ok := <-client.Send:
 				if !ok {
 					return
+				}
+				if !matchesOrder(msg, orderID, userID) {
+					continue
 				}
 				conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
 				if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
@@ -94,6 +98,20 @@ func (h *RealtimeHandler) OrderWS(w http.ResponseWriter, r *http.Request) {
 	case <-readDone:
 	case <-r.Context().Done():
 	}
+}
+
+// matchesOrder vérifie que le payload NOTIFY concerne bien la commande demandée
+// et son propriétaire, pour éviter de fuir les commandes des autres utilisateurs.
+func matchesOrder(raw []byte, orderID, userID string) bool {
+	var env struct {
+		Data map[string]any `json:"data"`
+	}
+	if err := json.Unmarshal(raw, &env); err != nil || env.Data == nil {
+		return false
+	}
+	id, _ := env.Data["id"].(string)
+	buyer, _ := env.Data["buyer_id"].(string)
+	return id == orderID && buyer == userID
 }
 
 // ModerationWS expose /ws/admin — l'admin reçoit les changements de modération en direct.

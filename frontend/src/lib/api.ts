@@ -1,5 +1,8 @@
 const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
 
+// Origine de l'API : sert à construire les liens de partage /r/{slug} côté closer.
+export const apiOrigin = API_BASE;
+
 interface FetchOptions extends RequestInit {
   skipAuth?: boolean;
 }
@@ -14,8 +17,10 @@ class ApiError extends Error {
 async function fetchApi<T>(endpoint: string, options: FetchOptions = {}): Promise<T> {
   const { skipAuth = false, ...fetchOptions } = options;
 
+  const isFormData = typeof FormData !== 'undefined' && fetchOptions.body instanceof FormData;
+
   const headers: HeadersInit = {
-    'Content-Type': 'application/json',
+    ...(isFormData ? {} : { 'Content-Type': 'application/json' }),
     ...fetchOptions.headers,
   };
 
@@ -41,7 +46,7 @@ async function fetchApi<T>(endpoint: string, options: FetchOptions = {}): Promis
 
 export const api = {
   // Auth
-  register: (data: { email: string; password: string; phone?: string }) =>
+  register: (data: { email: string; password: string; phone?: string; roles?: string[] }) =>
     fetchApi<{ user: any; access_token: string; refresh_token: string }>('/api/auth/register', {
       method: 'POST',
       body: JSON.stringify(data),
@@ -55,7 +60,29 @@ export const api = {
       skipAuth: true,
     }),
 
-  logout: () => fetchApi<void>('/api/auth/logout', { method: 'POST' }),
+  getMe: () => fetchApi<{ user: any }>('/api/auth/me'),
+
+  logout: () => {
+    const refreshToken = localStorage.getItem('refresh_token') || '';
+    return fetchApi<void>('/api/auth/logout', {
+      method: 'POST',
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    });
+  },
+
+  verifyEmail: (token: string) =>
+    fetchApi<{ status: string }>('/api/auth/verify-email', {
+      method: 'POST',
+      body: JSON.stringify({ token }),
+      skipAuth: true,
+    }),
+
+  resetPassword: (token: string, newPassword: string) =>
+    fetchApi<{ status: string }>('/api/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, new_password: newPassword }),
+      skipAuth: true,
+    }),
 
   refreshToken: (refreshToken: string) =>
     fetchApi<{ access_token: string }>('/api/auth/refresh', {
@@ -79,18 +106,34 @@ export const api = {
 
   getProduct: (id: string) => fetchApi<{ product: any }>(`/api/products/${id}`),
 
-  createProduct: (data: FormData) =>
+  createProduct: (data: {
+    title: string;
+    description: string;
+    price_cfa: number;
+    category: string;
+    file_key: string;
+    affiliate_enabled?: boolean;
+    max_closer_commission_pct?: number;
+  }) =>
     fetchApi<{ product: any }>('/api/vendor/products', {
       method: 'POST',
-      body: data as any,
-      headers: {}, // Let browser set Content-Type for multipart
+      body: JSON.stringify(data),
     }),
 
-  updateProduct: (id: string, data: FormData) =>
+  updateProduct: (
+    id: string,
+    data: {
+      title?: string;
+      description?: string;
+      price_cfa?: number;
+      category?: string;
+      affiliate_enabled?: boolean;
+      max_closer_commission_pct?: number;
+    }
+  ) =>
     fetchApi<{ product: any }>(`/api/vendor/products/${id}`, {
       method: 'PUT',
-      body: data as any,
-      headers: {},
+      body: JSON.stringify(data),
     }),
 
   deleteProduct: (id: string) =>
@@ -132,6 +175,15 @@ export const api = {
       body: JSON.stringify({ amount }),
     }),
 
+  // Closer (affiliation)
+  getCloserLinks: () => fetchApi<{ links: any[] }>('/api/closer/links'),
+
+  createReferralLink: (data: { product_id: string; commission_pct: number }) =>
+    fetchApi<{ link: any }>('/api/closer/links', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
   // Admin
   getPendingProducts: () => fetchApi<{ products: any[] }>('/api/admin/products/pending'),
 
@@ -143,8 +195,16 @@ export const api = {
 
   getUsers: () => fetchApi<{ users: any[] }>('/api/admin/users'),
 
+  setRole: (id: string, role: string, action: 'grant' | 'revoke') =>
+    fetchApi<void>(`/api/admin/users/${id}/role`, {
+      method: 'PUT',
+      body: JSON.stringify({ role, action }),
+    }),
+
   suspendUser: (id: string) =>
     fetchApi<void>(`/api/admin/users/${id}/suspend`, { method: 'PUT' }),
+
+  getSales: () => fetchApi<{ sales: any[] }>('/api/admin/sales'),
 
   getStats: () =>
     fetchApi<{
