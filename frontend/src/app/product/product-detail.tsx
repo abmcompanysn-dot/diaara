@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { ProductImage } from '@/components/product-image';
 
 interface Product {
   id: string;
@@ -14,6 +15,7 @@ interface Product {
   price_cfa: number;
   category: string;
   moderation_status: string;
+  cover_image_key?: string;
 }
 
 export default function ProductDetailPage() {
@@ -80,31 +82,34 @@ export default function ProductDetailPage() {
         </Button>
       </nav>
 
-      <div className="border rounded-lg p-8">
-        <div className="flex justify-between items-start mb-4">
-          <h1 className="text-3xl font-bold">{product.title}</h1>
-          <span className="text-2xl text-primary font-bold">{formatPrice(product.price_cfa)}</span>
+      <div className="border rounded-lg overflow-hidden">
+        <ProductImage product={product} className="h-64" />
+        <div className="p-8">
+          <div className="flex justify-between items-start mb-4">
+            <h1 className="text-3xl font-bold">{product.title}</h1>
+            <span className="text-2xl text-primary font-bold">{formatPrice(product.price_cfa)}</span>
+          </div>
+
+          <Badge className="mb-4">{product.category}</Badge>
+
+          <p className="text-muted-foreground mb-8 whitespace-pre-line">
+            {product.description || 'Pas de description pour ce produit.'}
+          </p>
+
+          {error && <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded">{error}</div>}
+
+          <Button
+            onClick={handleBuy}
+            disabled={buying}
+            className="w-full h-11 font-semibold"
+          >
+            {buying ? 'Redirection vers le paiement...' : 'Acheter maintenant'}
+          </Button>
+
+          <p className="mt-4 text-sm text-green-900/50 text-center">
+            Paiement sécurisé par mobile money (Wave, Orange Money, MTN MoMo)
+          </p>
         </div>
-
-        <Badge className="mb-4">{product.category}</Badge>
-
-        <p className="text-muted-foreground mb-8 whitespace-pre-line">
-          {product.description || 'Pas de description pour ce produit.'}
-        </p>
-
-        {error && <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded">{error}</div>}
-
-        <Button
-          onClick={handleBuy}
-          disabled={buying}
-          className="w-full h-11 font-semibold"
-        >
-          {buying ? 'Redirection vers le paiement...' : 'Acheter maintenant'}
-        </Button>
-
-        <p className="mt-4 text-sm text-green-900/50 text-center">
-          Paiement sécurisé par mobile money (Wave, Orange Money, MTN MoMo)
-        </p>
       </div>
     </main>
   );

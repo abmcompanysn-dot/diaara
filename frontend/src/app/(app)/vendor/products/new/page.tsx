@@ -33,8 +33,31 @@ export default function NewProductPage() {
   const [affiliateEnabled, setAffiliateEnabled] = useState(false);
   const [maxCommission, setMaxCommission] = useState('10');
   const [file, setFile] = useState<File | null>(null);
+  const [coverFile, setCoverFile] = useState<File | null>(null);
+  const [coverKey, setCoverKey] = useState('');
+  const [coverPreview, setCoverPreview] = useState('');
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
+
+  const handleCoverSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0] || null;
+    setCoverFile(f);
+    if (!f) {
+      setCoverKey('');
+      setCoverPreview('');
+      return;
+    }
+    setCoverPreview(URL.createObjectURL(f));
+    try {
+      const form = new FormData();
+      form.append('file', f);
+      form.append('type', 'cover');
+      const res = await api.uploadFile(form);
+      setCoverKey(res.file_key);
+    } catch (err: any) {
+      setError(err.message || 'Échec du téléversement de la couverture');
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -64,6 +87,7 @@ export default function NewProductPage() {
         price_cfa: priceNum,
         category,
         file_key: uploadResult.file_key,
+        cover_image_key: coverKey || undefined,
         affiliate_enabled: affiliateEnabled,
         max_closer_commission_pct: affiliateEnabled ? parseInt(maxCommission, 10) || 0 : 0,
       });
@@ -158,6 +182,26 @@ export default function NewProductPage() {
                 required
               />
               <p className="text-xs text-muted-foreground">Taille max : 50 Mo</p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="cover">Image de couverture (optionnel)</Label>
+              {coverPreview && (
+                <img
+                  src={coverPreview}
+                  alt="Aperçu de la couverture"
+                  className="w-full h-40 object-cover rounded-lg border border-border"
+                />
+              )}
+              <Input
+                id="cover"
+                type="file"
+                accept="image/*"
+                onChange={handleCoverSelect}
+              />
+              <p className="text-xs text-muted-foreground">
+                PNG, JPG ou WebP. La carte du catalogue affichera cette image.
+              </p>
             </div>
 
             <div className="p-4 border border-border rounded-lg bg-secondary/60 space-y-3">

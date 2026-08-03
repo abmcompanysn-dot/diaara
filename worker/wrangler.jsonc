@@ -4,26 +4,32 @@
   "compatibility_date": "2026-01-01",
   "main": "src/index.ts",
 
-  "vars": {
-    // URL du backend (via tunnel/docker au déploiement).
-    "BACKEND_URL": "http://backend:8080"
+  // Frontend statique exporté (Next.js output: export), servi par env.ASSETS.
+  // run_worker_first: le Worker gère TOUTES les requêtes (proxy API/WS + /r/,
+  // rate-limit) puis sert les assets via env.ASSETS.fetch.
+  "assets": {
+    "directory": "../frontend/out",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+    "not_found_handling": "404-page"
   },
 
-  // Domaines personnalisés — à configurer au déploiement (ex. api.diarra.sn).
+  "vars": {
+    // URL du backend Go hébergé sur Render (free tier).
+    "BACKEND_URL": "https://diarra-backend.onrender.com"
+  },
+
+  // Domaines personnalisés — à configurer au déploiement (ex. diarra.sn).
   // "routes": [
-  //   { "pattern": "api.diarra.sn", "zone_name": "diarra.sn" }
+  //   { "pattern": "diarra.sn", "zone_name": "diarra.sn" }
   // ],
 
   "kv_namespaces": [
     { "binding": "RATE_LIMITS", "id": "a07ad8fee1694782af048ca6eb17981f" }
   ],
 
-  "queues": {
-    "producers": [
-      { "queue": "diarra-delivery", "binding": "DELIVERY_QUEUE" }
-    ],
-    "consumers": [
-      { "queue": "diarra-delivery", "max_batch_size": 10 }
-    ]
+  // Cron toutes les 5 min : garde l'instance Render (free tier) éveillée.
+  "triggers": {
+    "crons": ["*/5 * * * *"]
   }
 }

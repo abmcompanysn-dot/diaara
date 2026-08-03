@@ -2,7 +2,6 @@ export interface Env {
   ASSETS: Fetcher;
   BACKEND_URL: string;
   RATE_LIMITS: KVNamespace;
-  DELIVERY_QUEUE: Queue;
 }
 
 export default {
@@ -20,7 +19,7 @@ export default {
         });
       }
 
-      const backendUrl = env.BACKEND_URL || 'http://backend:8080';
+      const backendUrl = env.BACKEND_URL || 'https://diarra-backend.onrender.com';
       const targetUrl = `${backendUrl}${url.pathname}${url.search}`;
 
       const headers = new Headers(request.headers);
@@ -37,6 +36,12 @@ export default {
           redirect: isReferral ? 'manual' : 'follow',
         });
 
+        // WebSocket (101 Switching Protocols) : renvoyer la réponse telle quelle,
+        // la reconstruire casserait l'upgrade.
+        if (response.status === 101) {
+          return response;
+        }
+
         return new Response(response.body, {
           status: response.status,
           headers: new Headers(response.headers),
@@ -50,6 +55,15 @@ export default {
     }
 
     return env.ASSETS.fetch(request);
+  },
+
+  // Garde l'instance Render (free tier, sleep après 15 min sans trafic) éveillée.
+  async scheduled(_event: ScheduledEvent, env: Env): Promise<void> {
+    try {
+      await fetch(`${env.BACKEND_URL}/health`, { method: 'HEAD' });
+    } catch {
+      // silencieux : le prochain tick réessaiera
+    }
   },
 };
 

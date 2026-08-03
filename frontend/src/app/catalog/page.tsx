@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ProductImage } from '@/components/product-image';
 import {
   Select,
   SelectContent,
@@ -20,6 +21,7 @@ interface Product {
   price_cfa: number;
   category: string;
   moderation_status: string;
+  cover_image_key?: string;
 }
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -125,25 +127,28 @@ export default function CatalogPage() {
               <Link
                 key={product.id}
                 href={`/product?id=${product.id}`}
-                className="group bg-white rounded-xl p-6 shadow-card hover:shadow-lift transition-all hover:-translate-y-0.5 border border-green-900/5"
+                className="group bg-white rounded-xl overflow-hidden shadow-card hover:shadow-lift transition-all hover:-translate-y-0.5 border border-green-900/5"
               >
-                <div className="flex justify-between items-start mb-3">
-                  <span className="px-2 py-1 bg-green-50 text-green-700 rounded text-xs font-medium">
-                    {CATEGORY_LABELS[product.category] || product.category}
-                  </span>
-                  <span className="font-mono font-bold text-green-600">
-                    {formatPrice(product.price_cfa)}
-                  </span>
+                <ProductImage product={product} className="h-44" />
+                <div className="p-5">
+                  <div className="flex justify-between items-start mb-2">
+                    <span className="px-2 py-1 bg-green-50 text-green-700 rounded text-xs font-medium">
+                      {CATEGORY_LABELS[product.category] || product.category}
+                    </span>
+                    <span className="font-mono font-bold text-green-600">
+                      {formatPrice(product.price_cfa)}
+                    </span>
+                  </div>
+                  <h2 className="font-display font-bold text-lg text-green-950 group-hover:text-green-600 transition-colors">
+                    {product.title}
+                  </h2>
+                  <p className="text-sm text-green-900/60 mt-1 line-clamp-2">
+                    {product.description || 'Pas de description'}
+                  </p>
+                  <p className="mt-4 font-mono text-xs text-green-900/40 group-hover:text-green-600 transition-colors">
+                    Voir le produit →
+                  </p>
                 </div>
-                <h2 className="font-display font-bold text-lg text-green-950 group-hover:text-green-600 transition-colors">
-                  {product.title}
-                </h2>
-                <p className="text-sm text-green-900/60 mt-1 line-clamp-2">
-                  {product.description || 'Pas de description'}
-                </p>
-                <p className="mt-4 font-mono text-xs text-green-900/40 group-hover:text-green-600 transition-colors">
-                  Voir le produit →
-                </p>
               </Link>
             ))}
           </div>

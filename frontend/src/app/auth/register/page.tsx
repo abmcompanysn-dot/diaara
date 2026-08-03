@@ -20,11 +20,6 @@ import { cn } from '@/lib/utils';
 
 const ROLE_OPTIONS = [
   {
-    value: 'client',
-    title: 'Client',
-    desc: 'Acheter des produits numériques',
-  },
-  {
     value: 'vendeur',
     title: 'Vendeur',
     desc: 'Vendre vos biens numériques',
@@ -47,7 +42,6 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
 
   const toggleRole = (value: string) => {
-    if (value === 'client') return;
     setSelected((prev) =>
       prev.includes(value) ? prev.filter((r) => r !== value) : [...prev, value]
     );
@@ -59,7 +53,12 @@ export default function RegisterPage() {
     setLoading(true);
 
     try {
-      const result = await api.register({ email, password, phone, roles: selected });
+      const result = await api.register({
+        email,
+        password,
+        phone: phone || undefined,
+        roles: selected,
+      });
       await login(result.access_token, result.refresh_token);
       router.push('/dashboard');
     } catch (err: any) {
@@ -133,21 +132,46 @@ export default function RegisterPage() {
                 <span className="text-green-900/50 font-normal"> (cumulable)</span>
               </Label>
               <div className="space-y-2">
+                {/* Client : inclus par défaut, non désélectionnable */}
+                <div className="flex items-center gap-3 p-3 border border-border rounded-lg bg-muted/40 cursor-default">
+                  <span
+                    className="w-5 h-5 rounded-full border bg-primary border-primary text-white flex items-center justify-center shrink-0"
+                    aria-hidden
+                  >
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="3"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="m4.5 12.5 5 5 10-11" />
+                    </svg>
+                  </span>
+                  <span>
+                    <span className="block font-semibold text-foreground text-sm">Client</span>
+                    <span className="block text-xs text-muted-foreground">
+                      Acheter des produits numériques — inclus par défaut
+                    </span>
+                  </span>
+                </div>
+
                 {ROLE_OPTIONS.map((opt) => {
-                  const active = opt.value === 'client' || selected.includes(opt.value);
+                  const active = selected.includes(opt.value);
                   return (
                     <Button
                       key={opt.value}
                       type="button"
                       variant="ghost"
                       onClick={() => toggleRole(opt.value)}
-                      disabled={opt.value === 'client'}
                       className={cn(
                         'w-full h-auto flex items-start justify-start gap-3 p-3 border rounded-lg text-left transition-all',
                         active
                           ? 'border-ring bg-secondary'
-                          : 'border-border hover:border-ring/60',
-                        opt.value === 'client' && 'cursor-default disabled:opacity-100 disabled:pointer-events-auto'
+                          : 'border-border hover:border-ring/60'
                       )}
                     >
                       <span
@@ -183,8 +207,8 @@ export default function RegisterPage() {
                 })}
               </div>
               <p className="text-xs text-muted-foreground">
-                Le rôle Client est automatique. Vous pourrez aussi changer de rôle plus tard via
-                l&apos;administrateur.
+                Le rôle Client est inclus automatiquement. Vous pourrez aussi changer de rôle plus
+                tard via l&apos;administrateur.
               </p>
             </div>
 

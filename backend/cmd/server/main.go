@@ -211,6 +211,7 @@ func main() {
 	r.Route("/api/products", func(r chi.Router) {
 		r.Get("/", productHandler.List)
 		r.Get("/{id}", productHandler.Get)
+		r.Get("/{id}/cover", productHandler.Cover)
 	})
 
 	// Vendor product routes (vendeur authentifié)

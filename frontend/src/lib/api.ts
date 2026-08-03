@@ -112,6 +112,7 @@ export const api = {
     price_cfa: number;
     category: string;
     file_key: string;
+    cover_image_key?: string;
     affiliate_enabled?: boolean;
     max_closer_commission_pct?: number;
   }) =>

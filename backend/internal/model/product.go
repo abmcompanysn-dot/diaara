@@ -10,6 +10,7 @@ type Product struct {
 	PriceCFA               int       `json:"price_cfa"`
 	Category               string    `json:"category"`
 	FileKey                string    `json:"file_key"`
+	CoverImageKey          *string   `json:"cover_image_key,omitempty"`
 	ModerationStatus       string    `json:"moderation_status"`
 	ModerationNote         *string   `json:"moderation_note,omitempty"`
 	AffiliateEnabled       bool      `json:"affiliate_enabled"`
@@ -24,6 +25,8 @@ type CreateProductInput struct {
 	PriceCFA    int     `json:"price_cfa"`
 	Category    string  `json:"category"`
 	FileKey     string  `json:"file_key"`
+	// CoverImageKey : clé objet de l'image de couverture (optionnel).
+	CoverImageKey string `json:"cover_image_key,omitempty"`
 	// Affiliation (closer) : si AffiliateEnabled, les closers peuvent générer
 	// un lien avec une commission ≤ MaxCloserCommissionPct.
 	AffiliateEnabled       bool    `json:"affiliate_enabled"`
@@ -35,6 +38,7 @@ type UpdateProductInput struct {
 	Description            *string  `json:"description,omitempty"`
 	PriceCFA               *int     `json:"price_cfa,omitempty"`
 	Category               *string  `json:"category,omitempty"`
+	CoverImageKey          *string  `json:"cover_image_key,omitempty"`
 	AffiliateEnabled       *bool    `json:"affiliate_enabled,omitempty"`
 	MaxCloserCommissionPct *float64 `json:"max_closer_commission_pct,omitempty"`
 }

@@ -15,8 +15,8 @@ var (
 	ErrReferralExists   = errors.New("referral link already exists")
 )
 
-// isUniqueViolation détecte l'erreur Postgres 23505 (contrainte unique).
-func isUniqueViolation(err error) bool {
+// IsUniqueViolation détecte l'erreur Postgres 23505 (contrainte unique).
+func IsUniqueViolation(err error) bool {
 	var pgErr *pgconn.PgError
 	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }
@@ -54,7 +54,7 @@ func (r *ReferralRepo) Create(ctx context.Context, closerID string, input model.
 	)
 	link, err := scanReferral(row)
 	if err != nil {
-		if isUniqueViolation(err) {
+		if IsUniqueViolation(err) {
 			return nil, ErrReferralExists
 		}
 		return nil, err

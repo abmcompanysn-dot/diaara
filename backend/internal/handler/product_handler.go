@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/diarra/backend/internal/middleware"
 	"github.com/diarra/backend/internal/model"
@@ -23,6 +24,7 @@ type ProductHandler struct {
 // StorageService est l'interface minimale dont le handler a besoin.
 type StorageService interface {
 	Upload(ctx context.Context, key string, data []byte) error
+	GenerateSignedURL(ctx context.Context, key string, expiry time.Duration) (string, error)
 }
 
 func NewProductHandler(productRepo *repository.ProductRepo, storage StorageService) *ProductHandler {
@@ -134,6 +136,10 @@ func (h *ProductHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	key := storage.NewFileKey(userID, header.Filename)
+	// Champ "type" : "cover" → image de couverture (préfixe covers/), sinon fichier vendu.
+	if r.FormValue("type") == "cover" {
+		key = "covers/" + key
+	}
 	if err := h.storage.Upload(r.Context(), key, data); err != nil {
 		http.Error(w, `{"error":"upload_failed"}`, http.StatusInternalServerError)
 		return
@@ -145,6 +151,33 @@ func (h *ProductHandler) Upload(w http.ResponseWriter, r *http.Request) {
 		"file_key": key,
 		"size":     strconv.Itoa(len(data)),
 	})
+}
+
+// Cover — public. Redirige vers une URL signée (1 h) de l'image de couverture.
+func (h *ProductHandler) Cover(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	product, err := h.productRepo.FindByID(r.Context(), id)
+	if err != nil {
+		http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
+		return
+	}
+	if product.CoverImageKey == nil || *product.CoverImageKey == "" {
+		http.Error(w, `{"error":"no_cover"}`, http.StatusNotFound)
+		return
+	}
+
+	if h.storage == nil {
+		http.Error(w, `{"error":"storage_not_configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	url, err := h.storage.GenerateSignedURL(r.Context(), *product.CoverImageKey, time.Hour)
+	if err != nil {
+		http.Error(w, `{"error":"cover_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, url, http.StatusFound)
 }
 
 // Create — vendeur authentifié

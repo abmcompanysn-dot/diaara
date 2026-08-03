@@ -59,6 +59,12 @@ func (s *AuthService) Register(ctx context.Context, input model.RegisterInput) (
 		}
 	}
 
+	// Téléphone vide → NULL en base (colonne UNIQUE : "" casserait la 2e
+	// inscription sans téléphone).
+	if input.Phone != nil && *input.Phone == "" {
+		input.Phone = nil
+	}
+
 	hash, err := auth.HashPassword(input.Password)
 	if err != nil {
 		return nil, err
@@ -66,7 +72,10 @@ func (s *AuthService) Register(ctx context.Context, input model.RegisterInput) (
 
 	user, err := s.userRepo.Create(ctx, input, hash)
 	if err != nil {
-		return nil, ErrUserAlreadyExists
+		if repository.IsUniqueViolation(err) {
+			return nil, ErrUserAlreadyExists
+		}
+		return nil, err
 	}
 
 	// Auto-inscription : les rôles demandés sont accordés immédiatement

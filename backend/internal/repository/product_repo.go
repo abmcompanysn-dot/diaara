@@ -22,12 +22,12 @@ func NewProductRepo(pool *pgxpool.Pool) *ProductRepo {
 }
 
 const productColumns = `id, vendor_id, title, description, price_cfa, category, file_key,
-	moderation_status, moderation_note, affiliate_enabled, max_closer_commission_pct, created_at, updated_at`
+	cover_image_key, moderation_status, moderation_note, affiliate_enabled, max_closer_commission_pct, created_at, updated_at`
 
 func scanProduct(row pgx.Row) (*model.Product, error) {
 	p := &model.Product{}
 	err := row.Scan(&p.ID, &p.VendorID, &p.Title, &p.Description, &p.PriceCFA, &p.Category,
-		&p.FileKey, &p.ModerationStatus, &p.ModerationNote, &p.AffiliateEnabled,
+		&p.FileKey, &p.CoverImageKey, &p.ModerationStatus, &p.ModerationNote, &p.AffiliateEnabled,
 		&p.MaxCloserCommissionPct, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -41,11 +41,11 @@ func scanProduct(row pgx.Row) (*model.Product, error) {
 func (r *ProductRepo) Create(ctx context.Context, input model.CreateProductInput, vendorID string) (*model.Product, error) {
 	row := r.pool.QueryRow(ctx,
 		`INSERT INTO products (vendor_id, title, description, price_cfa, category, file_key,
-			affiliate_enabled, max_closer_commission_pct)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+			cover_image_key, affiliate_enabled, max_closer_commission_pct)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		 RETURNING `+productColumns,
 		vendorID, input.Title, input.Description, input.PriceCFA, input.Category, input.FileKey,
-		input.AffiliateEnabled, input.MaxCloserCommissionPct,
+		input.CoverImageKey, input.AffiliateEnabled, input.MaxCloserCommissionPct,
 	)
 	return scanProduct(row)
 }
@@ -157,6 +157,11 @@ func (r *ProductRepo) Update(ctx context.Context, id string, input model.UpdateP
 	if input.Category != nil {
 		sets = append(sets, `category = $`+itoa(argIdx))
 		args = append(args, *input.Category)
+		argIdx++
+	}
+	if input.CoverImageKey != nil {
+		sets = append(sets, `cover_image_key = $`+itoa(argIdx))
+		args = append(args, *input.CoverImageKey)
 		argIdx++
 	}
 	if input.AffiliateEnabled != nil {

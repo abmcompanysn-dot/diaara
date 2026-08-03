@@ -15,5 +15,8 @@ build/
 # Cloudflare Worker
 .wrangler/
 
+# Neon CLI (session / credentials locales)
+.neon
+
 # Logs
 *.log
