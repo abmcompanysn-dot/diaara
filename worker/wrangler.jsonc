@@ -1,0 +1,30 @@
+{
+  "name": "diarra-worker",
+  "compatibility_date": "2024-07-01",
+  "main": "src/index.ts",
+
+  "vars": {
+    "BACKEND_URL": "http://backend:8080"
+  },
+
+  "routes": [
+    { "pattern": "diarra.example.com", "zone_name": "example.com" }
+  ],
+
+  "kv_namespaces": [
+    { "binding": "RATE_LIMITS", "id": "your-kv-namespace-id" }
+  ],
+
+  "r2_buckets": [
+    { "binding": "DIARRA_BUCKET", "bucket_name": "diarra-files" }
+  ],
+
+  "queues": {
+    "producers": [
+      { "queue": "diarra-delivery", "binding": "DELIVERY_QUEUE" }
+    ],
+    "consumers": [
+      { "queue": "diarra-delivery", "max_batch_size": 10 }
+    ]
+  }
+}

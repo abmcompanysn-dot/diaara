@@ -1,0 +1,102 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --ink: #052018;
+  --ink-light: #0a3225;
+  --green: #0f7a50;
+  --green-bright: #10a05f;
+  --lime: #c9f22e;
+  --paper: #f2f7f4;
+  --orange: #ff7a3d;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  color: var(--ink);
+  background: var(--paper);
+  font-family: 'Work Sans', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Pattern wax en vert : losanges imbriqués, décor discret */
+.wax-pattern {
+  background-image: url("data:image/svg+xml,%3Csvg width='56' height='56' viewBox='0 0 56 56' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M28 6l14 14-14 14L14 20z' fill='none' stroke='%2317C26F' stroke-opacity='0.14' stroke-width='1'/%3E%3Cpath d='M28 26l10 10-10 10-10-10z' fill='none' stroke='%2310A05F' stroke-opacity='0.10' stroke-width='1'/%3E%3C/svg%3E");
+}
+
+.wax-pattern-dark {
+  background-image: url("data:image/svg+xml,%3Csvg width='56' height='56' viewBox='0 0 56 56' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M28 6l14 14-14 14L14 20z' fill='none' stroke='%230A3225' stroke-opacity='0.07' stroke-width='1'/%3E%3Cpath d='M28 26l10 10-10 10-10-10z' fill='none' stroke='%230A3225' stroke-opacity='0.06' stroke-width='1'/%3E%3C/svg%3E");
+}
+
+/* Dégradés verts signature */
+.gradient-green {
+  background: linear-gradient(135deg, #0e4431 0%, #0f7a50 55%, #10a05f 100%);
+}
+
+.gradient-green-soft {
+  background: linear-gradient(135deg, #ebfbf2 0%, #d3f5e4 60%, #bdf0d6 100%);
+}
+
+/* Ticker défilant (esprit téléboutique) */
+@keyframes ticker {
+  0% {
+    transform: translateX(0);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.ticker-track {
+  animation: ticker 22s linear infinite;
+}
+
+/* Curseur de frappe du ticket */
+@keyframes blink {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.receipt-cursor::after {
+  content: '▊';
+  color: var(--green-bright);
+  animation: blink 1s step-start infinite;
+}
+
+/* Accent souligné */
+.underline-accent {
+  background-image: linear-gradient(to top, var(--lime) 0.35em, transparent 0.35em);
+  padding: 0 0.1em;
+}
+
+.underline-green {
+  background-image: linear-gradient(to top, rgba(16, 160, 95, 0.3) 0.35em, transparent 0.35em);
+  padding: 0 0.1em;
+}
+
+/* Focus visible clavier */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible {
+  outline: 2px solid var(--green-bright);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ticker-track {
+    animation: none;
+  }
+}
