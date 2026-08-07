@@ -23,6 +23,9 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { PageHeader } from '@/components/page-header';
+import { ArrowLeftIcon } from '@/components/icons';
+import { CATEGORY_LABELS } from '@/lib/constants';
 
 export default function NewProductPage() {
   const router = useRouter();
@@ -100,17 +103,23 @@ export default function NewProductPage() {
   };
 
   return (
-    <main className="min-h-screen p-8 max-w-2xl mx-auto">
-      <nav className="mb-6">
-        <Button variant="outline" size="sm" render={<Link href="/vendor/products" />}>
-          ← Mes produits
-        </Button>
-      </nav>
+    <main className="min-h-screen">
+      <PageHeader
+        eyebrow="// espace vendeur"
+        title="Nouveau produit"
+        actions={
+          <Button variant="outline" size="sm" render={<Link href="/vendor/products" />}>
+            <ArrowLeftIcon size={16} className="mr-2" />
+            Mes produits
+          </Button>
+        }
+      />
 
-      <h1 className="text-3xl font-bold mb-6">Nouveau produit</h1>
-
+      <section className="max-w-2xl mx-auto px-4 sm:px-6 py-10">
       {error && (
-        <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded">{error}</div>
+        <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded text-sm" role="alert">
+          {error}
+        </div>
       )}
 
       <Card className="shadow-card border-green-900/5">
@@ -143,7 +152,7 @@ export default function NewProductPage() {
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid sm:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="price">Prix (FCFA) *</Label>
                 <Input
@@ -163,11 +172,11 @@ export default function NewProductPage() {
                     <SelectValue placeholder="Choisir une catégorie" />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="subscription">Clé d&apos;abonnement</SelectItem>
-                    <SelectItem value="account">Compte</SelectItem>
-                    <SelectItem value="ebook">Ebook</SelectItem>
-                    <SelectItem value="pdf">PDF</SelectItem>
-                    <SelectItem value="other">Autre</SelectItem>
+                    {Object.entries(CATEGORY_LABELS).map(([value, label]) => (
+                      <SelectItem key={value} value={value}>
+                        {label}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -243,6 +252,7 @@ export default function NewProductPage() {
           </form>
         </CardContent>
       </Card>
+      </section>
     </main>
   );
 }

@@ -5,14 +5,13 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { PageHeader } from '@/components/page-header';
+import { PageLoader } from '@/components/page-loader';
+import { EmptyState } from '@/components/empty-state';
+import { ConfirmDialog } from '@/components/confirm-dialog';
+import { StoreIcon, TrashIcon } from '@/components/icons';
+import { formatPrice, PRODUCT_STATUS_BADGE, PRODUCT_STATUS_LABELS, CATEGORY_LABELS } from '@/lib/constants';
 
 interface Product {
   id: string;
@@ -22,22 +21,11 @@ interface Product {
   moderation_status: string;
 }
 
-const STATUS_BADGE: Record<string, string> = {
-  pending: 'bg-yellow-100 text-yellow-700 hover:bg-yellow-100',
-  approved: 'bg-green-100 text-green-700 hover:bg-green-100',
-  rejected: 'bg-red-100 text-red-700 hover:bg-red-100',
-};
-
-const STATUS_LABELS: Record<string, string> = {
-  pending: 'En attente',
-  approved: 'Approuvé',
-  rejected: 'Refusé',
-};
-
 export default function VendorProductsPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [toDelete, setToDelete] = useState<Product | null>(null);
 
   useEffect(() => {
     loadProducts();
@@ -55,87 +43,120 @@ export default function VendorProductsPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Supprimer ce produit ?')) return;
+  const handleDelete = async () => {
+    if (!toDelete) return;
     try {
-      await api.deleteProduct(id);
-      setProducts(products.filter((p) => p.id !== id));
+      await api.deleteProduct(toDelete.id);
+      setProducts(products.filter((p) => p.id !== toDelete.id));
     } catch (err: any) {
-      alert(err.message || 'Suppression échouée');
+      setError(err.message || 'Suppression échouée');
+    } finally {
+      setToDelete(null);
     }
   };
 
-  if (loading) return <main className="p-8 text-center">Chargement...</main>;
+  if (loading)
+    return (
+      <main>
+        <PageHeader
+          eyebrow="// espace vendeur"
+          title="Mes produits"
+          description="Gérez votre boutique"
+        />
+        <PageLoader />
+      </main>
+    );
 
   return (
-    <main className="min-h-screen p-8 max-w-4xl mx-auto">
-      <header className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Mes produits</h1>
-          <p className="text-green-700">{products.length} produit(s) en boutique</p>
-        </div>
-        <div className="flex gap-3">
-          <Button variant="outline" size="sm" render={<Link href="/vendor/earnings" />}>
-            Revenus
-          </Button>
-          <Button size="sm" render={<Link href="/vendor/products/new" />}>
-            + Nouveau produit
-          </Button>
-        </div>
-      </header>
+    <main>
+      <PageHeader
+        eyebrow="// espace vendeur"
+        title="Mes produits"
+        description={`${products.length} produit(s) en boutique`}
+        actions={
+          <>
+            <Button variant="outline" size="sm" render={<Link href="/vendor/earnings" />}>
+              Revenus
+            </Button>
+            <Button size="sm" render={<Link href="/vendor/products/new" />}>
+              + Nouveau produit
+            </Button>
+          </>
+        }
+      />
 
-      {error && <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded">{error}</div>}
+      <section className="max-w-6xl mx-auto px-4 sm:px-6 py-10">
+        {error && (
+          <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded text-sm" role="alert">
+            {error}
+          </div>
+        )}
 
-      {products.length === 0 ? (
-        <div className="text-center py-12 border rounded-lg">
-          <p className="text-green-900/50 mb-4">Aucun produit pour le moment.</p>
-          <Button variant="link" render={<Link href="/vendor/products/new" />}>
-            Déposer mon premier produit
-          </Button>
-        </div>
-      ) : (
-        <div className="rounded-lg border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Produit</TableHead>
-                <TableHead>Prix</TableHead>
-                <TableHead>Catégorie</TableHead>
-                <TableHead>Statut</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {products.map((product) => (
-                <TableRow key={product.id}>
-                  <TableCell>
-                    <Link href={`/product?id=${product.id}`} className="font-medium text-primary">
-                      {product.title}
-                    </Link>
-                  </TableCell>
-                  <TableCell>{product.price_cfa.toLocaleString()} FCFA</TableCell>
-                  <TableCell>{product.category}</TableCell>
-                  <TableCell>
-                    <Badge className={STATUS_BADGE[product.moderation_status]}>
-                      {STATUS_LABELS[product.moderation_status] || product.moderation_status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                      onClick={() => handleDelete(product.id)}
-                    >
-                      Supprimer
-                    </Button>
-                  </TableCell>
+        {products.length === 0 ? (
+          <EmptyState
+            icon={StoreIcon}
+            title="Aucun produit pour le moment"
+            description="Déposez votre premier fichier pour ouvrir votre boutique."
+            action={
+              <Button render={<Link href="/vendor/products/new" />}>Déposer mon premier produit</Button>
+            }
+          />
+        ) : (
+          <div className="rounded-xl border border-green-900/10 bg-white shadow-card overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Produit</TableHead>
+                  <TableHead>Prix</TableHead>
+                  <TableHead>Catégorie</TableHead>
+                  <TableHead>Statut</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
+              </TableHeader>
+              <TableBody>
+                {products.map((product) => (
+                  <TableRow key={product.id}>
+                    <TableCell>
+                      <Link href={`/product?id=${product.id}`} className="font-medium text-primary">
+                        {product.title}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="font-mono">{formatPrice(product.price_cfa)}</TableCell>
+                    <TableCell>{CATEGORY_LABELS[product.category] || product.category}</TableCell>
+                    <TableCell>
+                      <Badge className={PRODUCT_STATUS_BADGE[product.moderation_status]}>
+                        {PRODUCT_STATUS_LABELS[product.moderation_status] || product.moderation_status}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-destructive hover:text-destructive hover:bg-destructive/10 min-h-9"
+                        onClick={() => setToDelete(product)}
+                      >
+                        <TrashIcon size={16} className="mr-1.5" />
+                        Supprimer
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </section>
+
+      <ConfirmDialog
+        open={!!toDelete}
+        title="Supprimer ce produit ?"
+        description={`« ${toDelete?.title} » sera retiré de la boutique. Cette action est définitive.`}
+        confirmLabel="Supprimer"
+        cancelLabel="Annuler"
+        danger
+        onConfirm={handleDelete}
+        onCancel={() => setToDelete(null)}
+      />
     </main>
   );
 }

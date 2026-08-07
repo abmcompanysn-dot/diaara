@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { KeyIcon, UserIcon, BookIcon, FileIcon, MonitorIcon, ZapIcon, CheckIcon } from '@/components/icons';
+import { KeyIcon, UserIcon, BookIcon, FileIcon, MonitorIcon, ZapIcon, CheckIcon, DownloadIcon } from '@/components/icons';
 
 const CATEGORIES = [
   { name: 'Clés d\'abonnement', Icon: KeyIcon, desc: 'Spotify, Netflix, Canva Pro, Microsoft 365', href: '/catalog' },
@@ -113,7 +113,7 @@ export default function Home() {
               <div className="border-t-2 border-dashed border-green-900/20 pt-4">
                 <p className="text-center text-xs text-green-900/50 mb-2">--- votre fichier est prêt ---</p>
                 <div className="gradient-green text-lime rounded-lg py-3 text-center font-mono text-sm font-bold">
-                  ⬇ Télécharger · 3 min restantes
+                  <DownloadIcon size={16} className="inline mr-1" />Télécharger · 3 min restantes
                 </div>
               </div>
             </div>
@@ -311,7 +311,7 @@ export default function Home() {
               </div>
               <div className="flex justify-between py-3">
                 <span className="text-white/60">Votre lien</span>
-                <span className="text-green-300">diarra.cm/ref-x2k9</span>
+                <span className="text-green-300">votre-lien-daffiliation</span>
               </div>
             </div>
           </div>

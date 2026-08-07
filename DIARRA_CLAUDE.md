@@ -24,7 +24,7 @@ Diarra est une marketplace dédiée exclusivement aux produits et services numé
 | Stockage & livraison | Cloudflare R2 | Liens signés à expiration courte, watermarking dynamique des PDF |
 | Async / orchestration | Cloudflare Queues | Paiement confirmé → livraison → commission → notifications |
 | Temps réel | PostgreSQL `LISTEN/NOTIFY` + WebSocket (voir section 3) | Remplace Supabase Realtime, sans nouvelle dépendance externe |
-| Paiement | CinetPay ou PayDunya (Wave, Orange Money, MTN MoMo) | Choix précis encore ouvert — voir section 9 |
+| Paiement | **PawaPay** (Orange Money, Wave, MTN MoMo, Free, Moov) | Dépôt mobile money asynchrone + webhook, zone XOF — voir section 9 |
 | Email transactionnel | Resend ou Postmark | Appelé en HTTP direct depuis le Go |
 | Authentification | JWT signé côté Go, hashage bcrypt/argon2 | Entièrement custom, aucune dépendance Auth externe |
 | Rate limiting | WAF Cloudflare (edge) + compteurs en base Postgres | Jamais en mémoire locale du process (angle mort #18) |
@@ -326,7 +326,7 @@ Closer numérique avec commission plafonnée · dashboards temps réel vendeur/c
 ## 8. Décisions ouvertes avant de coder
 
 1. **Base de données** : Neon (managé, recommandé) vs Postgres auto-hébergé (VPS) — arbitrage ops vs coût long terme.
-2. **Agrégateur de paiement principal** : CinetPay vs PayDunya — comparer frais et délais de règlement pour le Sénégal.
+2. **Agrégateur de paiement principal** : **résolu → PawaPay** (dépôt mobile money asynchrone, webhook, zone XOF : Sénégal, Côte d'Ivoire, Bénin, Burkina Faso). Mise en production : créer le compte, obtenir une clé API, configurer le callback URL et lister les IP de callback dans `PAWAPAY_CALLBACK_IPS`.
 3. **Plafond de commission closer** : fixer un maximum (ex. 50 %).
 4. **Politique de remboursement** : à formaliser dans les CGV.
 5. **Statut juridique** : à faire valider par un juriste local.

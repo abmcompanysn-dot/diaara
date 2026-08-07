@@ -3,12 +3,15 @@ package service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/diarra/backend/internal/auth"
 	"github.com/diarra/backend/internal/email"
 	"github.com/diarra/backend/internal/model"
+	"github.com/diarra/backend/internal/otp"
 	"github.com/diarra/backend/internal/repository"
+	"github.com/diarra/backend/internal/sms"
 )
 
 var (
@@ -26,13 +29,19 @@ const (
 
 type AuthService struct {
 	userRepo      *repository.UserRepo
+	otpRepo       *repository.OTPRepo
+	otpService    *otp.Service
+	smsSender     sms.Sender
 	jwtManager    *auth.JWTManager
 	notifications *email.NotificationService
 }
 
-func NewAuthService(userRepo *repository.UserRepo, jwtManager *auth.JWTManager, notifications *email.NotificationService) *AuthService {
+func NewAuthService(userRepo *repository.UserRepo, otpRepo *repository.OTPRepo, otpService *otp.Service, smsSender sms.Sender, jwtManager *auth.JWTManager, notifications *email.NotificationService) *AuthService {
 	return &AuthService{
 		userRepo:      userRepo,
+		otpRepo:       otpRepo,
+		otpService:    otpService,
+		smsSender:     smsSender,
 		jwtManager:    jwtManager,
 		notifications: notifications,
 	}
@@ -42,6 +51,8 @@ type RegisterResult struct {
 	User         *model.User
 	AccessToken  string
 	RefreshToken string
+	EmailOTP     string
+	PhoneOTP     *string
 }
 
 type LoginResult struct {
@@ -49,8 +60,8 @@ type LoginResult struct {
 	RefreshToken string
 }
 
-// Register crée le compte, stocke un token de vérification d'email et
-// enregistre la session (refresh token révocable).
+// Register crée le compte, émet un OTP email obligatoire (+ SMS si téléphone)
+// et enregistre la session (refresh token révocable).
 func (s *AuthService) Register(ctx context.Context, input model.RegisterInput) (*RegisterResult, error) {
 	// Validation des rôles avant toute écriture en base.
 	for _, role := range input.Roles {
@@ -84,8 +95,26 @@ func (s *AuthService) Register(ctx context.Context, input model.RegisterInput) (
 		return nil, err
 	}
 
-	// Vérification d'email : token opaque stocké en hash + email (si configuré)
-	s.issueEmailVerification(ctx, user.ID, user.Email)
+	// Émettre OTP email obligatoire
+	emailCode, err := s.otpService.Issue(ctx, user.ID, model.OTPChannelEmail, model.OTPPurposeEmailVerify)
+	if err != nil {
+		return nil, err
+	}
+	if s.notifications != nil {
+		go s.notifications.SendOTP(context.Background(), user.Email, emailCode, "vérification de l'email")
+	}
+
+	// Émettre OTP SMS si téléphone fourni
+	var smsCode string
+	if user.Phone != nil {
+		smsCode, err = s.otpService.Issue(ctx, user.ID, model.OTPChannelSMS, model.OTPPurposePhoneVerify)
+		if err != nil {
+			return nil, err
+		}
+		if s.smsSender != nil {
+			go s.smsSender.Send(context.Background(), *user.Phone, fmt.Sprintf("Votre code DIARRA : %s", smsCode))
+		}
+	}
 
 	roles := s.loadRoles(ctx, user.ID)
 
@@ -103,6 +132,8 @@ func (s *AuthService) Register(ctx context.Context, input model.RegisterInput) (
 		User:         user,
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
+		EmailOTP:     emailCode,
+		PhoneOTP:     &smsCode,
 	}, nil
 }
 
@@ -210,7 +241,63 @@ func (s *AuthService) Me(ctx context.Context, userID string) (*model.User, error
 	return user, nil
 }
 
+// VerifyOTP valide un code OTP pour le canal et l'usage donnés.
+// Sur succès, marque l'email ou le téléphone comme vérifié.
+func (s *AuthService) VerifyOTP(ctx context.Context, userID, channel, purpose, code string) error {
+	if err := s.otpService.Verify(ctx, userID, channel, purpose, code); err != nil {
+		return err
+	}
+
+	// Marque le champ correspondant comme vérifié
+	switch purpose {
+	case model.OTPPurposeEmailVerify:
+		return s.userRepo.VerifyEmail(ctx, userID)
+	case model.OTPPurposePhoneVerify:
+		return s.userRepo.VerifyPhone(ctx, userID)
+	default:
+		return nil
+	}
+}
+
+// SendOTP réémet un code OTP pour le canal demandé (resend).
+func (s *AuthService) SendOTP(ctx context.Context, userID, channel, purpose string) (string, error) {
+	code, err := s.otpService.Issue(ctx, userID, channel, purpose)
+	if err != nil {
+		return "", err
+	}
+
+	user, err := s.userRepo.FindByID(ctx, userID)
+	if err != nil {
+		return code, nil
+	}
+
+	switch channel {
+	case model.OTPChannelEmail:
+		if s.notifications != nil {
+			go s.notifications.SendOTP(context.Background(), user.Email, code, purposeLabel(purpose))
+		}
+	case model.OTPChannelSMS:
+		if user.Phone != nil && s.smsSender != nil {
+			go s.smsSender.Send(context.Background(), *user.Phone, fmt.Sprintf("Votre code DIARRA : %s", code))
+		}
+	}
+
+	return code, nil
+}
+
+func purposeLabel(purpose string) string {
+	switch purpose {
+	case model.OTPPurposeEmailVerify:
+		return "vérification de l'email"
+	case model.OTPPurposePhoneVerify:
+		return "vérification du téléphone"
+	default:
+		return "vérification"
+	}
+}
+
 // VerifyEmail marque l'email comme vérifié si le token est valide et non expiré.
+// (Ancien flux par lien — conservé pour compatibilité pendant la transition.)
 func (s *AuthService) VerifyEmail(ctx context.Context, token string) error {
 	v, err := s.userRepo.FindEmailVerification(ctx, auth.HashToken(token))
 	if err != nil || v.UsedAt != nil || time.Now().After(v.ExpiresAt) {
@@ -267,8 +354,7 @@ func (s *AuthService) ResetPassword(ctx context.Context, token, newPassword stri
 	return s.userRepo.RevokeAllUserRefreshTokens(ctx, p.UserID)
 }
 
-// loadRoles charge les rôles cumulables de l'utilisateur. Une erreur de
-// lecture ne bloque pas l'authentification : on retombe sur aucun rôle.
+// loadRoles charge les rôles cumulables de l'utilisateur.
 func (s *AuthService) loadRoles(ctx context.Context, userID string) []string {
 	roles, err := s.userRepo.ListRoles(ctx, userID)
 	if err != nil {

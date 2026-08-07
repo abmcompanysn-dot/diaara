@@ -5,14 +5,11 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '@/components/ui/table';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { PageHeader } from '@/components/page-header';
+import { PageLoader } from '@/components/page-loader';
+import { EmptyState } from '@/components/empty-state';
+import { formatPrice, SALE_STATUS_BADGE, ORDER_STATUS_LABELS } from '@/lib/constants';
 
 interface Sale {
   id: string;
@@ -26,14 +23,6 @@ interface Sale {
   status: string;
   created_at: string;
 }
-
-const STATUS_STYLE: Record<string, string> = {
-  pending: 'bg-yellow-100 text-yellow-700 hover:bg-yellow-100',
-  paid: 'bg-green-100 text-green-700 hover:bg-green-100',
-  delivered: 'bg-green-100 text-green-700 hover:bg-green-100',
-  failed: 'bg-red-100 text-red-700 hover:bg-red-100',
-  refunded: 'bg-gray-100 text-gray-600 hover:bg-gray-100',
-};
 
 export default function AdminSalesPage() {
   const [sales, setSales] = useState<Sale[]>([]);
@@ -56,69 +45,82 @@ export default function AdminSalesPage() {
     }
   };
 
-  if (loading) return <main className="p-8 text-center">Chargement...</main>;
+  if (loading)
+    return (
+      <main>
+        <PageHeader eyebrow="// administration" title="Ventes" description="Historique des transactions" />
+        <PageLoader />
+      </main>
+    );
 
   return (
-    <main className="min-h-screen p-8 max-w-6xl mx-auto">
-      <header className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Ventes</h1>
-          <p className="text-green-700">{sales.length} vente(s)</p>
-        </div>
-        <Button variant="outline" size="sm" render={<Link href="/admin" />}>
-          ← Dashboard
-        </Button>
-      </header>
+    <main>
+      <PageHeader
+        eyebrow="// administration"
+        title="Ventes"
+        description={`${sales.length} vente(s) enregistrée(s)`}
+        actions={
+          <Button variant="outline" size="sm" render={<Link href="/admin" />}>
+            ← Dashboard
+          </Button>
+        }
+      />
 
-      {error && <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded">{error}</div>}
+      <section className="max-w-6xl mx-auto px-4 sm:px-6 py-10">
+        {error && (
+          <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded text-sm" role="alert">
+            {error}
+          </div>
+        )}
 
-      <div className="rounded-lg border">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Date</TableHead>
-              <TableHead>Montant</TableHead>
-              <TableHead>Frais plateforme</TableHead>
-              <TableHead>Commission affilié</TableHead>
-              <TableHead>Vendeur</TableHead>
-              <TableHead>Statut</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {sales.map((sale) => (
-              <TableRow key={sale.id}>
-                <TableCell className="text-sm">
-                  {new Date(sale.created_at).toLocaleString('fr-FR')}
-                </TableCell>
-                <TableCell>{sale.amount_cfa.toLocaleString('fr-FR')} FCFA</TableCell>
-                <TableCell>{sale.platform_fee_cfa.toLocaleString('fr-FR')} FCFA</TableCell>
-                <TableCell>
-                  {sale.referral_link_id ? (
-                    <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100">
-                      {sale.closer_commission_cfa.toLocaleString('fr-FR')} FCFA
-                    </Badge>
-                  ) : (
-                    <span className="text-muted-foreground/40">—</span>
-                  )}
-                </TableCell>
-                <TableCell>{sale.vendor_amount_cfa.toLocaleString('fr-FR')} FCFA</TableCell>
-                <TableCell>
-                  <Badge variant="outline" className={STATUS_STYLE[sale.status]}>
-                    {sale.status}
-                  </Badge>
-                </TableCell>
-              </TableRow>
-            ))}
-            {sales.length === 0 && (
-              <TableRow>
-                <TableCell colSpan={6} className="p-8 text-center text-muted-foreground">
-                  Aucune vente pour le moment.
-                </TableCell>
-              </TableRow>
-            )}
-          </TableBody>
-        </Table>
-      </div>
+        {sales.length === 0 ? (
+          <EmptyState
+            title="Aucune vente pour le moment"
+            description="Les ventes apparaîtront ici dès qu'un acheteur finalisera un paiement."
+          />
+        ) : (
+          <div className="rounded-xl border border-green-900/10 bg-white shadow-card overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Date</TableHead>
+                  <TableHead>Montant</TableHead>
+                  <TableHead>Frais plateforme</TableHead>
+                  <TableHead>Commission affilié</TableHead>
+                  <TableHead>Vendeur</TableHead>
+                  <TableHead>Statut</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {sales.map((sale) => (
+                  <TableRow key={sale.id}>
+                    <TableCell className="text-sm">
+                      {new Date(sale.created_at).toLocaleString('fr-FR')}
+                    </TableCell>
+                    <TableCell className="font-mono">{formatPrice(sale.amount_cfa)}</TableCell>
+                    <TableCell className="font-mono">{formatPrice(sale.platform_fee_cfa)}</TableCell>
+                    <TableCell>
+                      {sale.referral_link_id ? (
+                        <Badge className="bg-amber-100 text-amber-700 hover:bg-amber-100">
+                          {formatPrice(sale.closer_commission_cfa)}
+                        </Badge>
+                      ) : (
+                        <span className="text-muted-foreground/40">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="font-mono">{formatPrice(sale.vendor_amount_cfa)}</TableCell>
+                    <TableCell>
+                      <Badge variant="outline" className={SALE_STATUS_BADGE[sale.status]}>
+                        {ORDER_STATUS_LABELS[sale.status] || sale.status}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )}
+      </section>
     </main>
   );
 }

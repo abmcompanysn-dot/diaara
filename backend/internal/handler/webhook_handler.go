@@ -2,12 +2,13 @@ package handler
 
 import (
 	"context"
-	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/hex"
+	"crypto/sha512"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/diarra/backend/internal/email"
 	"github.com/diarra/backend/internal/model"
@@ -16,12 +17,12 @@ import (
 )
 
 type WebhookHandler struct {
-	saleRepo       *repository.SaleRepo
-	userRepo       *repository.UserRepo
-	productRepo    *repository.ProductRepo
-	commissionSvc  *service.CommissionService
-	notifications  *email.NotificationService
-	webhookSecret  string
+	saleRepo      *repository.SaleRepo
+	userRepo      *repository.UserRepo
+	productRepo   *repository.ProductRepo
+	commissionSvc *service.CommissionService
+	notifications *email.NotificationService
+	allowedIPs    map[string]bool
 }
 
 func NewWebhookHandler(
@@ -29,76 +30,84 @@ func NewWebhookHandler(
 	userRepo *repository.UserRepo,
 	productRepo *repository.ProductRepo,
 	notifications *email.NotificationService,
-	webhookSecret string,
+	allowedIPs []string,
 ) *WebhookHandler {
+	ips := make(map[string]bool, len(allowedIPs))
+	for _, ip := range allowedIPs {
+		ips[strings.TrimSpace(ip)] = true
+	}
 	return &WebhookHandler{
 		saleRepo:      saleRepo,
 		userRepo:      userRepo,
 		productRepo:   productRepo,
 		commissionSvc: service.NewCommissionService(),
 		notifications: notifications,
-		webhookSecret: webhookSecret,
+		allowedIPs:    ips,
 	}
 }
 
-// PayDunyaWebhookPayload est le corps typique du callback PayDunya.
-type PayDunyaWebhookPayload struct {
-	Token        string `json:"token"`
-	Status       string `json:"status"`
-	ResponseCode string `json:"response_code"`
-	ResponseText string `json:"response_text"`
-	InvoiceToken string `json:"invoice_token"`
-	CustomData   struct {
-		SaleID string `json:"sale_id"`
-	} `json:"custom_data"`
+// PawaPayDepositCallback est le corps du callback PawaPay (statut final d'un dépôt).
+type PawaPayDepositCallback struct {
+	DepositId string `json:"depositId"`
+	Status    string `json:"status"` // COMPLETED | FAILED
 }
 
-// PayDunyaWebhook reçoit la confirmation de paiement depuis PayDunya.
-func (h *WebhookHandler) PayDunyaWebhook(w http.ResponseWriter, r *http.Request) {
-	// Vérification signature (si PayDunya envoie un header de signature)
-	sig := r.Header.Get("PAYDUNYA-SIGNATURE")
+// PawaPayWebhook reçoit la confirmation de paiement depuis PawaPay.
+func (h *WebhookHandler) PawaPayWebhook(w http.ResponseWriter, r *http.Request) {
 	body, err := io.ReadAll(r.Body)
 	if err != nil {
 		http.Error(w, `{"error":"read_failed"}`, http.StatusBadRequest)
 		return
 	}
-	if h.webhookSecret != "" && sig != "" {
-		if !h.verifySignature(body, sig) {
-			http.Error(w, `{"error":"invalid_signature"}`, http.StatusUnauthorized)
+
+	// Vérification d'intégrité du corps (Content-Digest: sha-256=:base64:)
+	if digest := r.Header.Get("Content-Digest"); digest != "" {
+		if !h.verifyContentDigest(body, digest) {
+			http.Error(w, `{"error":"invalid_digest"}`, http.StatusUnauthorized)
 			return
 		}
 	}
 
-	var payload PayDunyaWebhookPayload
+	// Restriction d'adresse IP des serveurs PawaPay (si configurée).
+	if len(h.allowedIPs) > 0 {
+		ip := clientIP(r)
+		if !h.allowedIPs[ip] {
+			http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+			return
+		}
+	}
+
+	var payload PawaPayDepositCallback
 	if err := json.Unmarshal(body, &payload); err != nil {
 		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
 		return
 	}
+	if payload.DepositId == "" {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
 
-	sale, err := h.saleRepo.FindByPaymentReference(r.Context(), payload.Token)
-	if err != nil {
-		sale, err = h.saleRepo.FindByPaymentReference(r.Context(), payload.InvoiceToken)
-	}
-	if err != nil && payload.CustomData.SaleID != "" {
-		sale, err = h.saleRepo.FindByID(r.Context(), payload.CustomData.SaleID)
-	}
+	sale, err := h.saleRepo.FindByPaymentReference(r.Context(), payload.DepositId)
 	if err != nil {
 		http.Error(w, `{"error":"sale_not_found"}`, http.StatusNotFound)
 		return
 	}
 
-	if payload.ResponseCode == "00" || payload.Status == "completed" {
-		// Confirmer le paiement
+	// Idempotence : ne pas re-traiter un paiement déjà terminé.
+	if sale.Status != string(model.SalePending) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": sale.Status})
+		return
+	}
+
+	if payload.Status == "COMPLETED" {
 		if err := h.saleRepo.UpdateStatus(r.Context(), sale.ID, string(model.SalePaid)); err != nil {
 			http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
 			return
 		}
-
-		// Notifications email
 		if h.notifications != nil {
 			go h.notifyPaid(r.Context(), sale)
 		}
-
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "paid"})
 		return
@@ -108,16 +117,61 @@ func (h *WebhookHandler) PayDunyaWebhook(w http.ResponseWriter, r *http.Request)
 		http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
 		return
 	}
-
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "failed"})
 }
 
-func (h *WebhookHandler) verifySignature(body []byte, signature string) bool {
-	mac := hmac.New(sha256.New, []byte(h.webhookSecret))
-	mac.Write(body)
-	expected := hex.EncodeToString(mac.Sum(nil))
-	return hmac.Equal([]byte(expected), []byte(signature))
+// verifyContentDigest vérifie le header Content-Digest (RFC 9530) : "sha-256=:base64:".
+func (h *WebhookHandler) verifyContentDigest(body []byte, digest string) bool {
+	parts := strings.SplitN(digest, "=", 2)
+	if len(parts) != 2 {
+		return false
+	}
+	algo := strings.TrimSpace(parts[0])
+	value := strings.TrimSpace(parts[1])
+	value = strings.TrimPrefix(value, ":")
+	value = strings.TrimSuffix(value, ":")
+
+	var sum []byte
+	switch algo {
+	case "sha-256":
+		s := sha256.Sum256(body)
+		sum = s[:]
+	case "sha-512":
+		s := sha512.Sum512(body)
+		sum = s[:]
+	default:
+		return false
+	}
+
+	decoded, err := base64.StdEncoding.DecodeString(value)
+	if err != nil {
+		return false
+	}
+	return secureEqual(decoded, sum)
+}
+
+// secureEqual compare deux octets en temps constant.
+func secureEqual(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	var v byte
+	for i := range a {
+		v |= a[i] ^ b[i]
+	}
+	return v == 0
+}
+
+func clientIP(r *http.Request) string {
+	if ip := r.Header.Get("X-Forwarded-For"); ip != "" {
+		parts := strings.Split(ip, ",")
+		return strings.TrimSpace(parts[0])
+	}
+	if ip := r.Header.Get("X-Real-IP"); ip != "" {
+		return strings.TrimSpace(ip)
+	}
+	return strings.Split(r.RemoteAddr, ":")[0]
 }
 
 // notifyPaid envoie les emails de confirmation (acheteur + vendeur) en arrière-plan.

@@ -92,6 +92,14 @@ func (r *UserRepo) VerifyEmail(ctx context.Context, userID string) error {
 	return err
 }
 
+func (r *UserRepo) VerifyPhone(ctx context.Context, userID string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE users SET phone_verified_at = NOW(), updated_at = NOW() WHERE id = $1`,
+		userID,
+	)
+	return err
+}
+
 func (r *UserRepo) CreateEmailVerification(ctx context.Context, userID, tokenHash string, expiresAt time.Time) error {
 	_, err := r.pool.Exec(ctx,
 		`INSERT INTO email_verifications (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`,

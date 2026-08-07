@@ -16,6 +16,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { AuthShell } from '@/components/auth-shell';
 import { cn } from '@/lib/utils';
 
 const ROLE_OPTIONS = [
@@ -59,18 +60,24 @@ export default function RegisterPage() {
         phone: phone || undefined,
         roles: selected,
       });
-      await login(result.access_token, result.refresh_token);
-      router.push('/dashboard');
+      await login(result.access_token);
+      router.push('/auth/verify-email');
     } catch (err: any) {
-      setError(err.message || "Échec de l'inscription");
+      if (err.status === 409) {
+        setError(
+          'Un compte existe déjà avec cet email. Connectez-vous avec votre mot de passe.'
+        );
+      } else {
+        setError(err.message || "Échec de l'inscription");
+      }
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-paper px-4 py-16">
-      <Card className="w-full max-w-md shadow-lift border-green-900/5">
+    <AuthShell>
+      <Card className="w-full shadow-lift border-green-900/5">
         <CardHeader>
           <p className="font-mono text-sm text-green-700/60 uppercase tracking-widest text-center">
             // rejoindre diarra
@@ -129,36 +136,9 @@ export default function RegisterPage() {
             <div className="space-y-2">
               <Label>
                 Type de compte
-                <span className="text-green-900/50 font-normal"> (cumulable)</span>
+                <span className="text-green-900/50 font-normal"> (optionnel)</span>
               </Label>
               <div className="space-y-2">
-                {/* Client : inclus par défaut, non désélectionnable */}
-                <div className="flex items-center gap-3 p-3 border border-border rounded-lg bg-muted/40 cursor-default">
-                  <span
-                    className="w-5 h-5 rounded-full border bg-primary border-primary text-white flex items-center justify-center shrink-0"
-                    aria-hidden
-                  >
-                    <svg
-                      width="12"
-                      height="12"
-                      viewBox="0 0 24 24"
-                      fill="none"
-                      stroke="currentColor"
-                      strokeWidth="3"
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    >
-                      <path d="m4.5 12.5 5 5 10-11" />
-                    </svg>
-                  </span>
-                  <span>
-                    <span className="block font-semibold text-foreground text-sm">Client</span>
-                    <span className="block text-xs text-muted-foreground">
-                      Acheter des produits numériques — inclus par défaut
-                    </span>
-                  </span>
-                </div>
-
                 {ROLE_OPTIONS.map((opt) => {
                   const active = selected.includes(opt.value);
                   return (
@@ -207,10 +187,10 @@ export default function RegisterPage() {
                 })}
               </div>
               <p className="text-xs text-muted-foreground">
-                Le rôle Client est inclus automatiquement. Vous pourrez aussi changer de rôle plus
-                tard via l&apos;administrateur.
+                Inscrivez-vous comme vendeur ou affilié pour commencer à gagner de l&apos;argent.
               </p>
             </div>
+
 
             <Button type="submit" disabled={loading} className="w-full h-10 font-semibold">
               {loading ? "Inscription..." : "S'inscrire"}
@@ -225,6 +205,6 @@ export default function RegisterPage() {
           </Link>
         </CardFooter>
       </Card>
-    </main>
+    </AuthShell>
   );
 }

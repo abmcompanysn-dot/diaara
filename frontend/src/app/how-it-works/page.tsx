@@ -123,7 +123,7 @@ export default function HowItWorksPage() {
             {[
               {
                 title: 'Paiement sécurisé',
-                desc: 'Le mobile money est validé par notre partenaire PayDunya avant que le vendeur ne soit payé.',
+                desc: 'Le mobile money est validé par notre partenaire PawaPay avant que le vendeur ne soit payé.',
               },
               {
                 title: 'Livraison contrôlée',

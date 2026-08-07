@@ -3,10 +3,12 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 
 	"github.com/diarra/backend/internal/auth"
 	"github.com/diarra/backend/internal/middleware"
 	"github.com/diarra/backend/internal/model"
+	"github.com/diarra/backend/internal/otp"
 	"github.com/diarra/backend/internal/service"
 )
 
@@ -16,6 +18,33 @@ type AuthHandler struct {
 
 func NewAuthHandler(authService *service.AuthService) *AuthHandler {
 	return &AuthHandler{authService: authService}
+}
+
+// setRefreshCookie pose le cookie httpOnly pour le refresh token.
+func (h *AuthHandler) setRefreshCookie(w http.ResponseWriter, token string) {
+	secure := os.Getenv("APP_ENV") == "production"
+	http.SetCookie(w, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    token,
+		Path:     "/api/auth/refresh",
+		HttpOnly: true,
+		Secure:   secure,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   7 * 24 * 3600, // 7 jours
+	})
+}
+
+// clearRefreshCookie supprime le cookie refresh token.
+func (h *AuthHandler) clearRefreshCookie(w http.ResponseWriter) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     "refresh_token",
+		Value:    "",
+		Path:     "/api/auth/refresh",
+		HttpOnly: true,
+		Secure:   os.Getenv("APP_ENV") == "production",
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	})
 }
 
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
@@ -43,15 +72,37 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
-		"user": map[string]string{
-			"id":    result.User.ID,
-			"email": result.User.Email,
+	resp := map[string]interface{}{
+		"user": map[string]interface{}{
+			"id":                result.User.ID,
+			"email":             result.User.Email,
+			"email_verified_at": result.User.EmailVerifiedAt,
+			"phone_verified_at": result.User.PhoneVerifiedAt,
+			"phone":             result.User.Phone,
+			"roles":             result.User.Roles,
+			"is_admin":          result.User.IsAdmin,
 		},
-		"access_token":  result.AccessToken,
-		"refresh_token": result.RefreshToken,
-	})
+		// L'access token est requis immédiatement pour pouvoir vérifier l'OTP
+		// (POST /api/auth/verify-otp est authentifié).
+		"access_token": result.AccessToken,
+		// Vérifications en attente : l'email est toujours requis à l'inscription,
+		// le téléphone uniquement s'il a été fourni.
+		"pending_verifications": []string{"email"},
+	}
+
+	// En mode dev, on renvoie les codes OTP pour tester sans email/SMS
+	if os.Getenv("APP_ENV") != "production" {
+		resp["dev_email_otp"] = result.EmailOTP
+		if result.PhoneOTP != nil && *result.PhoneOTP != "" {
+			resp["dev_phone_otp"] = *result.PhoneOTP
+			pv := append(resp["pending_verifications"].([]string), "phone")
+			resp["pending_verifications"] = pv
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	h.setRefreshCookie(w, result.RefreshToken)
+	json.NewEncoder(w).Encode(resp)
 }
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
@@ -80,9 +131,9 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{
-		"access_token":  result.AccessToken,
-		"refresh_token": result.RefreshToken,
+	h.setRefreshCookie(w, result.RefreshToken)
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"access_token": result.AccessToken,
 	})
 }
 
@@ -105,36 +156,140 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
-	var input model.RefreshInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+	cookie, err := r.Cookie("refresh_token")
+	if err != nil {
+		http.Error(w, `{"error":"missing_token"}`, http.StatusUnauthorized)
 		return
 	}
 
-	result, err := h.authService.RefreshToken(r.Context(), input.RefreshToken)
+	result, err := h.authService.RefreshToken(r.Context(), cookie.Value)
 	if err != nil {
+		h.clearRefreshCookie(w)
 		http.Error(w, `{"error":"invalid_token"}`, http.StatusUnauthorized)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	h.setRefreshCookie(w, result.RefreshToken)
 	json.NewEncoder(w).Encode(map[string]string{
-		"access_token":  result.AccessToken,
-		"refresh_token": result.RefreshToken,
+		"access_token": result.AccessToken,
 	})
 }
 
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
-	var input model.LogoutInput
-	_ = json.NewDecoder(r.Body).Decode(&input)
+	cookie, err := r.Cookie("refresh_token")
+	if err == nil && cookie.Value != "" {
+		_ = h.authService.Logout(r.Context(), cookie.Value)
+	}
+	h.clearRefreshCookie(w)
 
-	if err := h.authService.Logout(r.Context(), input.RefreshToken); err != nil {
-		http.Error(w, `{"error":"logout_failed"}`, http.StatusInternalServerError)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "logged_out"})
+}
+
+// VerifyOTP — POST /api/auth/verify-otp
+// Valide un code OTP et marque l'email ou le téléphone comme vérifié.
+func (h *AuthHandler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	var input struct {
+		Channel string `json:"channel"`
+		Code    string `json:"code"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+	if input.Channel == "" || input.Code == "" {
+		http.Error(w, `{"error":"channel_and_code_required"}`, http.StatusBadRequest)
+		return
+	}
+
+	purpose := ""
+	switch input.Channel {
+	case model.OTPChannelEmail:
+		purpose = model.OTPPurposeEmailVerify
+	case model.OTPChannelSMS:
+		purpose = model.OTPPurposePhoneVerify
+	default:
+		http.Error(w, `{"error":"invalid_channel"}`, http.StatusBadRequest)
+		return
+	}
+
+	if err := h.authService.VerifyOTP(r.Context(), userID, input.Channel, purpose, input.Code); err != nil {
+		switch err {
+		case service.ErrInvalidOrExpiredToken:
+			http.Error(w, `{"error":"invalid_or_expired_code"}`, http.StatusBadRequest)
+		case otp.ErrTooManyAttempts:
+			http.Error(w, `{"error":"too_many_attempts"}`, http.StatusTooManyRequests)
+		default:
+			http.Error(w, `{"error":"verification_failed"}`, http.StatusBadRequest)
+		}
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "logged_out"})
+	json.NewEncoder(w).Encode(map[string]string{
+		"status":  "verified",
+		"channel": input.Channel,
+	})
+}
+
+// SendOTP — POST /api/auth/send-otp
+// Réémet un code OTP (resend). Auth requis.
+func (h *AuthHandler) SendOTP(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	var input struct {
+		Channel string `json:"channel"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+	if input.Channel == "" {
+		http.Error(w, `{"error":"channel_required"}`, http.StatusBadRequest)
+		return
+	}
+
+	purpose := ""
+	switch input.Channel {
+	case model.OTPChannelEmail:
+		purpose = model.OTPPurposeEmailVerify
+	case model.OTPChannelSMS:
+		purpose = model.OTPPurposePhoneVerify
+	default:
+		http.Error(w, `{"error":"invalid_channel"}`, http.StatusBadRequest)
+		return
+	}
+
+	code, err := h.authService.SendOTP(r.Context(), userID, input.Channel, purpose)
+	if err != nil {
+		if err == otp.ErrResendTooSoon {
+			http.Error(w, `{"error":"resend_too_soon"}`, http.StatusTooManyRequests)
+			return
+		}
+		http.Error(w, `{"error":"send_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	resp := map[string]string{"status": "sent", "channel": input.Channel}
+
+	// En dev, on renvoie le code pour tester
+	if os.Getenv("APP_ENV") != "production" {
+		resp["dev_code"] = code
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(resp)
 }
 
 func (h *AuthHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {

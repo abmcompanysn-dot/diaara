@@ -137,9 +137,72 @@ export const ShieldIcon = (props: IconProps) => (
   </svg>
 );
 
+export const LockIcon = (props: IconProps) => (
+  <svg {...base(props)}>
+    <rect x="4" y="10.5" width="16" height="10" rx="2" />
+    <path d="M8 10.5V7.5a4 4 0 0 1 8 0v3" />
+    <circle cx="12" cy="15.5" r="1" fill="currentColor" stroke="none" />
+  </svg>
+);
+
+export const ArrowLeftIcon = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M19 12H5" />
+    <path d="m11 18-6-6 6-6" />
+  </svg>
+);
+
 export const LinkIcon = (props: IconProps) => (
   <svg {...base(props)}>
     <path d="M10 13a5 5 0 0 0 7.5.5l2.5-2.5a5 5 0 0 0-7-7l-1.5 1.5" />
     <path d="M14 11a5 5 0 0 0-7.5-.5L4 13a5 5 0 0 0 7 7l1.5-1.5" />
+  </svg>
+);
+
+export const MenuIcon = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M4 6h16" />
+    <path d="M4 12h16" />
+    <path d="M4 18h16" />
+  </svg>
+);
+
+export const XIcon = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M18 6 6 18" />
+    <path d="m6 6 12 12" />
+  </svg>
+);
+
+export const DownloadIcon = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M12 3v12" />
+    <path d="m7 10 5 5 5-5" />
+    <path d="M5 21h14" />
+  </svg>
+);
+
+export const CopyIcon = (props: IconProps) => (
+  <svg {...base(props)}>
+    <rect x="9" y="9" width="12" height="12" rx="2" />
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+  </svg>
+);
+
+export const AlertTriangleIcon = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M12 3 2 20h20z" />
+    <path d="M12 9v5" />
+    <path d="M12 17.5v.5" />
+  </svg>
+);
+
+export const TrashIcon = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M4 7h16" />
+    <path d="M10 11v6" />
+    <path d="M14 11v6" />
+    <path d="M6 7l1 13a1.5 1.5 0 0 0 1.5 1.5h7A1.5 1.5 0 0 0 17 20l1-13" />
+    <path d="M9 7V5a1.5 1.5 0 0 1 1.5-1.5h3A1.5 1.5 0 0 1 15 5v2" />
   </svg>
 );

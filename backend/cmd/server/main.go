@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -15,14 +16,16 @@ import (
 	"github.com/diarra/backend/internal/handler"
 	"github.com/diarra/backend/internal/middleware"
 	"github.com/diarra/backend/internal/model"
+	"github.com/diarra/backend/internal/otp"
 	"github.com/diarra/backend/internal/payment"
 	"github.com/diarra/backend/internal/realtime"
 	"github.com/diarra/backend/internal/repository"
 	"github.com/diarra/backend/internal/service"
+	"github.com/diarra/backend/internal/sms"
 	"github.com/diarra/backend/internal/storage"
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
-	"github.com/go-chi/cors"
+	chiCors "github.com/go-chi/cors"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -74,11 +77,18 @@ func main() {
 
 	// Repositories
 	userRepo := repository.NewUserRepo(pool)
+	otpRepo := repository.NewOTPRepo(pool)
 	productRepo := repository.NewProductRepo(pool)
 	saleRepo := repository.NewSaleRepo(pool)
 	deliveryRepo := repository.NewDeliveryRepo(pool)
 	payoutRepo := repository.NewPayoutRepo(pool)
 	referralRepo := repository.NewReferralRepo(pool)
+
+	// OTP service
+	otpService := otp.NewService(otpRepo)
+
+	// SMS sender (stub en dev, renvoie le code dans la réponse API)
+	var smsSender sms.Sender = sms.LogSender{}
 
 	// Notifications email (optionnel en dev local)
 	var notifications *email.NotificationService
@@ -130,30 +140,33 @@ func main() {
 	}
 
 	// Services
-	authService := service.NewAuthService(userRepo, jwtManager, notifications)
+	authService := service.NewAuthService(userRepo, otpRepo, otpService, smsSender, jwtManager, notifications)
 
-	// Paiement PayDunya (optionnel en dev local)
-	var paydunya *payment.PayDunyaClient
-	if os.Getenv("PAYDUNYA_MASTER_KEY") != "" {
-		paydunya = payment.NewPayDunyaClient(payment.PayDunyaConfig{
-			MasterKey:  os.Getenv("PAYDUNYA_MASTER_KEY"),
-			PrivateKey: os.Getenv("PAYDUNYA_PRIVATE_KEY"),
-			Token:      os.Getenv("PAYDUNYA_TOKEN"),
-			ReturnURL:  os.Getenv("PAYDUNYA_RETURN_URL"),
-			CancelURL:  os.Getenv("PAYDUNYA_CANCEL_URL"),
-			WebhookURL: os.Getenv("PAYDUNYA_WEBHOOK_URL"),
+	// Paiement PawaPay (mobile money, optionnel en dev local)
+	var pawapay *payment.PawaPayClient
+	if os.Getenv("PAWAPAY_API_KEY") != "" {
+		pawapay = payment.NewPawaPayClient(payment.PawaPayConfig{
+			APIKey:      os.Getenv("PAWAPAY_API_KEY"),
+			BaseURL:     os.Getenv("PAWAPAY_BASE_URL"), // défaut: sandbox
+			CallbackURL: os.Getenv("PAWAPAY_CALLBACK_URL"),
 		})
 	} else {
-		log.Println("WARNING: PayDunya non configuré, paiement désactivé")
+		log.Println("WARNING: PawaPay non configuré, paiement désactivé")
+	}
+
+	// IP autorisées pour les callbacks PawaPay (sécurité en plus du Content-Digest)
+	allowedIPs := []string{}
+	if ips := os.Getenv("PAWAPAY_CALLBACK_IPS"); ips != "" {
+		allowedIPs = strings.Split(ips, ",")
 	}
 
 	// Handlers
 	healthHandler := handler.NewHealthHandler(pool)
 	authHandler := handler.NewAuthHandler(authService)
 	productHandler := handler.NewProductHandler(productRepo, storageService)
-	saleHandler := handler.NewSaleHandler(saleRepo, productRepo, referralRepo, paydunya)
+	saleHandler := handler.NewSaleHandler(saleRepo, productRepo, referralRepo, userRepo, pawapay)
 	closerHandler := handler.NewCloserHandler(referralRepo, productRepo, os.Getenv("FRONTEND_URL"))
-	webhookHandler := handler.NewWebhookHandler(saleRepo, userRepo, productRepo, notifications, os.Getenv("PAYDUNYA_WEBHOOK_SECRET"))
+	webhookHandler := handler.NewWebhookHandler(saleRepo, userRepo, productRepo, notifications, allowedIPs)
 
 	// Temps réel (LISTEN/NOTIFY + WebSocket)
 	hub := realtime.NewHub(pool)
@@ -185,13 +198,18 @@ func main() {
 	r.Use(middleware.NewRateLimiter(10, 40).Middleware)
 	r.Use(middleware.SecurityHeaders)
 
-	cors := cors.New(cors.Options{
-		AllowedOrigins:   []string{"*"},
+	// CORS restrictif (ne plus utiliser "*" avec credentials)
+	corsOrigins := []string{"http://localhost:3000"}
+	if origins := os.Getenv("CORS_ALLOWED_ORIGINS"); origins != "" {
+		corsOrigins = strings.Split(origins, ",")
+	}
+	corsHandler := chiCors.New(chiCors.Options{
+		AllowedOrigins:   corsOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type"},
 		AllowCredentials: true,
 	})
-	r.Use(cors.Handler)
+	r.Use(corsHandler.Handler)
 
 	r.Get("/health", healthHandler.ServeHTTP)
 
@@ -201,9 +219,11 @@ func main() {
 		r.Post("/login", authHandler.Login)
 		r.Post("/logout", authHandler.Logout)
 		r.Post("/refresh", authHandler.Refresh)
-		r.Post("/verify-email", authHandler.VerifyEmail)
+		r.Post("/verify-email", authHandler.VerifyEmail) // Ancien flux (lien) — conservé
 		r.Post("/forgot-password", authHandler.ForgotPassword)
 		r.Post("/reset-password", authHandler.ResetPassword)
+		r.With(middleware.RequireAuth(jwtManager)).Post("/send-otp", authHandler.SendOTP)
+		r.With(middleware.RequireAuth(jwtManager)).Post("/verify-otp", authHandler.VerifyOTP)
 		r.With(middleware.RequireAuth(jwtManager)).Get("/me", authHandler.Me)
 	})
 
@@ -214,10 +234,11 @@ func main() {
 		r.Get("/{id}/cover", productHandler.Cover)
 	})
 
-	// Vendor product routes (vendeur authentifié)
+	// Vendor product routes (vendeur authentifié + email vérifié)
 	r.Route("/api/vendor/products", func(r chi.Router) {
 		r.Use(middleware.RequireAuth(jwtManager))
 		r.Use(middleware.RequireRole(model.RoleVendeur))
+		r.Use(middleware.RequireVerifiedEmail(userRepo))
 		r.Get("/", productHandler.ListVendor)
 		r.Post("/", productHandler.Create)
 		r.Post("/upload", productHandler.Upload)
@@ -225,18 +246,22 @@ func main() {
 		r.Delete("/{id}", productHandler.Delete)
 	})
 
-	// Orders (authentifié)
+	// Orders
 	r.Route("/api/orders", func(r chi.Router) {
-		r.Use(middleware.RequireAuth(jwtManager))
-		r.Post("/", saleHandler.Create)
-		r.Get("/", saleHandler.List)
-		r.Get("/{id}", saleHandler.Get)
+		r.Post("/", saleHandler.Create)              // Public (Guest Checkout)
+		r.Get("/status", saleHandler.CheckoutStatus) // Public (suivi par token, ex: /api/orders/status?token=...)
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireAuth(jwtManager))
+			r.Get("/", saleHandler.List)
+			r.Get("/{id}", saleHandler.Get)
+		})
 	})
 
-	// Closer (affiliation) — liens + stats
+	// Closer (affiliation) — liens + stats (email vérifié requis)
 	r.Route("/api/closer", func(r chi.Router) {
 		r.Use(middleware.RequireAuth(jwtManager))
 		r.Use(middleware.RequireRole(model.RoleCloser))
+		r.Use(middleware.RequireVerifiedEmail(userRepo))
 		r.Post("/links", closerHandler.CreateLink)
 		r.Get("/links", closerHandler.ListLinks)
 	})
@@ -246,7 +271,7 @@ func main() {
 
 	// Webhooks (pas de JWT)
 	r.Route("/api/webhooks", func(r chi.Router) {
-		r.Post("/paydunya", webhookHandler.PayDunyaWebhook)
+		r.Post("/pawapay", webhookHandler.PawaPayWebhook)
 	})
 
 	// WebSocket temps réel
@@ -271,12 +296,12 @@ func main() {
 		r.Get("/api/delivery/{token}", deliveryHandler.Download)
 	}
 
-	// Versements vendeur
+	// Versements vendeur (téléphone vérifié requis pour les versements)
 	r.Route("/api/vendor", func(r chi.Router) {
 		r.Use(middleware.RequireAuth(jwtManager))
 		r.Use(middleware.RequireRole(model.RoleVendeur))
 		r.Get("/earnings", payoutHandler.Earnings)
-		r.Post("/payouts", payoutHandler.Create)
+		r.With(middleware.RequireVerifiedPhone(userRepo)).Post("/payouts", payoutHandler.Create)
 		r.Get("/payouts", payoutHandler.Earnings)
 	})
 

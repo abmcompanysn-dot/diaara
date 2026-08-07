@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/diarra/backend/internal/auth"
 	"github.com/diarra/backend/internal/middleware"
 	"github.com/diarra/backend/internal/model"
 	"github.com/diarra/backend/internal/payment"
@@ -28,7 +29,8 @@ type SaleHandler struct {
 	saleRepo      *repository.SaleRepo
 	productRepo   *repository.ProductRepo
 	referralRepo  *repository.ReferralRepo
-	paydunya      *payment.PayDunyaClient
+	userRepo      *repository.UserRepo
+	pawapay       *payment.PawaPayClient
 	commissionSvc *service.CommissionService
 }
 
@@ -36,29 +38,72 @@ func NewSaleHandler(
 	saleRepo *repository.SaleRepo,
 	productRepo *repository.ProductRepo,
 	referralRepo *repository.ReferralRepo,
-	paydunya *payment.PayDunyaClient,
+	userRepo *repository.UserRepo,
+	pawapay *payment.PawaPayClient,
 ) *SaleHandler {
 	return &SaleHandler{
 		saleRepo:      saleRepo,
 		productRepo:   productRepo,
 		referralRepo:  referralRepo,
-		paydunya:      paydunya,
+		userRepo:      userRepo,
+		pawapay:       pawapay,
 		commissionSvc: service.NewCommissionService(),
 	}
 }
 
-// Create — l'acheteur crée une commande et initie le paiement PayDunya
+// Create — l'acheteur crée une commande et initie un dépôt mobile money PawaPay
 func (h *SaleHandler) Create(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
-	if userID == "" {
-		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
-		return
-	}
 
 	var input model.CreateOrderInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
 		return
+	}
+
+	// PawaPay exige toujours le téléphone mobile money, l'opérateur et le pays.
+	if input.Phone == "" || input.Operator == "" || input.Country == "" {
+		http.Error(w, `{"error":"payment_details_required"}`, http.StatusBadRequest)
+		return
+	}
+	op, err := payment.ResolveOperator(input.Country, input.Operator)
+	if err != nil {
+		http.Error(w, `{"error":"unsupported_operator"}`, http.StatusBadRequest)
+		return
+	}
+	msisdn, err := payment.NormalizePhone(op.DialCode, input.Phone)
+	if err != nil {
+		http.Error(w, `{"error":"invalid_phone_number"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Guest Checkout : si non connecté, on exige l'email
+	if userID == "" {
+		if input.BuyerEmail == nil || *input.BuyerEmail == "" {
+			http.Error(w, `{"error":"email_required_for_guest_checkout"}`, http.StatusBadRequest)
+			return
+		}
+
+		// Si l'email possède déjà un compte, on le réutilise (l'acheteur pourra
+		// retrouver ses commandes en se connectant). Sinon on crée un compte invité.
+		user, err := h.userRepo.FindByEmail(r.Context(), *input.BuyerEmail)
+		if err != nil {
+			guestPassword := "GUEST_PASSWORD_" + uuidString()
+			hash, hashErr := auth.HashPassword(guestPassword)
+			if hashErr != nil {
+				http.Error(w, `{"error":"guest_account_creation_failed"}`, http.StatusInternalServerError)
+				return
+			}
+			user, err = h.userRepo.Create(r.Context(), model.RegisterInput{
+				Email:    *input.BuyerEmail,
+				Password: guestPassword,
+			}, hash)
+			if err != nil {
+				http.Error(w, `{"error":"guest_account_creation_failed"}`, http.StatusInternalServerError)
+				return
+			}
+		}
+		userID = user.ID
 	}
 
 	product, err := h.productRepo.FindByID(r.Context(), input.ProductID)
@@ -80,7 +125,7 @@ func (h *SaleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		AmountCFA:       product.PriceCFA,
 		PlatformFeeCFA:  comm.PlatformFeeCFA,
 		VendorAmountCFA: comm.VendorAmountCFA,
-		PaymentProvider: "paydunya",
+		PaymentProvider: "pawapay",
 		Status:          string(model.SalePending),
 	}
 
@@ -112,9 +157,11 @@ func (h *SaleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		sale.VendorAmountCFA = commCloser.VendorAmountCFA
 	}
 
-	// payment_reference doit être unique : on crée un identifiant provisoire puis on met à jour
-	// avec le token PayDunya après création de la facture.
+	// payment_reference = depositId PawaPay (UUID fourni par nous, unique).
+	// checkout_token = jeton secret pour suivre la commande sans être connecté.
+	checkoutToken := newUUID()
 	sale.PaymentReference = newUUID()
+	sale.CheckoutToken = &checkoutToken
 
 	created, err := h.saleRepo.Create(r.Context(), sale)
 	if err != nil {
@@ -122,28 +169,70 @@ func (h *SaleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Initier la facture PayDunya
-	invoice, err := h.createInvoice(r.Context(), created, product)
-	if err != nil || invoice == nil {
+	// Initier le dépôt mobile money PawaPay (asynchrone).
+	deposit, err := h.initiateDeposit(r.Context(), created, product, op.Provider, msisdn)
+	if err != nil || deposit == nil {
 		h.saleRepo.UpdateStatus(r.Context(), created.ID, string(model.SaleFailed))
 		http.Error(w, `{"error":"payment_init_failed"}`, http.StatusBadGateway)
 		return
 	}
-
-	// Enregistrer le token PayDunya comme référence de paiement (unique)
-	if invoice.Token != "" {
-		if err := h.saleRepo.UpdatePaymentReference(r.Context(), created.ID, invoice.Token); err != nil {
-			h.saleRepo.UpdateStatus(r.Context(), created.ID, string(model.SaleFailed))
-			http.Error(w, `{"error":"payment_init_failed"}`, http.StatusBadGateway)
-			return
+	if deposit.Status != "ACCEPTED" {
+		h.saleRepo.UpdateStatus(r.Context(), created.ID, string(model.SaleFailed))
+		code := "rejected"
+		if deposit.FailureReason != nil {
+			code = deposit.FailureReason.FailureCode
 		}
-		created.PaymentReference = invoice.Token
+		http.Error(w, fmt.Sprintf(`{"error":"payment_rejected","reason":"%s"}`, code), http.StatusBadGateway)
+		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"order":       created,
-		"payment_url": invoice.InvoiceURL,
+		"order": created,
+		"checkout": map[string]string{
+			"deposit_id": created.PaymentReference,
+			"status":     deposit.Status,
+		},
+	})
+}
+
+// CheckoutStatus — suivi public d'une commande par checkout_token
+// (permet à un acheteur invité de connaître l'état de son paiement sans compte).
+func (h *SaleHandler) CheckoutStatus(w http.ResponseWriter, r *http.Request) {
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		http.Error(w, `{"error":"token_required"}`, http.StatusBadRequest)
+		return
+	}
+	sale, err := h.saleRepo.FindByCheckoutToken(r.Context(), token)
+	if err != nil {
+		http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
+		return
+	}
+
+	status := sale.Status
+	// Si le webhook n'est pas (encore) arrivé, on demande le statut frais à PawaPay.
+	if (status == string(model.SalePending)) && h.pawapay != nil {
+		if res, err := h.pawapay.GetDepositStatus(r.Context(), sale.PaymentReference); err == nil && res.Data != nil {
+			switch res.Data.Status {
+			case "COMPLETED":
+				status = string(model.SalePaid)
+			case "FAILED":
+				status = string(model.SaleFailed)
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"order": map[string]interface{}{
+			"id":          sale.ID,
+			"status":      status,
+			"amount_cfa":  sale.AmountCFA,
+			"product_id":  sale.ProductID,
+			"created_at":  sale.CreatedAt,
+			"delivered_at": sale.DeliveredAt,
+		},
 	})
 }
 
@@ -190,16 +279,28 @@ func newUUID() string {
 	return uuidString()
 }
 
-// createInvoice initie la facture PayDunya pour une vente.
-func (h *SaleHandler) createInvoice(ctx context.Context, sale *model.Sale, product *model.Product) (*payment.InvoiceResponse, error) {
-	if h.paydunya == nil {
+// initiateDeposit initie un dépôt mobile money PawaPay pour une vente.
+func (h *SaleHandler) initiateDeposit(ctx context.Context, sale *model.Sale, product *model.Product, provider, msisdn string) (*payment.DepositInitiationResponse, error) {
+	if h.pawapay == nil {
 		return nil, errors.New("payment non configuré")
 	}
-	req := payment.InvoiceRequest{}
-	req.Invoice.TotalAmount = sale.AmountCFA
-	req.Invoice.Description = product.Title
-	req.CustomData = map[string]string{
-		"sale_id": sale.ID,
+	req := payment.DepositRequest{
+		DepositId: sale.PaymentReference,
+		Payer: payment.Payer{
+			Type: "MMO",
+			AccountDetails: payment.AccountDetails{
+				PhoneNumber: msisdn,
+				Provider:    provider,
+			},
+		},
+		Amount:            fmt.Sprintf("%d", sale.AmountCFA),
+		Currency:          "XOF",
+		ClientReferenceId: sale.ID,
+		CustomerMessage:   "PAIEMENT DIARRA",
+		Metadata: []payment.MetadataItem{
+			{Key: "saleId", Value: sale.ID},
+			{Key: "product", Value: product.Title},
+		},
 	}
-	return h.paydunya.CreateInvoice(ctx, req)
+	return h.pawapay.InitiateDeposit(ctx, req)
 }

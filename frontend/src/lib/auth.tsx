@@ -9,6 +9,8 @@ export interface User {
   phone?: string | null;
   is_admin: boolean;
   roles?: string[];
+  email_verified_at?: string | null;
+  phone_verified_at?: string | null;
 }
 
 interface AuthContextValue {
@@ -16,8 +18,9 @@ interface AuthContextValue {
   loading: boolean;
   isAdmin: boolean;
   hasRole: (role: string) => boolean;
-  login: (accessToken: string, refreshToken: string) => Promise<void>;
+  login: (accessToken: string) => Promise<void>;
   logout: () => Promise<void>;
+  refresh: () => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextValue>({
@@ -27,40 +30,54 @@ const AuthContext = createContext<AuthContextValue>({
   hasRole: () => false,
   login: async () => {},
   logout: async () => {},
+  refresh: async () => false,
 });
+
+const ACCESS_TOKEN_KEY = 'access_token';
+
+// Restaure la session : access token en localStorage (court), sinon on tente
+// un refresh via le cookie httpOnly posé par le backend.
+async function restoreSession(): Promise<User | null> {
+  const token = typeof window !== 'undefined' ? localStorage.getItem(ACCESS_TOKEN_KEY) : null;
+  if (token) {
+    try {
+      const result = await api.getMe();
+      return result.user;
+    } catch {
+      localStorage.removeItem(ACCESS_TOKEN_KEY);
+      // cookie encore valide → on retente par refresh
+    }
+  }
+  try {
+    const result = await api.refreshToken();
+    localStorage.setItem(ACCESS_TOKEN_KEY, result.access_token);
+    const me = await api.getMe();
+    return me.user;
+  } catch {
+    return null;
+  }
+}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   const loadMe = useCallback(async () => {
-    const token = typeof window !== 'undefined' ? localStorage.getItem('access_token') : null;
-    if (!token) {
-      setUser(null);
-      setLoading(false);
-      return;
-    }
-    try {
-      const result = await api.getMe();
-      setUser(result.user);
-    } catch {
-      localStorage.removeItem('access_token');
-      localStorage.removeItem('refresh_token');
-      setUser(null);
-    } finally {
-      setLoading(false);
-    }
+    const u = await restoreSession();
+    if (!u) localStorage.removeItem(ACCESS_TOKEN_KEY);
+    setUser(u);
+    setLoading(false);
   }, []);
 
   useEffect(() => {
     loadMe();
   }, [loadMe]);
 
-  const login = useCallback(async (accessToken: string, refreshToken: string) => {
-    localStorage.setItem('access_token', accessToken);
-    localStorage.setItem('refresh_token', refreshToken);
-    await loadMe();
-  }, [loadMe]);
+  const login = useCallback(async (accessToken: string) => {
+    localStorage.setItem(ACCESS_TOKEN_KEY, accessToken);
+    const me = await api.getMe();
+    setUser(me.user);
+  }, []);
 
   const logout = useCallback(async () => {
     try {
@@ -68,9 +85,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch {
       // la révocation serveur échoue éventuellement : on déconnecte quand même
     }
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('refresh_token');
+    localStorage.removeItem(ACCESS_TOKEN_KEY);
     setUser(null);
+  }, []);
+
+  const refresh = useCallback(async () => {
+    try {
+      const result = await api.refreshToken();
+      localStorage.setItem(ACCESS_TOKEN_KEY, result.access_token);
+      const me = await api.getMe();
+      setUser(me.user);
+      return true;
+    } catch {
+      localStorage.removeItem(ACCESS_TOKEN_KEY);
+      setUser(null);
+      return false;
+    }
   }, []);
 
   const hasRole = useCallback((role: string) => user?.roles?.includes(role) ?? false, [user]);
@@ -84,6 +114,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         hasRole,
         login,
         logout,
+        refresh,
       }}
     >
       {children}

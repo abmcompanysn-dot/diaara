@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -13,6 +13,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { PageLoader } from '@/components/page-loader';
+import { EmptyState } from '@/components/empty-state';
+import { CartIcon } from '@/components/icons';
+import { CATEGORY_LABELS, formatPrice } from '@/lib/constants';
 
 interface Product {
   id: string;
@@ -24,23 +28,26 @@ interface Product {
   cover_image_key?: string;
 }
 
-const CATEGORY_LABELS: Record<string, string> = {
-  subscription: 'Clés d\'abonnement',
-  account: 'Comptes',
-  ebook: 'Ebooks',
-  pdf: 'PDF',
-  other: 'Autres',
-};
-
 export default function CatalogPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
   const [loading, setLoading] = useState(true);
+  const debounceRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     loadProducts();
   }, [category]);
+
+  useEffect(() => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      loadProducts();
+    }, 300);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [search]);
 
   const loadProducts = async () => {
     setLoading(true);
@@ -56,8 +63,6 @@ export default function CatalogPage() {
       setLoading(false);
     }
   };
-
-  const formatPrice = (price: number) => `${price.toLocaleString()} FCFA`;
 
   return (
     <main className="min-h-screen">
@@ -82,7 +87,6 @@ export default function CatalogPage() {
               placeholder="Rechercher un produit..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && loadProducts()}
               className="flex-1 rounded-full bg-white text-green-950 placeholder-green-900/40 border border-transparent focus:border-lime focus:shadow-glow outline-none"
             />
             <Select
@@ -113,14 +117,13 @@ export default function CatalogPage() {
 
       <section className="max-w-6xl mx-auto px-4 py-12">
         {loading ? (
-          <p className="text-center text-green-900/50 py-16">Chargement...</p>
+          <PageLoader />
         ) : products.length === 0 ? (
-          <div className="text-center py-16">
-            <p className="text-green-900/60 mb-2">Aucun produit trouvé.</p>
-            <p className="text-sm text-green-900/40">
-              Modifiez votre recherche ou parcourez une autre catégorie.
-            </p>
-          </div>
+          <EmptyState
+            icon={CartIcon}
+            title="Aucun produit trouvé"
+            description="Modifiez votre recherche ou parcourez une autre catégorie."
+          />
         ) : (
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {products.map((product) => (

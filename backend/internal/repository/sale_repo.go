@@ -20,13 +20,13 @@ func NewSaleRepo(pool *pgxpool.Pool) *SaleRepo {
 }
 
 const saleColumns = `id, product_id, buyer_id, referral_link_id, amount_cfa, platform_fee_cfa,
-	closer_commission_cfa, vendor_amount_cfa, payment_provider, payment_reference, status, delivered_at, created_at`
+	closer_commission_cfa, vendor_amount_cfa, payment_provider, payment_reference, checkout_token, status, delivered_at, created_at`
 
 func scanSale(row pgx.Row) (*model.Sale, error) {
 	s := &model.Sale{}
 	err := row.Scan(&s.ID, &s.ProductID, &s.BuyerID, &s.ReferralLinkID, &s.AmountCFA,
 		&s.PlatformFeeCFA, &s.CloserCommissionCFA, &s.VendorAmountCFA, &s.PaymentProvider,
-		&s.PaymentReference, &s.Status, &s.DeliveredAt, &s.CreatedAt)
+		&s.PaymentReference, &s.CheckoutToken, &s.Status, &s.DeliveredAt, &s.CreatedAt)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, ErrSaleNotFound
@@ -39,17 +39,22 @@ func scanSale(row pgx.Row) (*model.Sale, error) {
 func (r *SaleRepo) Create(ctx context.Context, s *model.Sale) (*model.Sale, error) {
 	row := r.pool.QueryRow(ctx,
 		`INSERT INTO sales (product_id, buyer_id, referral_link_id, amount_cfa, platform_fee_cfa,
-			closer_commission_cfa, vendor_amount_cfa, payment_provider, payment_reference, status)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+			closer_commission_cfa, vendor_amount_cfa, payment_provider, payment_reference, checkout_token, status)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		 RETURNING `+saleColumns,
 		s.ProductID, s.BuyerID, s.ReferralLinkID, s.AmountCFA, s.PlatformFeeCFA,
-		s.CloserCommissionCFA, s.VendorAmountCFA, s.PaymentProvider, s.PaymentReference, s.Status)
+		s.CloserCommissionCFA, s.VendorAmountCFA, s.PaymentProvider, s.PaymentReference, s.CheckoutToken, s.Status)
 	return scanSale(row)
 }
 
 func (r *SaleRepo) FindByID(ctx context.Context, id string) (*model.Sale, error) {
 	return scanSale(r.pool.QueryRow(ctx,
 		`SELECT `+saleColumns+` FROM sales WHERE id = $1`, id))
+}
+
+func (r *SaleRepo) FindByCheckoutToken(ctx context.Context, token string) (*model.Sale, error) {
+	return scanSale(r.pool.QueryRow(ctx,
+		`SELECT `+saleColumns+` FROM sales WHERE checkout_token = $1`, token))
 }
 
 func (r *SaleRepo) FindByPaymentReference(ctx context.Context, ref string) (*model.Sale, error) {

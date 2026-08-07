@@ -125,6 +125,11 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+::selection {
+  background: var(--lime);
+  color: var(--ink);
+}
+
 /* Pattern wax en vert : losanges imbriqués, décor discret */
 .wax-pattern {
   background-image: url("data:image/svg+xml,%3Csvg width='56' height='56' viewBox='0 0 56 56' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M28 6l14 14-14 14L14 20z' fill='none' stroke='%2317C26F' stroke-opacity='0.14' stroke-width='1'/%3E%3Cpath d='M28 26l10 10-10 10-10-10z' fill='none' stroke='%2310A05F' stroke-opacity='0.10' stroke-width='1'/%3E%3C/svg%3E");
@@ -132,6 +137,21 @@ body {
 
 .wax-pattern-dark {
   background-image: url("data:image/svg+xml,%3Csvg width='56' height='56' viewBox='0 0 56 56' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M28 6l14 14-14 14L14 20z' fill='none' stroke='%230A3225' stroke-opacity='0.07' stroke-width='1'/%3E%3Cpath d='M28 26l10 10-10 10-10-10z' fill='none' stroke='%230A3225' stroke-opacity='0.06' stroke-width='1'/%3E%3C/svg%3E");
+}
+
+/* Grille « coffre / terminal » : lignes fines, esprit Digital Vault */
+.grid-pattern {
+  background-image:
+    linear-gradient(to right, rgba(23, 194, 111, 0.12) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(23, 194, 111, 0.12) 1px, transparent 1px);
+  background-size: 36px 36px;
+}
+
+.grid-pattern-dark {
+  background-image:
+    linear-gradient(to right, rgba(5, 32, 24, 0.07) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(5, 32, 24, 0.07) 1px, transparent 1px);
+  background-size: 36px 36px;
 }
 
 /* Dégradés verts signature */
@@ -207,7 +227,8 @@ textarea:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .ticker-track {
+  .ticker-track,
+  .receipt-cursor::after {
     animation: none;
   }
 }

@@ -1,93 +1,67 @@
 'use client';
 
-import { Suspense, useEffect, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
-import { api } from '@/lib/api';
-import { Button } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { useEffect } from 'react';
+import { useRouter } from 'next/navigation';
+import { useAuth } from '@/lib/auth';
+import { OtpForm } from '@/components/otp-form';
+import { AuthShell } from '@/components/auth-shell';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
-function VerifyEmailContent() {
-  const params = useSearchParams();
-  const token = params.get('token') || '';
-  const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
+// Vérification d'email par code OTP (6 chiffres) — étape obligatoire à
+// l'inscription avant l'accès au dashboard.
+export default function VerifyEmailPage() {
+  const router = useRouter();
+  const { user, loading } = useAuth();
 
   useEffect(() => {
-    if (!token) {
-      setStatus('error');
+    if (loading) return;
+    if (!user) {
+      router.replace('/auth/login');
       return;
     }
-    api
-      .verifyEmail(token)
-      .then(() => setStatus('success'))
-      .catch(() => setStatus('error'));
-  }, [token]);
+    if (user.email_verified_at) {
+      // Déjà vérifié : on enchaîne vers le téléphone (si non vérifié) ou le dashboard.
+      if (user.phone && !user.phone_verified_at) router.replace('/auth/verify-phone');
+      else router.replace('/dashboard');
+    }
+  }, [loading, user, router]);
+
+  if (loading || !user || user.email_verified_at) {
+    return (
+      <main className="min-h-screen flex items-center justify-center text-green-900/50">
+        Chargement...
+      </main>
+    );
+  }
+
+  const handleVerified = () => {
+    if (user.phone && !user.phone_verified_at) router.replace('/auth/verify-phone');
+    else router.replace('/dashboard');
+  };
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-paper px-4 py-16">
-      <Card className="w-full max-w-md shadow-lift border-green-900/5 text-center">
+    <AuthShell>
+      <Card className="w-full shadow-lift border-green-900/5">
         <CardHeader>
-          <p className="font-mono text-sm text-green-700/60 uppercase tracking-widest mb-2">
+          <p className="font-mono text-sm text-green-700/60 uppercase tracking-widest text-center">
             // vérification email
           </p>
-          <CardTitle className="font-display text-3xl font-bold text-green-950">
-            {status === 'loading' && 'Vérification...'}
-            {status === 'success' && 'Email vérifié'}
-            {status === 'error' && 'Lien invalide'}
+          <CardTitle className="font-display text-3xl font-bold text-center text-green-950">
+            Vérifiez votre email
           </CardTitle>
-          <CardDescription className="text-green-900/60">
-            {status === 'loading' && 'Vérification en cours...'}
+          <CardDescription className="text-center text-green-900/60">
+            Un code à 6 chiffres a été envoyé à <span className="font-medium">{user.email}</span>.
           </CardDescription>
         </CardHeader>
-
         <CardContent>
-          {status === 'success' && (
-            <>
-              <p className="text-muted-foreground text-sm mb-6">
-                Votre adresse email est maintenant vérifiée. Vous pouvez vous connecter.
-              </p>
-              <Button className="w-full h-10 font-semibold" render={<a href="/auth/login" />}>
-                Se connecter
-              </Button>
-            </>
-          )}
-
-          {status === 'error' && (
-            <>
-              <p className="text-destructive text-sm">
-                Ce lien de vérification est invalide ou a expiré. Vérifiez l&apos;adresse reçue par
-                email.
-              </p>
-              <Button
-                variant="link"
-                className="mt-4 text-primary font-semibold"
-                render={<a href="/auth/login" />}
-              >
-                ← Retour à la connexion
-              </Button>
-            </>
-          )}
+          <OtpForm
+            channel="email"
+            title="Vérifier l'email"
+            description="Saisissez le code reçu par email pour activer votre compte."
+            onVerified={handleVerified}
+          />
         </CardContent>
       </Card>
-    </main>
-  );
-}
-
-export default function VerifyEmailPage() {
-  return (
-    <Suspense
-      fallback={
-        <main className="min-h-screen flex items-center justify-center text-green-900/50">
-          Chargement...
-        </main>
-      }
-    >
-      <VerifyEmailContent />
-    </Suspense>
+    </AuthShell>
   );
 }

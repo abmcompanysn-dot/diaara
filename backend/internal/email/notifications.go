@@ -170,3 +170,11 @@ func (n *NotificationService) SendPayoutConfirmed(ctx context.Context, to string
 	inner := contentHTML("Versement effectué", body, "Voir mes revenus", n.frontendURL+"/vendor/earnings")
 	return n.client.Send(ctx, to, "Versement confirmé", renderEmail(inner))
 }
+
+func (n *NotificationService) SendOTP(ctx context.Context, to, code, purpose string) error {
+	subject := "Votre code de vérification DIARRA"
+	body := fmt.Sprintf(`<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Votre code de vérification pour %s est : <strong style="font-size:20px;color:#0f7a50;">%s</strong></p>
+<p style="margin:16px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.6;color:#6b7c74;">Ce code expire dans 10 minutes. Ne le partagez avec personne.</p>`, purpose, code)
+	inner := contentHTML("Vérification du compte", body, "", "")
+	return n.client.Send(ctx, to, subject, renderEmail(inner))
+}

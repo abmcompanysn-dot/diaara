@@ -16,6 +16,7 @@ import {
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
+import { AuthShell } from '@/components/auth-shell';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -32,7 +33,7 @@ export default function LoginPage() {
 
     try {
       const result = await api.login({ email, password });
-      await login(result.access_token, result.refresh_token);
+      await login(result.access_token);
       router.push('/dashboard');
     } catch (err: any) {
       setError(err.message || 'Échec de la connexion');
@@ -42,8 +43,8 @@ export default function LoginPage() {
   };
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-paper px-4 py-16">
-      <Card className="w-full max-w-md shadow-lift border-green-900/5">
+    <AuthShell>
+      <Card className="w-full shadow-lift border-green-900/5">
         <CardHeader>
           <p className="font-mono text-sm text-green-700/60 uppercase tracking-widest text-center">
             // bienvenue
@@ -108,6 +109,6 @@ export default function LoginPage() {
           </Link>
         </CardFooter>
       </Card>
-    </main>
+    </AuthShell>
   );
 }

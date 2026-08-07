@@ -6,7 +6,13 @@ import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
+import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import { PageHeader } from '@/components/page-header';
+import { PageLoader } from '@/components/page-loader';
+import { EmptyState } from '@/components/empty-state';
+import { HeadsetIcon } from '@/components/icons';
+import { TICKET_STATUS_LABELS } from '@/lib/constants';
 
 interface Ticket {
   id: string;
@@ -14,12 +20,6 @@ interface Ticket {
   status: string;
   created_at: string;
 }
-
-const STATUS_LABELS: Record<string, string> = {
-  open: 'Ouvert',
-  answered: 'Répondu',
-  closed: 'Fermé',
-};
 
 export default function SupportPage() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
@@ -62,66 +62,94 @@ export default function SupportPage() {
     }
   };
 
-  if (loading) return <main className="p-8 text-center">Chargement...</main>;
+  if (loading)
+    return (
+      <main>
+        <PageHeader eyebrow="// support" title="Support" description="Besoin d'aide ? Ouvrez un ticket" />
+        <PageLoader />
+      </main>
+    );
 
   return (
-    <main className="min-h-screen p-8 max-w-4xl mx-auto">
-      <header className="mb-6 flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Support</h1>
-          <p className="text-green-700">Besoin d&apos;aide ? Ouvrez un ticket</p>
-        </div>
-        <Button onClick={() => setShowForm(!showForm)}>
-          {showForm ? 'Annuler' : 'Nouveau ticket'}
-        </Button>
-      </header>
-
-      {error && <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded">{error}</div>}
-
-      {showForm && (
-        <form onSubmit={handleCreate} className="mb-6 p-4 border rounded-lg space-y-3">
-          <Input
-            type="text"
-            placeholder="Sujet du ticket"
-            value={subject}
-            onChange={(e) => setSubject(e.target.value)}
-            required
-          />
-          <Textarea
-            placeholder="Décrivez votre problème..."
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            required
-            rows={4}
-          />
-          <Button type="submit" disabled={submitting}>
-            {submitting ? 'Envoi...' : 'Envoyer'}
+    <main>
+      <PageHeader
+        eyebrow="// support"
+        title="Support"
+        description="Besoin d'aide ? Ouvrez un ticket"
+        actions={
+          <Button onClick={() => setShowForm(!showForm)}>
+            {showForm ? 'Annuler' : 'Nouveau ticket'}
           </Button>
-        </form>
-      )}
+        }
+      />
 
-      {tickets.length === 0 ? (
-        <div className="text-center py-12 border rounded-lg">
-          <p className="text-green-900/50 mb-4">Aucun ticket pour le moment.</p>
-          <p className="text-sm text-green-900/40">Cliquez sur « Nouveau ticket » pour démarrer.</p>
-        </div>
-      ) : (
-        <ul className="divide-y">
-          {tickets.map((ticket) => (
-            <li key={ticket.id} className="py-3 flex items-center justify-between">
-              <Link href={`/support/ticket?id=${ticket.id}`} className="text-primary font-medium">
-                {ticket.subject}
+      <section className="max-w-6xl mx-auto px-4 sm:px-6 py-10">
+        {error && (
+          <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded text-sm" role="alert">
+            {error}
+          </div>
+        )}
+
+        {showForm && (
+          <form onSubmit={handleCreate} className="mb-6 p-6 border rounded-xl bg-white shadow-card border-green-900/10 space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="subject">Sujet du ticket</Label>
+              <Input
+                id="subject"
+                type="text"
+                placeholder="Ex : Problème de téléchargement"
+                value={subject}
+                onChange={(e) => setSubject(e.target.value)}
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="message">Description</Label>
+              <Textarea
+                id="message"
+                placeholder="Décrivez votre problème en détail..."
+                value={message}
+                onChange={(e) => setMessage(e.target.value)}
+                required
+                rows={4}
+              />
+            </div>
+            <Button type="submit" disabled={submitting}>
+              {submitting ? 'Envoi...' : 'Envoyer'}
+            </Button>
+          </form>
+        )}
+
+        {tickets.length === 0 ? (
+          <EmptyState
+            icon={HeadsetIcon}
+            title="Aucun ticket pour le moment"
+            description="Cliquez sur « Nouveau ticket » pour démarrer une conversation avec le support."
+          />
+        ) : (
+          <div className="space-y-2">
+            {tickets.map((ticket) => (
+              <Link
+                key={ticket.id}
+                href={`/support/ticket?id=${ticket.id}`}
+                className="block p-4 border rounded-xl bg-white shadow-card border-green-900/10 hover:border-green-600/30 transition-all group"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="flex-1">
+                    <p className="font-medium text-green-950 group-hover:text-green-600 transition-colors">
+                      {ticket.subject}
+                    </p>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      {new Date(ticket.created_at).toLocaleDateString('fr-FR')}
+                    </p>
+                  </div>
+                  <Badge variant="outline">{TICKET_STATUS_LABELS[ticket.status] || ticket.status}</Badge>
+                </div>
               </Link>
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-muted-foreground">
-                  {new Date(ticket.created_at).toLocaleDateString('fr-FR')}
-                </span>
-                <Badge>{STATUS_LABELS[ticket.status] || ticket.status}</Badge>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
+            ))}
+          </div>
+        )}
+      </section>
     </main>
   );
 }

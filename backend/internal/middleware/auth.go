@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/diarra/backend/internal/auth"
+	"github.com/diarra/backend/internal/model"
 )
 
 type contextKey string
@@ -13,6 +14,8 @@ type contextKey string
 const UserIDKey contextKey = "user_id"
 const IsAdminKey contextKey = "is_admin"
 const RolesKey contextKey = "roles"
+const EmailVerifiedKey contextKey = "email_verified"
+const PhoneVerifiedKey contextKey = "phone_verified"
 
 func RequireAuth(jwtManager *auth.JWTManager) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -103,6 +106,66 @@ func RequireRole(roles ...string) func(http.Handler) http.Handler {
 				}
 			}
 			http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		})
+	}
+}
+
+// GetVerifiedFlags récupère les drapeaux de vérification email/téléphone
+// depuis le contexte (positionnés par le middleware RequireVerified).
+func GetEmailVerified(ctx context.Context) bool {
+	if v, ok := ctx.Value(EmailVerifiedKey).(bool); ok {
+		return v
+	}
+	return false
+}
+
+func GetPhoneVerified(ctx context.Context) bool {
+	if v, ok := ctx.Value(PhoneVerifiedKey).(bool); ok {
+		return v
+	}
+	return false
+}
+
+// RequireVerifiedEmail bloque si l'email n'est pas vérifié.
+// Doit être placé après RequireAuth.
+func RequireVerifiedEmail(userRepo interface {
+	FindByID(ctx context.Context, id string) (*model.User, error)
+}) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			userID := GetUserID(r.Context())
+			if userID == "" {
+				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+				return
+			}
+			user, err := userRepo.FindByID(r.Context(), userID)
+			if err != nil || user.EmailVerifiedAt == nil {
+				http.Error(w, `{"error":"email_not_verified"}`, http.StatusForbidden)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// RequireVerifiedPhone bloque si le téléphone n'est pas vérifié.
+// Doit être placé après RequireAuth.
+func RequireVerifiedPhone(userRepo interface {
+	FindByID(ctx context.Context, id string) (*model.User, error)
+}) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			userID := GetUserID(r.Context())
+			if userID == "" {
+				http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+				return
+			}
+			user, err := userRepo.FindByID(r.Context(), userID)
+			if err != nil || user.Phone == nil || user.PhoneVerifiedAt == nil {
+				http.Error(w, `{"error":"phone_not_verified"}`, http.StatusForbidden)
+				return
+			}
+			next.ServeHTTP(w, r)
 		})
 	}
 }

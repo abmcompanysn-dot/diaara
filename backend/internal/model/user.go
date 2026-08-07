@@ -94,3 +94,24 @@ type RefreshToken struct {
 	RevokedAt *time.Time `json:"revoked_at,omitempty"`
 	CreatedAt time.Time  `json:"created_at"`
 }
+
+// Canaux et usages des codes OTP.
+const (
+	OTPChannelEmail = "email"
+	OTPChannelSMS   = "sms"
+
+	OTPPurposeEmailVerify = "email_verify"
+	OTPPurposePhoneVerify  = "phone_verify"
+)
+
+type OTPCode struct {
+	ID        string    `json:"id"`
+	UserID    string    `json:"user_id"`
+	Channel   string    `json:"channel"`
+	Purpose   string    `json:"purpose"`
+	CodeHash  string    `json:"-"`
+	ExpiresAt time.Time `json:"expires_at"`
+	UsedAt    *time.Time `json:"used_at,omitempty"`
+	Attempts  int       `json:"attempts"`
+	CreatedAt time.Time `json:"created_at"`
+}

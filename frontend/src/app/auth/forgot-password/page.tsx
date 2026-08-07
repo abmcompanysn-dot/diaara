@@ -6,13 +6,8 @@ import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { AuthShell } from '@/components/auth-shell';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -35,8 +30,8 @@ export default function ForgotPasswordPage() {
   };
 
   return (
-    <main className="min-h-screen flex items-center justify-center bg-paper px-4 py-16">
-      <Card className="w-full max-w-md shadow-lift border-green-900/5">
+    <AuthShell>
+      <Card className="w-full shadow-lift border-green-900/5">
         <CardHeader>
           <p className="font-mono text-sm text-green-700/60 uppercase tracking-widest text-center">
             // mot de passe oublié
@@ -52,13 +47,12 @@ export default function ForgotPasswordPage() {
         <CardContent>
           {sent ? (
             <div className="p-4 bg-green-50 text-green-800 rounded-lg text-sm">
-              Si un compte existe avec cet email, un lien de réinitialisation vient d&apos;être
-              envoyé.
+              Si un compte existe avec cet email, un lien de réinitialisation vient d&apos;être envoyé.
             </div>
           ) : (
             <>
               {error && (
-                <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded-lg text-sm">
+                <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded-lg text-sm" role="alert">
                   {error}
                 </div>
               )}
@@ -88,6 +82,6 @@ export default function ForgotPasswordPage() {
           </p>
         </CardContent>
       </Card>
-    </main>
+    </AuthShell>
   );
 }

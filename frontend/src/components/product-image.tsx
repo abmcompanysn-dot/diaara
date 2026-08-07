@@ -3,14 +3,7 @@
 import { useState } from 'react';
 import { apiOrigin } from '@/lib/api';
 import { cn } from '@/lib/utils';
-
-const CATEGORY_LABELS: Record<string, string> = {
-  subscription: "Clés d'abonnement",
-  account: 'Comptes',
-  ebook: 'Ebooks',
-  pdf: 'PDF',
-  other: 'Autres',
-};
+import { CATEGORY_LABELS } from '@/lib/constants';
 
 interface ProductImageProps {
   product: { id: string; cover_image_key?: string; title: string; category: string };

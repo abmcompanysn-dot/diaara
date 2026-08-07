@@ -3,10 +3,11 @@
 import { useEffect, useState } from 'react';
 import { api, apiOrigin } from '@/lib/api';
 import { RequireRole } from '@/lib/guards';
-import { LinkIcon, MegaphoneIcon, ZapIcon } from '@/components/icons';
+import { LinkIcon, MegaphoneIcon, ZapIcon, CopyIcon } from '@/components/icons';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { PageLoader } from '@/components/page-loader';
 import {
   Select,
   SelectContent,
@@ -97,12 +98,27 @@ function CloserDashboard() {
   const shareUrl = (slug: string) => `${apiOrigin}/r/${slug}`;
 
   const copy = async (slug: string) => {
+    const text = shareUrl(slug);
     try {
-      await navigator.clipboard.writeText(shareUrl(slug));
+      await navigator.clipboard.writeText(text);
       setCopied(slug);
       setTimeout(() => setCopied(null), 2000);
     } catch {
-      alert(shareUrl(slug));
+      // Fallback pour les navigateurs sans API Clipboard : copie via un champ masqué.
+      try {
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.opacity = '0';
+        document.body.appendChild(textarea);
+        textarea.select();
+        document.execCommand('copy');
+        document.body.removeChild(textarea);
+        setCopied(slug);
+        setTimeout(() => setCopied(null), 2000);
+      } catch {
+        setError('Impossible de copier : copiez le lien manuellement.');
+      }
     }
   };
 
@@ -125,51 +141,90 @@ function CloserDashboard() {
         </div>
       </section>
 
-      <section className="max-w-6xl mx-auto px-4 py-12">
-        {error && <div className="mb-6 p-3 bg-destructive/10 text-destructive rounded">{error}</div>}
+      <section className="max-w-6xl mx-auto px-4 sm:px-6 py-10">
+        {error && <div className="mb-6 p-3 bg-destructive/10 text-destructive rounded text-sm" role="alert">{error}</div>}
 
-        <div className="grid gap-6 lg:grid-cols-3">
-          <div className="lg:col-span-2">
-            <div className="flex items-center gap-2 mb-4">
-              <LinkIcon size={20} className="text-green-600" />
-              <h2 className="font-display font-bold text-xl text-green-950">Mes liens</h2>
+        {loading ? (
+          <PageLoader />
+        ) : (
+          <>
+            <div className="grid gap-4 sm:grid-cols-3 mb-8">
+              <Card className="bg-green-50/60 border-green-900/5">
+                <CardContent className="p-6">
+                  <p className="text-sm text-green-700">Clics cumulés</p>
+                  <p className="text-2xl font-bold font-mono mt-1">
+                    {links.reduce((s, l) => s + (l.clicks || 0), 0).toLocaleString('fr-FR')}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card className="bg-green-50/60 border-green-900/5">
+                <CardContent className="p-6">
+                  <p className="text-sm text-green-700">Ventes générées</p>
+                  <p className="text-2xl font-bold font-mono mt-1">
+                    {links.reduce((s, l) => s + (l.sales || 0), 0).toLocaleString('fr-FR')}
+                  </p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardContent className="p-6">
+                  <p className="text-sm text-green-700">Commissions</p>
+                  <p className="text-2xl font-bold font-mono mt-1 text-primary">
+                    {links.reduce((s, l) => s + (l.commissions_cfa || 0), 0).toLocaleString('fr-FR')} FCFA
+                  </p>
+                </CardContent>
+              </Card>
             </div>
 
-            {loading ? (
-              <p className="text-muted-foreground">Chargement...</p>
-            ) : (
-              <div className="grid gap-4 sm:grid-cols-2">
-                {links.map((link) => (
-                  <Card key={link.id} className="shadow-card border-green-900/5">
-                    <CardContent className="p-5">
-                      <p className="font-semibold text-foreground truncate">
-                        {link.product_title || 'Produit'}
-                      </p>
-                      <Button
-                        variant="ghost"
-                        onClick={() => copy(link.slug)}
-                        className="mt-2 block w-full text-left font-mono text-xs text-primary hover:text-primary/80 truncate"
-                        title="Copier le lien"
-                      >
-                        {copied === link.slug ? 'Copié !' : shareUrl(link.slug)}
-                      </Button>
-                      <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                        <div>
-                          <p className="text-muted-foreground">Commission</p>
-                          <p className="font-semibold">{link.commission_pct}%</p>
+            <div className="grid gap-6 lg:grid-cols-3">
+              <div className="lg:col-span-2">
+                <div className="flex items-center gap-2 mb-4">
+                  <LinkIcon size={20} className="text-green-600" />
+                  <h2 className="font-display font-bold text-xl text-green-950">Mes liens</h2>
+                </div>
+
+                <div className="grid gap-4 sm:grid-cols-2">
+                  {links.map((link) => (
+                    <Card key={link.id} className="shadow-card border-green-900/5">
+                      <CardContent className="p-5">
+                        <p className="font-semibold text-foreground truncate">
+                          {link.product_title || 'Produit'}
+                        </p>
+                        <div className="mt-2 flex items-center gap-2">
+                          <code className="flex-1 truncate font-mono text-xs text-primary bg-secondary/60 px-3 py-2 rounded-lg border border-border">
+                            {shareUrl(link.slug)}
+                          </code>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="min-h-9 shrink-0"
+                            onClick={() => copy(link.slug)}
+                            aria-label="Copier le lien"
+                            title="Copier le lien"
+                          >
+                            {copied === link.slug ? (
+                              <span className="text-green-700 font-medium">Copié !</span>
+                            ) : (
+                              <CopyIcon size={16} />
+                            )}
+                          </Button>
                         </div>
-                        <div>
-                          <p className="text-muted-foreground">Clics</p>
-                          <p className="font-semibold">{link.clicks}</p>
-                        </div>
-                        <div>
-                          <p className="text-muted-foreground">Ventes</p>
-                          <p className="font-semibold">{link.sales}</p>
-                        </div>
-                        <div>
+                        <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+                          <div>
+                            <p className="text-muted-foreground">Commission</p>
+                            <p className="font-semibold">{link.commission_pct}%</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Clics</p>
+                            <p className="font-semibold">{link.clicks}</p>
+                          </div>
+                          <div>
+                            <p className="text-muted-foreground">Ventes</p>
+                            <p className="font-semibold">{link.sales}</p>
+                          </div>
+                          <div>
                           <p className="text-muted-foreground">Gains</p>
                           <p className="font-semibold text-primary">
-                            {link.commissions_cfa.toLocaleString('fr-FR')} FCFA
+                            {(link.commissions_cfa || 0).toLocaleString('fr-FR')} FCFA
                           </p>
                         </div>
                       </div>
@@ -182,84 +237,85 @@ function CloserDashboard() {
                   </p>
                 )}
               </div>
-            )}
-          </div>
-
-          <div>
-            <div className="flex items-center gap-2 mb-4">
-              <MegaphoneIcon size={20} className="text-green-600" />
-              <h2 className="font-display font-bold text-xl text-green-950">Nouveau lien</h2>
             </div>
 
-            <Card className="shadow-card border-green-900/5">
-              <CardHeader className="pb-3">
-                <CardTitle className="text-base">Générer un lien</CardTitle>
-                <CardDescription>
-                  Choisissez un produit affiliable et votre commission.
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <form onSubmit={handleCreate} className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="closer-product">Produit</Label>
-                    <Select value={selected} onValueChange={(v) => setSelected(v || '')}>
-                      <SelectTrigger id="closer-product" className="w-full bg-background">
-                        <SelectValue placeholder="Choisir un produit..." />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {products.map((p) => (
-                          <SelectItem key={p.id} value={p.id}>
-                            {p.title} — {p.price_cfa.toLocaleString('fr-FR')} FCFA
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                    {products.length === 0 && (
-                      <p className="text-xs text-muted-foreground">
-                        Aucun produit affiliable actuellement.
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="closer-commission">
-                      Commission (%){selectedProduct ? ` — max ${selectedProduct.max_closer_commission_pct}%` : ''}
-                    </Label>
-                    <Input
-                      id="closer-commission"
-                      type="number"
-                      value={commission}
-                      onChange={(e) => setCommission(e.target.value)}
-                      min={1}
-                      max={selectedProduct?.max_closer_commission_pct || 85}
-                      required
-                    />
-                  </div>
-
-                  <Button
-                    type="submit"
-                    disabled={!selected || products.length === 0}
-                    className="w-full font-semibold"
-                  >
-                    Générer le lien
-                  </Button>
-                </form>
-              </CardContent>
-            </Card>
-
-            <div className="mt-6 p-4 bg-green-950 text-white rounded-xl">
-              <div className="flex items-center gap-2 mb-2">
-                <ZapIcon size={18} className="text-lime" />
-                <p className="font-semibold">Comment ça marche ?</p>
+            <div>
+              <div className="flex items-center gap-2 mb-4">
+                <MegaphoneIcon size={20} className="text-green-600" />
+                <h2 className="font-display font-bold text-xl text-green-950">Nouveau lien</h2>
               </div>
-              <ul className="text-sm text-white/70 space-y-2 list-disc list-inside">
-                <li>Le vendeur doit activer l&apos;affiliation sur son produit.</li>
-                <li>La commission est plafonnée par le vendeur.</li>
-                <li>Chaque vente via votre lien vous rapporte votre commission.</li>
-              </ul>
+
+              <Card className="shadow-card border-green-900/5">
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-base">Générer un lien</CardTitle>
+                  <CardDescription>
+                    Choisissez un produit affiliable et votre commission.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={handleCreate} className="space-y-4">
+                    <div className="space-y-2">
+                      <Label htmlFor="closer-product">Produit</Label>
+                      <Select value={selected} onValueChange={(v) => setSelected(v || '')}>
+                        <SelectTrigger id="closer-product" className="w-full bg-background">
+                          <SelectValue placeholder="Choisir un produit..." />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {products.map((p) => (
+                            <SelectItem key={p.id} value={p.id}>
+                              {p.title} — {p.price_cfa.toLocaleString('fr-FR')} FCFA
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      {products.length === 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          Aucun produit affiliable actuellement.
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="space-y-2">
+                      <Label htmlFor="closer-commission">
+                        Commission (%){selectedProduct ? ` — max ${selectedProduct.max_closer_commission_pct}%` : ''}
+                      </Label>
+                      <Input
+                        id="closer-commission"
+                        type="number"
+                        value={commission}
+                        onChange={(e) => setCommission(e.target.value)}
+                        min={1}
+                        max={selectedProduct?.max_closer_commission_pct || 85}
+                        required
+                      />
+                    </div>
+
+                    <Button
+                      type="submit"
+                      disabled={!selected || products.length === 0}
+                      className="w-full font-semibold"
+                    >
+                      Générer le lien
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+
+              <div className="mt-6 p-4 bg-green-950 text-white rounded-xl">
+                <div className="flex items-center gap-2 mb-2">
+                  <ZapIcon size={18} className="text-lime" />
+                  <p className="font-semibold">Comment ça marche ?</p>
+                </div>
+                <ul className="text-sm text-white/70 space-y-2 list-disc list-inside">
+                  <li>Le vendeur doit activer l&apos;affiliation sur son produit.</li>
+                  <li>La commission est plafonnée par le vendeur.</li>
+                  <li>Chaque vente via votre lien vous rapporte votre commission.</li>
+                </ul>
+              </div>
             </div>
           </div>
-        </div>
+          </>
+        )}
       </section>
     </main>
   );

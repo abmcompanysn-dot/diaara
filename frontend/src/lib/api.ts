@@ -34,6 +34,7 @@ async function fetchApi<T>(endpoint: string, options: FetchOptions = {}): Promis
   const response = await fetch(`${API_BASE}${endpoint}`, {
     ...fetchOptions,
     headers,
+    credentials: 'include',
   });
 
   if (!response.ok) {
@@ -47,14 +48,20 @@ async function fetchApi<T>(endpoint: string, options: FetchOptions = {}): Promis
 export const api = {
   // Auth
   register: (data: { email: string; password: string; phone?: string; roles?: string[] }) =>
-    fetchApi<{ user: any; access_token: string; refresh_token: string }>('/api/auth/register', {
+    fetchApi<{
+      user: any;
+      access_token: string;
+      pending_verifications: string[];
+      dev_email_otp?: string;
+      dev_phone_otp?: string;
+    }>('/api/auth/register', {
       method: 'POST',
       body: JSON.stringify(data),
       skipAuth: true,
     }),
 
   login: (data: { email: string; password: string }) =>
-    fetchApi<{ access_token: string; refresh_token: string }>('/api/auth/login', {
+    fetchApi<{ access_token: string }>('/api/auth/login', {
       method: 'POST',
       body: JSON.stringify(data),
       skipAuth: true,
@@ -62,32 +69,29 @@ export const api = {
 
   getMe: () => fetchApi<{ user: any }>('/api/auth/me'),
 
-  logout: () => {
-    const refreshToken = localStorage.getItem('refresh_token') || '';
-    return fetchApi<void>('/api/auth/logout', {
+  logout: () =>
+    fetchApi<void>('/api/auth/logout', {
       method: 'POST',
-      body: JSON.stringify({ refresh_token: refreshToken }),
-    });
-  },
-
-  verifyEmail: (token: string) =>
-    fetchApi<{ status: string }>('/api/auth/verify-email', {
-      method: 'POST',
-      body: JSON.stringify({ token }),
       skipAuth: true,
     }),
 
-  resetPassword: (token: string, newPassword: string) =>
-    fetchApi<{ status: string }>('/api/auth/reset-password', {
+  // OTP : envoi (resend) et vérification. Le refresh token vit en cookie httpOnly,
+  // l'access token dans localStorage.
+  sendOtp: (channel: 'email' | 'sms') =>
+    fetchApi<{ status: string; channel: string; dev_code?: string }>('/api/auth/send-otp', {
       method: 'POST',
-      body: JSON.stringify({ token, new_password: newPassword }),
-      skipAuth: true,
+      body: JSON.stringify({ channel }),
     }),
 
-  refreshToken: (refreshToken: string) =>
+  verifyOtp: (channel: 'email' | 'sms', code: string) =>
+    fetchApi<{ status: string; channel: string }>('/api/auth/verify-otp', {
+      method: 'POST',
+      body: JSON.stringify({ channel, code }),
+    }),
+
+  refreshToken: () =>
     fetchApi<{ access_token: string }>('/api/auth/refresh', {
       method: 'POST',
-      body: JSON.stringify({ refresh_token: refreshToken }),
       skipAuth: true,
     }),
 
@@ -95,6 +99,13 @@ export const api = {
     fetchApi<{ message: string }>('/api/auth/forgot-password', {
       method: 'POST',
       body: JSON.stringify({ email }),
+      skipAuth: true,
+    }),
+
+  resetPassword: (token: string, newPassword: string) =>
+    fetchApi<{ status: string }>('/api/auth/reset-password', {
+      method: 'POST',
+      body: JSON.stringify({ token, new_password: newPassword }),
       skipAuth: true,
     }),
 
@@ -141,10 +152,24 @@ export const api = {
     fetchApi<void>(`/api/vendor/products/${id}`, { method: 'DELETE' }),
 
   // Orders
-  createOrder: (data: { product_id: string }) =>
-    fetchApi<{ order: any; payment_url: string }>('/api/orders', {
+  createOrder: (data: {
+    product_id: string;
+    buyer_email?: string;
+    phone: string;
+    operator: string;
+    country: string;
+    referral_link_id?: string;
+  }) =>
+    fetchApi<{ order: any; checkout: { deposit_id: string; status: string } }>('/api/orders', {
       method: 'POST',
       body: JSON.stringify(data),
+      skipAuth: true,
+    }),
+
+  // Suivi public d'une commande (acheteur invité) par checkout_token
+  getCheckoutStatus: (token: string) =>
+    fetchApi<{ order: any }>(`/api/orders/status?token=${encodeURIComponent(token)}`, {
+      skipAuth: true,
     }),
 
   getOrder: (id: string) => fetchApi<{ order: any }>(`/api/orders/${id}`),
