@@ -6,38 +6,44 @@ livraison sécurisée par URL signée.
 
 ## Architecture
 
+**Déploiement actuel : 100 % auto-hébergé sur VPS (Docker + Caddy), sans Cloudflare.**
+
 ```
-┌────────────────────────────┐   assets statiques   ┌───────────────────────┐
-│  Navigateur / client       │ ───────────────────► │  Cloudflare Worker    │
-└────────────────────────────┘                      │  (diarra-worker)      │
-        │                                           └───────────────────────┘
-        │                                              │          │
-        │  /api/* , /ws/* (proxy)                      │          │ cron
-        ▼                                              ▼          ▼
-┌──────────────────────┐                     ┌────────────────────────────┐
-│  Backend Go (Render  │                     │  /api/* , /ws/* proxifiés  │
-│  ou VPS via Docker)  │                     │  → backend                 │
-└──────────┬───────────┘                     └────────────────────────────┘
-           │
-   ┌───────┴────────┬──────────────┐
-   ▼                ▼              ▼
-┌─────────┐   ┌──────────┐   ┌──────────┐
-│ Neon DB │   │ Tigris   │   │ PawaPay  │
-│ Postgres│   │ fichiers │   │ mobile   │
-└─────────┘   └──────────┘   └──────────┘
+┌────────────────────────────┐   HTTPS (Let's Encrypt via Caddy)
+│  Navigateur / client       │ ───────────────────────────────────┐
+└────────────────────────────┘                                    │
+        │  /                          /api/*, /ws/*               │  redirect 302
+        ▼                                   ▼                     ▼ (téléchargement)
+┌──────────────────┐            ┌──────────────────┐   ┌───────────────────────┐
+│ diarra-frontend   │            │ diarra-backend    │   │ diarra-minio          │
+│ (Next.js export,  │            │ (Go, Chi, WS)     │──►│ S3-compatible         │
+│  nginx, port 3001)│            │ port 8080         │   │ (fichiers produits)   │
+└──────────────────┘            └─────────┬─────────┘   └───────────────────────┘
+                                            ▼
+                                  ┌───────────────────┐
+                                  │ diarra-postgres    │
+                                  │ (réseau Docker     │
+                                  │  interne uniquement)│
+                                  └───────────────────┘
 ```
 
-- **Frontend** : Next.js (`output: export`) → dossier `frontend/out` (100 % statique).
-- **Edge** : Worker Cloudflare sert les fichiers statiques **et** proxifie l'API
-  (`/api/*`) et le WebSocket (`/ws/*`) vers le backend. Un cron (toutes les 5 min)
-  garde l'instance éveillée. Un KV Cloudflare limite les appels sur `/api/auth/login`.
+- **Frontend** : Next.js (`output: export`) → build statique servi par nginx dans le
+  conteneur `frontend`. Reverse-proxifié par Caddy sur le domaine principal.
+- **Edge / TLS** : **Caddy** (installé sur le VPS) fait le reverse proxy et obtient les
+  certificats **Let's Encrypt automatiquement** — `/api/*` et `/ws/*` vers le backend,
+  le reste vers le frontend. Plus de Worker Cloudflare pour Diarra.
 - **Backend** : Go 1.25, API REST + WebSocket temps réel (via `LISTEN/NOTIFY`
   PostgreSQL), email (SMTP / Resend / Mailtrap), upload S3, OTP (email + SMS),
-  livraison par URL signée (3 téléchargements max). Dockerfile fourni pour Render
-  **ou** tout VPS.
-- **Base de données** : PostgreSQL managé sur **Neon** (ou Postgres Docker sur VPS).
-- **Stockage** : **Tigris** (S3-compatible, bucket `diarra-files`) pour les fichiers
-  vendus et les aperçus produits.
+  livraison par URL signée (3 téléchargements max). Tourne dans Docker sur le VPS.
+- **Base de données** : PostgreSQL en conteneur Docker sur le VPS (réseau interne
+  uniquement, pas de port publié sur l'hôte).
+- **Stockage** : **MinIO auto-hébergé** (S3-compatible, bucket `diarra-files`) sur le
+  VPS, exposé publiquement sur un sous-domaine dédié (`S3_ENDPOINT`) car les liens de
+  téléchargement sont des redirections signées vers cet endpoint (le navigateur du
+  client y accède directement).
+
+> Ancien déploiement (Cloudflare Worker + Render + Neon + Tigris) : voir l'historique
+> git. Le dossier `worker/` reste dans le repo mais n'est plus déployé.
 
 ## Règle d'or : aucune clé en dur
 
@@ -217,61 +223,88 @@ Périmètre admin (route `/api/admin`, protégée par `RequireAdmin`) :
 Le dépôt contient un `docker-compose.yml` qui lance **Postgres + backend +
 frontend** sur un VPS. Deux options :
 
-### Option A — Backend sur VPS, frontend toujours servi par Cloudflare
+### Déploiement actuel — tout sur le VPS (frontend + backend + Postgres + MinIO)
 
-1. Installer Docker + Docker Compose sur le VPS.
-2. Copier le projet, créer un fichier `backend/.env` avec les variables de la
-   section 3 (`DATABASE_URL` peut pointer vers Postgres local du VPS ou Neon).
-3. Lancer uniquement le backend :
+1. Copier le projet sur le VPS (`git clone`, ou `scp` si le VPS n'a pas d'accès au
+   dépôt privé) et créer un fichier `.env` **à la racine du repo** (à côté de
+   `docker-compose.yml`, pas dans `backend/`) avec :
+   - `POSTGRES_PASSWORD`, `JWT_SECRET`, `REFRESH_SECRET` (générés avec
+     `openssl rand -base64 48`).
+   - `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS`, `NEXT_PUBLIC_API_URL`,
+     `NEXT_PUBLIC_WS_URL` → votre domaine (ex. `https://diarra.abmcy.com`,
+     `wss://diarra.abmcy.com`).
+   - `BACKEND_HOST_PORT` / `FRONTEND_HOST_PORT` / `MINIO_API_HOST_PORT` /
+     `MINIO_CONSOLE_HOST_PORT` : uniquement si les ports par défaut (`8080`,
+     `3000`, `9000`, `9001`) sont déjà pris par une autre app sur le même VPS.
+   - `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` (identifiants MinIO, générés
+     aléatoirement) + `S3_ENDPOINT=https://<sous-domaine-stockage>`,
+     `S3_ACCESS_KEY_ID=$MINIO_ROOT_USER`, `S3_SECRET_ACCESS_KEY=$MINIO_ROOT_PASSWORD`,
+     `S3_BUCKET=diarra-files`, `S3_REGION=us-east-1`.
+2. `docker compose build backend frontend && docker compose up -d` → lance
+   Postgres (réseau interne uniquement), MinIO, backend et frontend, tous bindés
+   sur `127.0.0.1` (jamais exposés directement — la convention sur un VPS partagé
+   entre plusieurs apps est de tout faire passer par le reverse proxy).
+3. Créer le bucket MinIO une fois le conteneur `minio` démarré :
 
    ```bash
-   docker compose up -d --build backend
+   docker run --rm --network <projet>_default --entrypoint sh minio/mc -c \
+     "mc alias set local http://minio:9000 \$MINIO_ROOT_USER \$MINIO_ROOT_PASSWORD \
+      && mc mb local/diarra-files"
    ```
 
-4. Exposer le port `8080` (UFW : `sudo ufw allow 8080`). La `BACKEND_URL` du
-   worker pointe alors vers `https://<ip-ou-domaine-du-vps>:8080` (avec TLS en
-   reverse proxy nginx/caddy devant).
-5. Redéployer le worker : `cd worker && npx wrangler deploy`.
+4. Reverse proxy **Caddy** (déjà installé) — ajouter au `Caddyfile` (TLS Let's
+   Encrypt automatique, aucun certbot à gérer) :
 
-### Option B — Tout sur le VPS (frontend + backend + Postgres)
+   ```caddyfile
+   diarra.abmcy.com {
+       handle /api/* { reverse_proxy 127.0.0.1:8080 }
+       handle /ws/*  { reverse_proxy 127.0.0.1:8080 }
+       handle        { reverse_proxy 127.0.0.1:3001 }
+   }
 
-1. Copier le projet sur le VPS et remplir `.env` (voir section 3).
-2. Lancer la stack complète :
-
-   ```bash
-   docker compose up -d --build
+   s3.diarra.abmcy.com {
+       reverse_proxy 127.0.0.1:9000
+   }
    ```
 
-   → frontend sur `:3000`, backend sur `:8080`, Postgres interne.
-3. Mettre un reverse proxy (Caddy ou nginx) avec HTTPS et rediriger le domaine
-   vers le conteneur frontend. `FRONTEND_URL` et les URLs build pointent alors
-   vers votre domaine au lieu du worker Cloudflare.
+   Puis `systemctl reload caddy`. **Important** : le endpoint MinIO doit être
+   accessible publiquement (pas seulement en réseau Docker interne) car
+   `delivery_handler.go` redirige (302) le navigateur du client directement vers
+   une URL pré-signée sur cet endpoint — ce n'est pas le backend qui sert le
+   fichier.
+5. Ajouter les enregistrements DNS (A) des deux domaines vers l'IP du VPS avant
+   l'étape 4, sinon Caddy ne pourra pas obtenir les certificats.
 
 > Notes Docker :
-> - `frontend/Dockerfile` reçoit `NEXT_PUBLIC_API_URL` en build arg.
+> - `frontend/Dockerfile` reçoit `NEXT_PUBLIC_API_URL` **et** `NEXT_PUBLIC_WS_URL`
+>   en build arg (embarqués au build, donc tout changement d'URL impose un rebuild).
 > - La variable `CORS_ALLOWED_ORIGINS` du backend doit inclure l'origine du front.
-> - Ne jamais commiter le fichier `.env` du VPS.
+> - Ne jamais commiter le fichier `.env` du VPS (déjà dans `.gitignore`).
+> - Sur un VPS partagé avec d'autres apps, vérifier les ports déjà utilisés
+>   (`ss -ltnp`) avant de lancer `docker compose up` — les valeurs par défaut de
+>   ce repo (`8080`, `3000`→`3001` recommandé, `9000`, `9001`) peuvent entrer en
+>   conflit.
 
 ## 8. Vérification du déploiement
 
 ```bash
 # Backend vivant
-curl -s https://diarra-backend.onrender.com/health
-
-# API via le worker (proxy)
-curl -s https://diarra-worker.sabel.workers.dev/api/products
+curl -s https://diarra.abmcy.com/api/products
 
 # Frontend servi
-curl -s -o /dev/null -w "%{http_code}\n" https://diarra-worker.sabel.workers.dev/
+curl -s -o /dev/null -w "%{http_code}\n" https://diarra.abmcy.com/
+
+# Stockage MinIO joignable publiquement
+curl -s https://s3.diarra.abmcy.com/minio/health/live
 
 # WebSocket temps réel (token d'un utilisateur connecté)
-node -e "new WebSocket('wss://diarra-worker.sabel.workers.dev/ws/order/<sale_id>?token=<JWT>').onopen=()=>console.log('OK')"
+node -e "new WebSocket('wss://diarra.abmcy.com/ws/order/<sale_id>?token=<JWT>').onopen=()=>console.log('OK')"
 ```
 
-## URLs actuelles (déploiement en cours)
+## URLs actuelles
 
-- Application : https://diarra-worker.sabel.workers.dev
-- Backend : https://diarra-backend.onrender.com
+- Application : https://diarra.abmcy.com
+- Stockage (MinIO) : https://s3.diarra.abmcy.com
 - Dépôt : https://github.com/idrissoualanni/diarra (privé, branche `master`)
 
 ## Références clés dans le repo
