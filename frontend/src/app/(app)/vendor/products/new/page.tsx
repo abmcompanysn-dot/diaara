@@ -24,7 +24,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { PageHeader } from '@/components/page-header';
-import { ArrowLeftIcon } from '@/components/icons';
+import { ArrowLeftIcon, FileIcon } from '@/components/icons';
 import { CATEGORY_LABELS } from '@/lib/constants';
 
 export default function NewProductPage() {
@@ -36,11 +36,19 @@ export default function NewProductPage() {
   const [affiliateEnabled, setAffiliateEnabled] = useState(false);
   const [maxCommission, setMaxCommission] = useState('10');
   const [file, setFile] = useState<File | null>(null);
+  const [filePreview, setFilePreview] = useState('');
   const [coverFile, setCoverFile] = useState<File | null>(null);
   const [coverKey, setCoverKey] = useState('');
   const [coverPreview, setCoverPreview] = useState('');
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0] || null;
+    setFile(f);
+    if (filePreview) URL.revokeObjectURL(filePreview);
+    setFilePreview(f ? URL.createObjectURL(f) : '');
+  };
 
   const handleCoverSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0] || null;
@@ -187,9 +195,45 @@ export default function NewProductPage() {
               <Input
                 id="file"
                 type="file"
-                onChange={(e) => setFile(e.target.files?.[0] || null)}
+                onChange={handleFileSelect}
                 required
               />
+              {file && (
+                <div className="rounded-lg border border-border overflow-hidden">
+                  {filePreview &&
+                  (file.type.startsWith('image/') || file.type === 'application/pdf' || file.type.includes('video/')) ? (
+                    file.type === 'application/pdf' ? (
+                      <iframe
+                        src={filePreview}
+                        title="Aperçu du document"
+                        className="w-full h-64 bg-white"
+                      />
+                    ) : file.type.startsWith('image/') ? (
+                      <img
+                        src={filePreview}
+                        alt="Aperçu du fichier"
+                        className="w-full h-40 object-contain bg-white"
+                      />
+                    ) : (
+                      <video
+                        src={filePreview}
+                        controls
+                        className="w-full h-40 bg-black"
+                      />
+                    )
+                  ) : (
+                    <div className="p-3 flex items-center gap-3 bg-secondary/60">
+                      <FileIcon size={28} className="text-primary shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium truncate">{file.name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {(file.size / 1024 / 1024).toFixed(2)} Mo
+                        </p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
               <p className="text-xs text-muted-foreground">Taille max : 50 Mo</p>
             </div>
 
