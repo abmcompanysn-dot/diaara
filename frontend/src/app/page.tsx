@@ -34,6 +34,46 @@ const PAYMENTS = [
   { name: 'MTN MoMo', color: 'bg-money-mtn', text: 'text-green-950' },
 ];
 
+const COUNTRIES = [
+  { name: 'Bénin', flag: '🇧🇯' },
+  { name: 'Burkina Faso', flag: '🇧🇫' },
+  { name: 'Cameroun', flag: '🇨🇲' },
+  { name: 'Congo-Brazzaville', flag: '🇨🇬' },
+  { name: 'RD Congo', flag: '🇨🇩' },
+  { name: 'Gabon', flag: '🇬🇦' },
+  { name: 'Ghana', flag: '🇬🇭' },
+  { name: "Côte d'Ivoire", flag: '🇨🇮' },
+  { name: 'Kenya', flag: '🇰🇪' },
+  { name: 'Lesotho', flag: '🇱🇸' },
+  { name: 'Malawi', flag: '🇲🇼' },
+  { name: 'Mozambique', flag: '🇲🇿' },
+  { name: 'Nigeria', flag: '🇳🇬' },
+  { name: 'Rwanda', flag: '🇷🇼' },
+  { name: 'Sénégal', flag: '🇸🇳' },
+  { name: 'Sierra Leone', flag: '🇸🇱' },
+  { name: 'Tanzanie', flag: '🇹🇿' },
+  { name: 'Ouganda', flag: '🇺🇬' },
+  { name: 'Zambie', flag: '🇿🇲' },
+];
+
+// Réseaux mobile money présents sur le continent (couverture réseau PawaPay).
+// Le paiement actif sur DIARRA reste limité aux pays listés dans lib/operators.ts.
+const PAYMENT_LOGOS = [
+  { name: 'Orange Money', file: 'orange-money.png' },
+  { name: 'MTN MoMo', file: 'mtn-momo.png' },
+  { name: 'Moov Money', file: 'moov-money.png' },
+  { name: 'M-Pesa', file: 'mpesa.png' },
+  { name: 'Safaricom M-Pesa', file: 'safaricom-mpesa.png' },
+  { name: 'Vodacom', file: 'vodacom.png' },
+  { name: 'AT Money', file: 'at-money.png' },
+  { name: 'Mixx by Yas', file: 'mixx-yas.png' },
+  { name: 'HaloPesa', file: 'halopesa.png' },
+  { name: 'Movitel', file: 'movitel.png' },
+  { name: 'TNM', file: 'tnm.png' },
+  { name: 'Telecel Cash', file: 'telecel-cash.png' },
+  { name: 'Zamtel', file: 'zamtel.png' },
+];
+
 export default function Home() {
   return (
     <>
@@ -148,6 +188,66 @@ export default function Home() {
             <div key={stat.label}>
               <p className="font-display text-3xl font-bold text-green-700">{stat.value}</p>
               <p className="text-sm text-green-900/60 mt-1">{stat.label}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      {/* Couverture pays */}
+      <section className="py-20 bg-green-950 text-white relative overflow-hidden">
+        <div className="wax-pattern absolute inset-0" aria-hidden />
+        <div className="relative max-w-6xl mx-auto px-4">
+          <div className="text-center mb-12">
+            <p className="font-mono text-sm text-green-300 uppercase tracking-widest mb-3">
+              // couverture réseau
+            </p>
+            <h2 className="font-display text-3xl sm:text-4xl font-bold tracking-tight">
+              Disponible dans <span className="underline-accent text-lime">toute l&apos;Afrique</span>
+            </h2>
+            <p className="mt-4 text-white/70 max-w-2xl mx-auto">
+              DIARRA s&apos;appuie sur le réseau mobile money PawaPay, présent dans {COUNTRIES.length} pays.
+              Le paiement est déjà actif au Sénégal, en Côte d&apos;Ivoire, au Bénin et au Burkina Faso,
+              et s&apos;étend progressivement au reste du continent.
+            </p>
+          </div>
+          <div className="flex flex-wrap justify-center gap-3">
+            {COUNTRIES.map((c) => (
+              <span
+                key={c.name}
+                className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 text-sm text-white/85"
+              >
+                <span aria-hidden>{c.flag}</span>
+                {c.name}
+              </span>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Moyens de paiement mobile money */}
+      <section className="py-20 max-w-6xl mx-auto px-4">
+        <div className="text-center mb-12">
+          <p className="font-mono text-sm text-green-700/60 uppercase tracking-widest mb-3">
+            // moyens de paiement
+          </p>
+          <h2 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-green-950">
+            Tous vos <span className="underline-green">réseaux mobile money</span>
+          </h2>
+          <p className="mt-4 text-green-900/60 max-w-2xl mx-auto">
+            Payez et soyez payé avec l&apos;opérateur mobile money de votre pays.
+          </p>
+        </div>
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
+          <div className="flex items-center justify-center bg-green-400 rounded-xl p-4 h-20 shadow-card">
+            <span className="font-display font-bold text-green-950">Wave</span>
+          </div>
+          {PAYMENT_LOGOS.map((p) => (
+            <div
+              key={p.name}
+              className="flex items-center justify-center bg-white rounded-xl p-4 h-20 shadow-card border border-green-900/5"
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={`/payments/${p.file}`} alt={p.name} className="max-h-10 max-w-full object-contain" />
             </div>
           ))}
         </div>
