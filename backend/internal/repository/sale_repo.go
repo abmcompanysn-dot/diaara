@@ -19,12 +19,12 @@ func NewSaleRepo(pool *pgxpool.Pool) *SaleRepo {
 	return &SaleRepo{pool: pool}
 }
 
-const saleColumns = `id, product_id, buyer_id, referral_link_id, amount_cfa, platform_fee_cfa,
+const saleColumns = `id, product_id, buyer_id, buyer_name, referral_link_id, amount_cfa, platform_fee_cfa,
 	closer_commission_cfa, vendor_amount_cfa, payment_provider, payment_reference, checkout_token, status, refund_reference, delivered_at, created_at`
 
 func scanSale(row pgx.Row) (*model.Sale, error) {
 	s := &model.Sale{}
-	err := row.Scan(&s.ID, &s.ProductID, &s.BuyerID, &s.ReferralLinkID, &s.AmountCFA,
+	err := row.Scan(&s.ID, &s.ProductID, &s.BuyerID, &s.BuyerName, &s.ReferralLinkID, &s.AmountCFA,
 		&s.PlatformFeeCFA, &s.CloserCommissionCFA, &s.VendorAmountCFA, &s.PaymentProvider,
 		&s.PaymentReference, &s.CheckoutToken, &s.Status, &s.RefundReference, &s.DeliveredAt, &s.CreatedAt)
 	if err != nil {
@@ -38,11 +38,11 @@ func scanSale(row pgx.Row) (*model.Sale, error) {
 
 func (r *SaleRepo) Create(ctx context.Context, s *model.Sale) (*model.Sale, error) {
 	row := r.pool.QueryRow(ctx,
-		`INSERT INTO sales (product_id, buyer_id, referral_link_id, amount_cfa, platform_fee_cfa,
+		`INSERT INTO sales (product_id, buyer_id, buyer_name, referral_link_id, amount_cfa, platform_fee_cfa,
 			closer_commission_cfa, vendor_amount_cfa, payment_provider, payment_reference, checkout_token, status)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		 RETURNING `+saleColumns,
-		s.ProductID, s.BuyerID, s.ReferralLinkID, s.AmountCFA, s.PlatformFeeCFA,
+		s.ProductID, s.BuyerID, s.BuyerName, s.ReferralLinkID, s.AmountCFA, s.PlatformFeeCFA,
 		s.CloserCommissionCFA, s.VendorAmountCFA, s.PaymentProvider, s.PaymentReference, s.CheckoutToken, s.Status)
 	return scanSale(row)
 }

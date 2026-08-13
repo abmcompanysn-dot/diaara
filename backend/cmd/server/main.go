@@ -173,7 +173,7 @@ func main() {
 	healthHandler := handler.NewHealthHandler(pool)
 	authHandler := handler.NewAuthHandler(authService)
 	productHandler := handler.NewProductHandler(productRepo, storageService, os.Getenv("FRONTEND_URL"))
-	saleHandler := handler.NewSaleHandler(saleRepo, productRepo, referralRepo, userRepo, pawapay)
+	saleHandler := handler.NewSaleHandler(saleRepo, productRepo, referralRepo, userRepo, pawapay, os.Getenv("FRONTEND_URL"))
 	closerHandler := handler.NewCloserHandler(referralRepo, productRepo, os.Getenv("FRONTEND_URL"))
 	webhookHandler := handler.NewWebhookHandler(saleRepo, userRepo, productRepo, payoutRepo, pawapay, notifications, allowedIPs)
 

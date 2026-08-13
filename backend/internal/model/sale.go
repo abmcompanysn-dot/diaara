@@ -6,6 +6,7 @@ type Sale struct {
 	ID                  string     `json:"id"`
 	ProductID           string     `json:"product_id"`
 	BuyerID             string     `json:"buyer_id"`
+	BuyerName           string     `json:"buyer_name"`
 	ReferralLinkID      *string    `json:"referral_link_id,omitempty"`
 	AmountCFA           int        `json:"amount_cfa"`
 	PlatformFeeCFA      int        `json:"platform_fee_cfa"`
@@ -22,10 +23,8 @@ type Sale struct {
 
 type CreateOrderInput struct {
 	ProductID      string  `json:"product_id"`
+	BuyerName      string  `json:"buyer_name"`
 	BuyerEmail     *string `json:"buyer_email,omitempty"`
-	Phone          string  `json:"phone"`   // numéro mobile money de l'acheteur
-	Operator       string  `json:"operator"` // libellé de l'opérateur, ex "Orange Money"
-	Country        string  `json:"country"`  // ISO 3166-1 alpha-3, ex "SEN"
 	ReferralLinkID *string `json:"referral_link_id,omitempty"`
 }
 

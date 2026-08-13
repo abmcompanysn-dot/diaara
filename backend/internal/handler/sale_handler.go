@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/diarra/backend/internal/auth"
 	"github.com/diarra/backend/internal/middleware"
@@ -32,6 +33,7 @@ type SaleHandler struct {
 	userRepo      *repository.UserRepo
 	pawapay       *payment.PawaPayClient
 	commissionSvc *service.CommissionService
+	frontendURL   string
 }
 
 func NewSaleHandler(
@@ -40,6 +42,7 @@ func NewSaleHandler(
 	referralRepo *repository.ReferralRepo,
 	userRepo *repository.UserRepo,
 	pawapay *payment.PawaPayClient,
+	frontendURL string,
 ) *SaleHandler {
 	return &SaleHandler{
 		saleRepo:      saleRepo,
@@ -48,6 +51,7 @@ func NewSaleHandler(
 		userRepo:      userRepo,
 		pawapay:       pawapay,
 		commissionSvc: service.NewCommissionService(),
+		frontendURL:   strings.TrimSuffix(frontendURL, "/"),
 	}
 }
 
@@ -61,19 +65,8 @@ func (h *SaleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// PawaPay exige toujours le téléphone mobile money, l'opérateur et le pays.
-	if input.Phone == "" || input.Operator == "" || input.Country == "" {
-		http.Error(w, `{"error":"payment_details_required"}`, http.StatusBadRequest)
-		return
-	}
-	op, err := payment.ResolveOperator(input.Country, input.Operator)
-	if err != nil {
-		http.Error(w, `{"error":"unsupported_operator"}`, http.StatusBadRequest)
-		return
-	}
-	msisdn, err := payment.NormalizePhone(op.DialCode, input.Phone)
-	if err != nil {
-		http.Error(w, `{"error":"invalid_phone_number"}`, http.StatusBadRequest)
+	if input.BuyerName == "" {
+		http.Error(w, `{"error":"name_required"}`, http.StatusBadRequest)
 		return
 	}
 
@@ -122,6 +115,7 @@ func (h *SaleHandler) Create(w http.ResponseWriter, r *http.Request) {
 	sale := &model.Sale{
 		ProductID:       product.ID,
 		BuyerID:         userID,
+		BuyerName:       input.BuyerName,
 		AmountCFA:       product.PriceCFA,
 		PlatformFeeCFA:  comm.PlatformFeeCFA,
 		VendorAmountCFA: comm.VendorAmountCFA,
@@ -169,20 +163,12 @@ func (h *SaleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Initier le dépôt mobile money PawaPay (asynchrone).
-	deposit, err := h.initiateDeposit(r.Context(), created, product, op.Provider, msisdn)
-	if err != nil || deposit == nil {
+	// Page de paiement PawaPay hébergée : l'acheteur y choisit lui-même son
+	// opérateur mobile money, PawaPay le redirige ensuite vers ReturnUrl.
+	page, err := h.initiatePaymentPage(r.Context(), created, product)
+	if err != nil || page == nil || page.RedirectUrl == "" {
 		h.saleRepo.UpdateStatus(r.Context(), created.ID, string(model.SaleFailed))
 		http.Error(w, `{"error":"payment_init_failed"}`, http.StatusBadGateway)
-		return
-	}
-	if deposit.Status != "ACCEPTED" {
-		h.saleRepo.UpdateStatus(r.Context(), created.ID, string(model.SaleFailed))
-		code := "rejected"
-		if deposit.FailureReason != nil {
-			code = deposit.FailureReason.FailureCode
-		}
-		http.Error(w, fmt.Sprintf(`{"error":"payment_rejected","reason":"%s"}`, code), http.StatusBadGateway)
 		return
 	}
 
@@ -190,8 +176,8 @@ func (h *SaleHandler) Create(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"order": created,
 		"checkout": map[string]string{
-			"deposit_id": created.PaymentReference,
-			"status":     deposit.Status,
+			"deposit_id":   created.PaymentReference,
+			"redirect_url": page.RedirectUrl,
 		},
 	})
 }
@@ -279,28 +265,24 @@ func newUUID() string {
 	return uuidString()
 }
 
-// initiateDeposit initie un dépôt mobile money PawaPay pour une vente.
-func (h *SaleHandler) initiateDeposit(ctx context.Context, sale *model.Sale, product *model.Product, provider, msisdn string) (*payment.DepositInitiationResponse, error) {
+// initiatePaymentPage crée une page de paiement PawaPay hébergée pour une vente :
+// l'acheteur y choisit lui-même son opérateur mobile money et son téléphone.
+func (h *SaleHandler) initiatePaymentPage(ctx context.Context, sale *model.Sale, product *model.Product) (*payment.PaymentPageResponse, error) {
 	if h.pawapay == nil {
 		return nil, errors.New("payment non configuré")
 	}
-	req := payment.DepositRequest{
-		DepositId: sale.PaymentReference,
-		Payer: payment.Payer{
-			Type: "MMO",
-			AccountDetails: payment.AccountDetails{
-				PhoneNumber: msisdn,
-				Provider:    provider,
-			},
-		},
-		Amount:            fmt.Sprintf("%d", sale.AmountCFA),
-		Currency:          "XOF",
-		ClientReferenceId: sale.ID,
-		CustomerMessage:   "PAIEMENT DIARRA",
+	returnURL := h.frontendURL + "/checkout/return?token=" + *sale.CheckoutToken
+	req := payment.PaymentPageRequest{
+		DepositId:             sale.PaymentReference,
+		ReturnUrl:             returnURL,
+		StatementDescription:  "PAIEMENT DIARRA",
+		Amount:                fmt.Sprintf("%d", sale.AmountCFA),
+		Currency:              "XOF",
+		Reason:                product.Title,
 		Metadata: []payment.MetadataItem{
 			{"saleId": sale.ID},
 			{"product": product.Title},
 		},
 	}
-	return h.pawapay.InitiateDeposit(ctx, req)
+	return h.pawapay.CreatePaymentPage(ctx, req)
 }

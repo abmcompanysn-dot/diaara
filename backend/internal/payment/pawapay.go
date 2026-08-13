@@ -174,6 +174,68 @@ func (c *PawaPayClient) setHeaders(req *http.Request) {
 	req.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)
 }
 
+// --- Page de paiement hébergée (Payment Page) --------------------------------
+//
+// Alternative à InitiateDeposit : au lieu de lui demander pays/opérateur/téléphone
+// dans notre propre formulaire, on redirige l'acheteur vers une page hébergée par
+// PawaPay où il choisit lui-même son opérateur mobile money et confirme le
+// paiement. PawaPay le redirige ensuite vers ReturnUrl, et le webhook habituel
+// (voir webhook_handler.go) confirme le statut final du dépôt.
+//
+// ⚠️ Implémenté d'après la documentation PawaPay (docs.pawapay.io) sans pouvoir
+// tester contre l'API réelle depuis cet environnement (pas d'accès réseau) —
+// à valider en sandbox avant toute mise en production.
+
+type PaymentPageRequest struct {
+	DepositId             string         `json:"depositId"` // même UUID que pour un dépôt classique
+	ReturnUrl             string         `json:"returnUrl"`
+	StatementDescription  string         `json:"statementDescription,omitempty"` // max ~22 caractères
+	Amount                string         `json:"amount"`
+	Currency              string         `json:"currency"`
+	Country               string         `json:"country,omitempty"` // optionnel : présélectionne le pays sur la page
+	Reason                string         `json:"reason,omitempty"`
+	Metadata               []MetadataItem `json:"metadata,omitempty"`
+}
+
+type PaymentPageResponse struct {
+	RedirectUrl string `json:"redirectUrl"`
+}
+
+// CreatePaymentPage — POST /v2/paymentpage
+func (c *PawaPayClient) CreatePaymentPage(ctx context.Context, req PaymentPageRequest) (*PaymentPageResponse, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.cfg.BaseURL+"/v2/paymentpage", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	c.setHeaders(httpReq)
+
+	resp, err := c.client.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%w: status %d: %s", ErrPaymentFailed, resp.StatusCode, string(respBody))
+	}
+
+	var result PaymentPageResponse
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
 // --- Versements vendeurs (payouts) ------------------------------------------
 
 type PayoutRequest struct {
