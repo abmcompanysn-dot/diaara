@@ -97,27 +97,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
           </aside>
 
           {/* Contenu */}
-          <main className="flex-1 min-w-0">
-            {/* Barre de navigation mobile */}
-            <div className="md:hidden overflow-x-auto border-b border-green-900/10 py-2 px-4">
-              <div className="flex gap-2">
-                {links.map((l) => (
-                  <Link
-                    key={l.href}
-                    href={l.href}
-                    className={cn(
-                      'flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium whitespace-nowrap transition-colors',
-                      isActive(l.href)
-                        ? 'bg-green-950 text-white'
-                        : 'bg-white text-green-900/70 border border-green-900/10'
-                    )}
-                  >
-                    <l.Icon size={14} />
-                    {l.label}
-                  </Link>
-                ))}
-              </div>
-            </div>
+          <main className="flex-1 min-w-0 pb-20 md:pb-0">
 
             {/* Bannière de vérification en attente */}
             {user && !user.email_verified_at && (
@@ -134,6 +114,34 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
           </main>
         </div>
       </div>
+
+      {/* Barre de navigation mobile (bas d'écran, façon application) */}
+      <nav
+        className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t border-green-900/10 pb-[env(safe-area-inset-bottom)]"
+        aria-label="Navigation mobile"
+      >
+        <div className="flex overflow-x-auto no-scrollbar">
+          {links.map((l) => {
+            const active = isActive(l.href);
+            return (
+              <Link
+                key={l.href}
+                href={l.href}
+                aria-current={active ? 'page' : undefined}
+                className={cn(
+                  'flex-1 min-w-17 flex flex-col items-center justify-center gap-1 py-2.5 transition-colors',
+                  active ? 'text-green-700' : 'text-green-900/45'
+                )}
+              >
+                <l.Icon size={21} className={active ? 'text-green-700' : 'text-green-900/45'} />
+                <span className="text-[10.5px] font-medium leading-none truncate max-w-16 px-1">
+                  {l.label}
+                </span>
+              </Link>
+            );
+          })}
+        </div>
+      </nav>
     </RequireAuth>
   );
 }
