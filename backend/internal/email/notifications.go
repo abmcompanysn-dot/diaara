@@ -53,7 +53,8 @@ const emailLayout = `<!DOCTYPE html>
 <td style="padding:20px 32px 0;">
 <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.7;color:#6b7c74;text-align:center;">
 &copy; DIARRA &middot; marketplace de produits numériques<br>
-Si vous n&rsquo;êtes pas à l&rsquo;origine de cet email, ignorez-le simplement.
+Si vous n&rsquo;êtes pas à l&rsquo;origine de cet email, ignorez-le simplement.<br>
+Vous ne trouvez pas cet email&nbsp;? Vérifiez votre dossier spam, ou écrivez-nous à <a href="mailto:support@abmcy.com" style="color:#0f7a50;">support@abmcy.com</a>.
 </p>
 </td>
 </tr>

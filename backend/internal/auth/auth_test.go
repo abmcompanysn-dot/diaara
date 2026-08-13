@@ -41,7 +41,7 @@ func TestHashToken(t *testing.T) {
 func TestJWTManagerRoundTrip(t *testing.T) {
 	m := NewJWTManager("access-secret", "refresh-secret")
 
-	access, err := m.GenerateAccessToken("user-123", true, []string{"vendeur"})
+	access, err := m.GenerateAccessToken("user-123", true, []string{"vendeur"}, nil)
 	if err != nil {
 		t.Fatalf("GenerateAccessToken() error: %v", err)
 	}
@@ -64,7 +64,7 @@ func TestJWTManagerRejectsWrongSecret(t *testing.T) {
 	m1 := NewJWTManager("access-secret", "refresh-secret")
 	m2 := NewJWTManager("wrong-secret", "refresh-secret")
 
-	token, _ := m1.GenerateAccessToken("user-123", false, nil)
+	token, _ := m1.GenerateAccessToken("user-123", false, nil, nil)
 	if _, err := m2.ValidateAccessToken(token); err == nil {
 		t.Fatalf("ValidateAccessToken() accepted token signed with another secret")
 	}

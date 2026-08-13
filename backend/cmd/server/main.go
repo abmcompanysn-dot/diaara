@@ -31,6 +31,7 @@ import (
 
 func main() {
 	ctx := context.Background()
+	startTime := time.Now()
 
 	jwtSecret := os.Getenv("JWT_SECRET")
 	if jwtSecret == "" {
@@ -75,6 +76,13 @@ func main() {
 		storageService = s3
 	}
 
+	// Pour le health check admin (interface minimale, nil explicite si
+	// stockage désactivé — évite le piège de l'interface non-nil sur pointeur nil).
+	var storageHealthPinger interface{ Ping(context.Context) error }
+	if s3 != nil {
+		storageHealthPinger = s3
+	}
+
 	// Repositories
 	userRepo := repository.NewUserRepo(pool)
 	otpRepo := repository.NewOTPRepo(pool)
@@ -83,6 +91,7 @@ func main() {
 	deliveryRepo := repository.NewDeliveryRepo(pool)
 	payoutRepo := repository.NewPayoutRepo(pool)
 	referralRepo := repository.NewReferralRepo(pool)
+	adminPermRepo := repository.NewAdminPermissionRepo(pool)
 
 	// OTP service
 	otpService := otp.NewService(otpRepo)
@@ -140,7 +149,7 @@ func main() {
 	}
 
 	// Services
-	authService := service.NewAuthService(userRepo, otpRepo, otpService, smsSender, jwtManager, notifications)
+	authService := service.NewAuthService(userRepo, otpRepo, otpService, smsSender, jwtManager, notifications, adminPermRepo)
 
 	// Paiement PawaPay (mobile money, optionnel en dev local)
 	var pawapay *payment.PawaPayClient
@@ -185,7 +194,7 @@ func main() {
 	payoutHandler := handler.NewPayoutHandler(payoutRepo, saleRepo, productRepo)
 
 	// Administration
-	adminHandler := handler.NewAdminHandler(productRepo, saleRepo, userRepo)
+	adminHandler := handler.NewAdminHandler(productRepo, saleRepo, userRepo, referralRepo, adminPermRepo, pool, storageHealthPinger, startTime)
 
 	// Support tickets
 	ticketRepo := repository.NewTicketRepo(pool)
@@ -305,17 +314,45 @@ func main() {
 		r.Get("/payouts", payoutHandler.Earnings)
 	})
 
-	// Routes admin (authentifié + admin)
+	// Routes admin (authentifié + admin). Un admin sans scope assigné garde
+	// l'accès complet (legacy) ; RequireAdminScope filtre les admins restreints.
 	r.Route("/api/admin", func(r chi.Router) {
 		r.Use(middleware.RequireAuth(jwtManager))
 		r.Use(middleware.RequireAdmin)
-		r.Get("/products/pending", adminHandler.PendingProducts)
-		r.Put("/products/{id}/moderate", adminHandler.Moderate)
-		r.Get("/users", adminHandler.Users)
-		r.Put("/users/{id}/role", adminHandler.SetRole)
-		r.Put("/users/{id}/suspend", adminHandler.SuspendUser)
-		r.Get("/stats", adminHandler.Stats)
-		r.Get("/sales", adminHandler.Sales)
+
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireAdminScope(model.AdminPermModeration))
+			r.Get("/products/pending", adminHandler.PendingProducts)
+			r.Put("/products/{id}/moderate", adminHandler.Moderate)
+		})
+
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireAdminScope(model.AdminPermUsers))
+			r.Get("/users", adminHandler.Users)
+			r.Put("/users/{id}/role", adminHandler.SetRole)
+			r.Put("/users/{id}/suspend", adminHandler.SuspendUser)
+		})
+
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireAdminScope(model.AdminPermFinance))
+			r.Get("/stats", adminHandler.Stats)
+			r.Get("/sales", adminHandler.Sales)
+			r.Get("/analytics", adminHandler.Analytics)
+		})
+
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireAdminScope(model.AdminPermInfra))
+			r.Get("/system/health", adminHandler.SystemHealth)
+		})
+
+		// Gestion des accès elle-même : réservée aux admins non restreints,
+		// pour qu'un admin scoped ne puisse pas s'auto-accorder plus de droits.
+		r.Group(func(r chi.Router) {
+			r.Use(middleware.RequireUnrestrictedAdmin)
+			r.Get("/admins", adminHandler.Admins)
+			r.Put("/users/{id}/admin", adminHandler.SetAdminStatus)
+			r.Put("/admins/{id}/permission", adminHandler.SetAdminPermission)
+		})
 	})
 
 	// Support tickets (utilisateur connecté, admin pour tous)

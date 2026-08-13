@@ -100,6 +100,15 @@ func (s *S3Storage) GenerateSignedURL(ctx context.Context, key string, expiry ti
 	return req.URL, nil
 }
 
+// Ping vérifie que le bucket configuré est joignable (utilisé par le
+// endpoint de santé infra de l'admin).
+func (s *S3Storage) Ping(ctx context.Context) error {
+	_, err := s.client.HeadBucket(ctx, &s3.HeadBucketInput{
+		Bucket: aws.String(s.bucket),
+	})
+	return err
+}
+
 func (s *S3Storage) ObjectExists(ctx context.Context, key string) (bool, error) {
 	_, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
 		Bucket: aws.String(s.bucket),

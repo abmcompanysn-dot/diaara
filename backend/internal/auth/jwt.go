@@ -13,6 +13,9 @@ type Claims struct {
 	UserID  string   `json:"user_id"`
 	IsAdmin bool     `json:"is_admin"`
 	Roles   []string `json:"roles,omitempty"`
+	// AdminPermissions : scopes fins pour un admin (vide = accès complet).
+	// Non pertinent si IsAdmin est faux.
+	AdminPermissions []string `json:"admin_permissions,omitempty"`
 	jwt.RegisteredClaims
 }
 
@@ -38,11 +41,12 @@ func (m *JWTManager) RefreshTTL() time.Duration {
 	return m.refreshTTL
 }
 
-func (m *JWTManager) GenerateAccessToken(userID string, isAdmin bool, roles []string) (string, error) {
+func (m *JWTManager) GenerateAccessToken(userID string, isAdmin bool, roles []string, adminPermissions []string) (string, error) {
 	claims := Claims{
-		UserID:  userID,
-		IsAdmin: isAdmin,
-		Roles:   roles,
+		UserID:           userID,
+		IsAdmin:          isAdmin,
+		Roles:            roles,
+		AdminPermissions: adminPermissions,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(time.Now().Add(m.accessTTL)),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

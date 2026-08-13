@@ -28,22 +28,24 @@ const (
 )
 
 type AuthService struct {
-	userRepo      *repository.UserRepo
-	otpRepo       *repository.OTPRepo
-	otpService    *otp.Service
-	smsSender     sms.Sender
-	jwtManager    *auth.JWTManager
-	notifications *email.NotificationService
+	userRepo           *repository.UserRepo
+	otpRepo            *repository.OTPRepo
+	otpService         *otp.Service
+	smsSender          sms.Sender
+	jwtManager         *auth.JWTManager
+	notifications      *email.NotificationService
+	adminPermissionRepo *repository.AdminPermissionRepo
 }
 
-func NewAuthService(userRepo *repository.UserRepo, otpRepo *repository.OTPRepo, otpService *otp.Service, smsSender sms.Sender, jwtManager *auth.JWTManager, notifications *email.NotificationService) *AuthService {
+func NewAuthService(userRepo *repository.UserRepo, otpRepo *repository.OTPRepo, otpService *otp.Service, smsSender sms.Sender, jwtManager *auth.JWTManager, notifications *email.NotificationService, adminPermissionRepo *repository.AdminPermissionRepo) *AuthService {
 	return &AuthService{
-		userRepo:      userRepo,
-		otpRepo:       otpRepo,
-		otpService:    otpService,
-		smsSender:     smsSender,
-		jwtManager:    jwtManager,
-		notifications: notifications,
+		userRepo:            userRepo,
+		otpRepo:             otpRepo,
+		otpService:          otpService,
+		smsSender:           smsSender,
+		jwtManager:          jwtManager,
+		notifications:       notifications,
+		adminPermissionRepo: adminPermissionRepo,
 	}
 }
 
@@ -117,8 +119,9 @@ func (s *AuthService) Register(ctx context.Context, input model.RegisterInput) (
 	}
 
 	roles := s.loadRoles(ctx, user.ID)
+	adminPerms := s.loadAdminPermissions(ctx, user.IsAdmin, user.ID)
 
-	accessToken, err := s.jwtManager.GenerateAccessToken(user.ID, user.IsAdmin, roles)
+	accessToken, err := s.jwtManager.GenerateAccessToken(user.ID, user.IsAdmin, roles, adminPerms)
 	if err != nil {
 		return nil, err
 	}
@@ -163,8 +166,9 @@ func (s *AuthService) Login(ctx context.Context, input model.LoginInput) (*Login
 	_ = s.userRepo.ResetFailedAttempts(ctx, user.ID)
 
 	roles := s.loadRoles(ctx, user.ID)
+	adminPerms := s.loadAdminPermissions(ctx, user.IsAdmin, user.ID)
 
-	accessToken, err := s.jwtManager.GenerateAccessToken(user.ID, user.IsAdmin, roles)
+	accessToken, err := s.jwtManager.GenerateAccessToken(user.ID, user.IsAdmin, roles, adminPerms)
 	if err != nil {
 		return nil, err
 	}
@@ -205,8 +209,9 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*L
 	_ = s.userRepo.RevokeRefreshToken(ctx, auth.HashToken(refreshToken))
 
 	roles := s.loadRoles(ctx, user.ID)
+	adminPerms := s.loadAdminPermissions(ctx, user.IsAdmin, user.ID)
 
-	accessToken, err := s.jwtManager.GenerateAccessToken(user.ID, user.IsAdmin, roles)
+	accessToken, err := s.jwtManager.GenerateAccessToken(user.ID, user.IsAdmin, roles, adminPerms)
 	if err != nil {
 		return nil, err
 	}
@@ -361,6 +366,19 @@ func (s *AuthService) loadRoles(ctx context.Context, userID string) []string {
 		return []string{}
 	}
 	return roles
+}
+
+// loadAdminPermissions retourne les scopes admin d'un utilisateur admin
+// (liste vide = accès complet). Non pertinent pour un non-admin.
+func (s *AuthService) loadAdminPermissions(ctx context.Context, isAdmin bool, userID string) []string {
+	if !isAdmin {
+		return nil
+	}
+	perms, err := s.adminPermissionRepo.ListForUser(ctx, userID)
+	if err != nil {
+		return []string{}
+	}
+	return perms
 }
 
 // grantRoles valide et attribue les rôles demandés à l'inscription.

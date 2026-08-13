@@ -119,3 +119,36 @@ func (r *ReferralRepo) ListByCloser(ctx context.Context, closerID string) ([]*mo
 	}
 	return links, rows.Err()
 }
+
+// TopClosersByConversion agrège tous les liens par closer : clics, ventes,
+// revenu et taux de conversion (ventes/clics), classé par revenu.
+func (r *ReferralRepo) TopClosersByConversion(ctx context.Context, limit int) ([]model.CloserConversionPoint, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT u.id, u.email,
+			COALESCE(SUM(rl.clicks), 0) AS clicks,
+			COUNT(s.id) FILTER (WHERE s.id IS NOT NULL AND s.status <> 'failed' AND s.status <> 'refunded') AS sales,
+			COALESCE(SUM(s.amount_cfa) FILTER (WHERE s.status <> 'failed' AND s.status <> 'refunded'), 0) AS revenue_cfa
+		 FROM referral_links rl
+		 JOIN users u ON u.id = rl.closer_id
+		 LEFT JOIN sales s ON s.referral_link_id = rl.id
+		 GROUP BY u.id, u.email
+		 ORDER BY revenue_cfa DESC
+		 LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	points := []model.CloserConversionPoint{}
+	for rows.Next() {
+		var p model.CloserConversionPoint
+		if err := rows.Scan(&p.CloserID, &p.Email, &p.Clicks, &p.Sales, &p.RevenueCFA); err != nil {
+			return nil, err
+		}
+		if p.Clicks > 0 {
+			p.ConversionPct = float64(p.Sales) / float64(p.Clicks) * 100
+		}
+		points = append(points, p)
+	}
+	return points, rows.Err()
+}

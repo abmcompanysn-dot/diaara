@@ -131,3 +131,84 @@ func (r *SaleRepo) CountByVendor(ctx context.Context, vendorID string) (int, err
 		vendorID).Scan(&count)
 	return count, err
 }
+
+// SalesByDay agrège le nombre de ventes et le revenu plateforme par jour sur
+// les `days` derniers jours (ventes ni échouées ni remboursées).
+func (r *SaleRepo) SalesByDay(ctx context.Context, days int) ([]model.SalesByDayPoint, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT date_trunc('day', created_at)::date AS day,
+			COUNT(*) AS sales,
+			COALESCE(SUM(amount_cfa), 0) AS revenue_cfa
+		 FROM sales
+		 WHERE status <> 'failed' AND status <> 'refunded'
+			AND created_at >= now() - ($1 || ' days')::interval
+		 GROUP BY day
+		 ORDER BY day`, days)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	points := []model.SalesByDayPoint{}
+	for rows.Next() {
+		var p model.SalesByDayPoint
+		if err := rows.Scan(&p.Day, &p.Sales, &p.RevenueCFA); err != nil {
+			return nil, err
+		}
+		points = append(points, p)
+	}
+	return points, rows.Err()
+}
+
+// TopProducts classe les produits par revenu (ventes ni échouées ni remboursées).
+func (r *SaleRepo) TopProducts(ctx context.Context, limit int) ([]model.TopProductPoint, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT p.id, p.title, COUNT(s.id) AS sales, COALESCE(SUM(s.amount_cfa), 0) AS revenue_cfa
+		 FROM sales s
+		 JOIN products p ON p.id = s.product_id
+		 WHERE s.status <> 'failed' AND s.status <> 'refunded'
+		 GROUP BY p.id, p.title
+		 ORDER BY revenue_cfa DESC
+		 LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	points := []model.TopProductPoint{}
+	for rows.Next() {
+		var p model.TopProductPoint
+		if err := rows.Scan(&p.ProductID, &p.Title, &p.Sales, &p.RevenueCFA); err != nil {
+			return nil, err
+		}
+		points = append(points, p)
+	}
+	return points, rows.Err()
+}
+
+// TopVendors classe les vendeurs par revenu (ventes ni échouées ni remboursées).
+func (r *SaleRepo) TopVendors(ctx context.Context, limit int) ([]model.TopVendorPoint, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT u.id, u.email, COUNT(s.id) AS sales, COALESCE(SUM(s.vendor_amount_cfa), 0) AS revenue_cfa
+		 FROM sales s
+		 JOIN products p ON p.id = s.product_id
+		 JOIN users u ON u.id = p.vendor_id
+		 WHERE s.status <> 'failed' AND s.status <> 'refunded'
+		 GROUP BY u.id, u.email
+		 ORDER BY revenue_cfa DESC
+		 LIMIT $1`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	points := []model.TopVendorPoint{}
+	for rows.Next() {
+		var p model.TopVendorPoint
+		if err := rows.Scan(&p.VendorID, &p.Email, &p.Sales, &p.RevenueCFA); err != nil {
+			return nil, err
+		}
+		points = append(points, p)
+	}
+	return points, rows.Err()
+}

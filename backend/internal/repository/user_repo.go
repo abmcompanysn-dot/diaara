@@ -279,6 +279,15 @@ func (r *UserRepo) ListAllUsers(ctx context.Context) ([]*model.User, error) {
 	return users, rows.Err()
 }
 
+// SetAdminStatus promeut ou rétrograde un utilisateur au statut administrateur.
+func (r *UserRepo) SetAdminStatus(ctx context.Context, userID string, isAdmin bool) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE users SET is_admin = $2, updated_at = NOW() WHERE id = $1`,
+		userID, isAdmin,
+	)
+	return err
+}
+
 // CountAllUsers compte les utilisateurs (pour les stats admin).
 func (r *UserRepo) CountAllUsers(ctx context.Context) (int, error) {
 	var count int

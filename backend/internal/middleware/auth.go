@@ -16,6 +16,7 @@ const IsAdminKey contextKey = "is_admin"
 const RolesKey contextKey = "roles"
 const EmailVerifiedKey contextKey = "email_verified"
 const PhoneVerifiedKey contextKey = "phone_verified"
+const AdminPermissionsKey contextKey = "admin_permissions"
 
 func RequireAuth(jwtManager *auth.JWTManager) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -42,6 +43,7 @@ func RequireAuth(jwtManager *auth.JWTManager) func(http.Handler) http.Handler {
 			ctx := context.WithValue(r.Context(), UserIDKey, claims.UserID)
 			ctx = context.WithValue(ctx, IsAdminKey, claims.IsAdmin)
 			ctx = context.WithValue(ctx, RolesKey, claims.Roles)
+			ctx = context.WithValue(ctx, AdminPermissionsKey, claims.AdminPermissions)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -88,6 +90,57 @@ func RequireAdmin(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		isAdmin := GetIsAdmin(r.Context())
 		if !isAdmin {
+			http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func GetAdminPermissions(ctx context.Context) []string {
+	if v, ok := ctx.Value(AdminPermissionsKey).([]string); ok {
+		return v
+	}
+	return nil
+}
+
+// IsUnrestrictedAdmin : un admin sans scope assigné a l'accès complet (legacy).
+func IsUnrestrictedAdmin(ctx context.Context) bool {
+	return GetIsAdmin(ctx) && len(GetAdminPermissions(ctx)) == 0
+}
+
+// RequireAdminScope exige le scope donné. Un admin sans aucun scope assigné
+// garde l'accès complet (comportement historique, pas de migration de données
+// nécessaire pour le compte admin existant). Doit suivre RequireAuth+RequireAdmin.
+func RequireAdminScope(perm string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			perms := GetAdminPermissions(r.Context())
+			if len(perms) > 0 {
+				allowed := false
+				for _, p := range perms {
+					if p == perm {
+						allowed = true
+						break
+					}
+				}
+				if !allowed {
+					http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+					return
+				}
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// RequireUnrestrictedAdmin réserve l'action aux admins à accès complet — utilisé
+// pour les opérations de gestion des accès elles-mêmes (promouvoir un admin,
+// changer ses scopes), afin qu'un admin restreint ne puisse pas s'auto-accorder
+// plus de droits. Doit suivre RequireAuth+RequireAdmin.
+func RequireUnrestrictedAdmin(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !IsUnrestrictedAdmin(r.Context()) {
 			http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 			return
 		}
