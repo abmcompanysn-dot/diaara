@@ -15,6 +15,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   password_too_short: 'Le mot de passe doit contenir au moins 8 caractères.',
 
   // Checkout / commandes
+  name_required: 'Merci d\'indiquer votre nom complet.',
   email_required_for_guest_checkout: 'Merci d\'indiquer votre email pour recevoir votre commande.',
   payment_details_required: 'Merci de renseigner votre numéro et votre opérateur mobile money.',
   unsupported_operator: "Cet opérateur n'est pas disponible pour ce pays.",

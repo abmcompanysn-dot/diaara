@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 
@@ -167,6 +168,7 @@ func (h *SaleHandler) Create(w http.ResponseWriter, r *http.Request) {
 	// opérateur mobile money, PawaPay le redirige ensuite vers ReturnUrl.
 	page, err := h.initiatePaymentPage(r.Context(), created, product)
 	if err != nil || page == nil || page.RedirectUrl == "" {
+		log.Printf("payment_init_failed sale=%s: %v", created.ID, err)
 		h.saleRepo.UpdateStatus(r.Context(), created.ID, string(model.SaleFailed))
 		http.Error(w, `{"error":"payment_init_failed"}`, http.StatusBadGateway)
 		return
@@ -272,13 +274,20 @@ func (h *SaleHandler) initiatePaymentPage(ctx context.Context, sale *model.Sale,
 		return nil, errors.New("payment non configuré")
 	}
 	returnURL := h.frontendURL + "/checkout/return?token=" + *sale.CheckoutToken
+	reason := product.Title
+	if runes := []rune(reason); len(runes) > 50 {
+		reason = string(runes[:47]) + "..."
+	}
 	req := payment.PaymentPageRequest{
-		DepositId:             sale.PaymentReference,
-		ReturnUrl:             returnURL,
-		StatementDescription:  "PAIEMENT DIARRA",
-		Amount:                fmt.Sprintf("%d", sale.AmountCFA),
-		Currency:              "XOF",
-		Reason:                product.Title,
+		DepositId: sale.PaymentReference,
+		ReturnUrl: returnURL,
+		AmountDetails: payment.AmountDetails{
+			Amount:   fmt.Sprintf("%d", sale.AmountCFA),
+			Currency: "XOF",
+		},
+		Reason:          reason,
+		CustomerMessage: "PAIEMENT DIARRA",
+		Language:        "FR",
 		Metadata: []payment.MetadataItem{
 			{"saleId": sale.ID},
 			{"product": product.Title},

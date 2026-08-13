@@ -182,23 +182,29 @@ func (c *PawaPayClient) setHeaders(req *http.Request) {
 // paiement. PawaPay le redirige ensuite vers ReturnUrl, et le webhook habituel
 // (voir webhook_handler.go) confirme le statut final du dépôt.
 //
-// ⚠️ Implémenté d'après la documentation PawaPay (docs.pawapay.io) sans pouvoir
-// tester contre l'API réelle depuis cet environnement (pas d'accès réseau) —
-// à valider en sandbox avant toute mise en production.
+// Schéma vérifié contre docs.pawapay.io/v2/api-reference/payment-page (2026-08-13).
+
+type AmountDetails struct {
+	Amount   string `json:"amount"`
+	Currency string `json:"currency"`
+}
 
 type PaymentPageRequest struct {
-	DepositId             string         `json:"depositId"` // même UUID que pour un dépôt classique
-	ReturnUrl             string         `json:"returnUrl"`
-	StatementDescription  string         `json:"statementDescription,omitempty"` // max ~22 caractères
-	Amount                string         `json:"amount"`
-	Currency              string         `json:"currency"`
-	Country               string         `json:"country,omitempty"` // optionnel : présélectionne le pays sur la page
-	Reason                string         `json:"reason,omitempty"`
-	Metadata               []MetadataItem `json:"metadata,omitempty"`
+	DepositId       string         `json:"depositId"` // même UUID que pour un dépôt classique
+	ReturnUrl       string         `json:"returnUrl"`
+	AmountDetails   AmountDetails  `json:"amountDetails"`
+	Country         string         `json:"country,omitempty"`         // optionnel : présélectionne le pays sur la page
+	Reason          string         `json:"reason,omitempty"`          // 1-50 caractères, affiché à l'acheteur
+	CustomerMessage string         `json:"customerMessage,omitempty"` // 4-22 caractères
+	Language        string         `json:"language,omitempty"`        // "EN" ou "FR"
+	Metadata        []MetadataItem `json:"metadata,omitempty"`
 }
 
 type PaymentPageResponse struct {
-	RedirectUrl string `json:"redirectUrl"`
+	DepositId     string         `json:"depositId,omitempty"`
+	RedirectUrl   string         `json:"redirectUrl"`
+	Status        string         `json:"status,omitempty"` // présent uniquement en cas de rejet : "REJECTED"
+	FailureReason *FailureReason `json:"failureReason,omitempty"`
 }
 
 // CreatePaymentPage — POST /v2/paymentpage
@@ -232,6 +238,13 @@ func (c *PawaPayClient) CreatePaymentPage(ctx context.Context, req PaymentPageRe
 	var result PaymentPageResponse
 	if err := json.Unmarshal(respBody, &result); err != nil {
 		return nil, err
+	}
+	if result.Status == "REJECTED" {
+		code := "rejected"
+		if result.FailureReason != nil {
+			code = result.FailureReason.FailureCode
+		}
+		return nil, fmt.Errorf("%w: rejected: %s: %s", ErrPaymentFailed, code, string(respBody))
 	}
 	return &result, nil
 }
