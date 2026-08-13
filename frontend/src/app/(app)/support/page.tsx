@@ -13,6 +13,7 @@ import { PageLoader } from '@/components/page-loader';
 import { EmptyState } from '@/components/empty-state';
 import { HeadsetIcon } from '@/components/icons';
 import { TICKET_STATUS_LABELS } from '@/lib/constants';
+import { friendlyError } from '@/lib/error-messages';
 
 interface Ticket {
   id: string;
@@ -40,7 +41,7 @@ export default function SupportPage() {
       const result = await api.getTickets();
       setTickets(result.tickets);
     } catch (err: any) {
-      setError(err.message || 'Impossible de charger les tickets');
+      setError(friendlyError(err));
     } finally {
       setLoading(false);
     }
@@ -56,7 +57,7 @@ export default function SupportPage() {
       setShowForm(false);
       await loadTickets();
     } catch (err: any) {
-      setError(err.message || 'Création impossible');
+      setError(friendlyError(err));
     } finally {
       setSubmitting(false);
     }

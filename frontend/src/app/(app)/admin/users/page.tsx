@@ -11,6 +11,7 @@ import { PageLoader } from '@/components/page-loader';
 import { EmptyState } from '@/components/empty-state';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { ROLE_LABELS } from '@/lib/constants';
+import { friendlyError } from '@/lib/error-messages';
 
 interface User {
   id: string;
@@ -37,7 +38,7 @@ export default function AdminUsersPage() {
       const result = await api.getUsers();
       setUsers(result.users);
     } catch (err: any) {
-      setError(err.message || 'Impossible de charger les utilisateurs');
+      setError(friendlyError(err));
     } finally {
       setLoading(false);
     }
@@ -49,7 +50,7 @@ export default function AdminUsersPage() {
       await api.suspendUser(toSuspend.id);
       loadUsers();
     } catch (err: any) {
-      setError(err.message || 'Action échouée');
+      setError(friendlyError(err));
     } finally {
       setToSuspend(null);
     }
@@ -60,7 +61,7 @@ export default function AdminUsersPage() {
       await api.setRole(id, role, action);
       loadUsers();
     } catch (err: any) {
-      setError(err.message || 'Action échouée');
+      setError(friendlyError(err));
     }
   };
 

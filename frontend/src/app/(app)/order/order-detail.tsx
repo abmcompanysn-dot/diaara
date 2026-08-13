@@ -11,6 +11,7 @@ import { PageHeader } from '@/components/page-header';
 import { PageLoader } from '@/components/page-loader';
 import { ArrowLeftIcon, DownloadIcon } from '@/components/icons';
 import { ORDER_STATUS_LABELS, formatPrice } from '@/lib/constants';
+import { friendlyError } from '@/lib/error-messages';
 
 interface Order {
   id: string;
@@ -46,7 +47,7 @@ export default function OrderDetailPage() {
       const result = await api.getDelivery(id);
       setDeliveryUrl(result.signed_url);
     } catch (err: any) {
-      setError(err.message || 'Téléchargement indisponible');
+      setError(friendlyError(err));
     } finally {
       setDelivering(false);
     }
@@ -78,7 +79,7 @@ export default function OrderDetailPage() {
           .catch(() => {});
       }
     } catch (err: any) {
-      setError(err.message || 'Commande introuvable');
+      setError(friendlyError(err));
     } finally {
       setLoading(false);
     }

@@ -242,6 +242,7 @@ func main() {
 		r.Get("/", productHandler.List)
 		r.Get("/{id}", productHandler.Get)
 		r.Get("/{id}/cover", productHandler.Cover)
+		r.Get("/{id}/preview/{index}", productHandler.Preview)
 	})
 
 	// Vendor product routes (vendeur authentifié + email vérifié)

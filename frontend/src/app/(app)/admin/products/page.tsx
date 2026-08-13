@@ -10,6 +10,7 @@ import { PageLoader } from '@/components/page-loader';
 import { EmptyState } from '@/components/empty-state';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { PRODUCT_STATUS_BADGE, PRODUCT_STATUS_LABELS, CATEGORY_LABELS } from '@/lib/constants';
+import { friendlyError } from '@/lib/error-messages';
 
 interface Product {
   id: string;
@@ -38,7 +39,7 @@ export default function AdminProductsPage() {
       const result = await api.getPendingProducts();
       setProducts(result.products);
     } catch (err: any) {
-      setError(err.message || 'Impossible de charger les produits');
+      setError(friendlyError(err));
     } finally {
       setLoading(false);
     }
@@ -50,7 +51,7 @@ export default function AdminProductsPage() {
       await api.moderateProduct(toModerate.id, { status: toModerate.status });
       setProducts(products.filter((p) => p.id !== toModerate.id));
     } catch (err: any) {
-      setError(err.message || 'Action échouée');
+      setError(friendlyError(err));
     } finally {
       setToModerate(null);
     }

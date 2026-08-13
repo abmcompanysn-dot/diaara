@@ -12,6 +12,7 @@ import { PageHeader } from '@/components/page-header';
 import { PageLoader } from '@/components/page-loader';
 import { ArrowLeftIcon } from '@/components/icons';
 import { formatPrice, PAYOUT_STATUS_BADGE, PAYOUT_STATUS_LABELS } from '@/lib/constants';
+import { friendlyError } from '@/lib/error-messages';
 
 interface Payout {
   id: string;
@@ -42,7 +43,7 @@ export default function VendorEarningsPage() {
       setAvailable(result.available);
       setHistory(result.history);
     } catch (err: any) {
-      setError(err.message || 'Impossible de charger les revenus');
+      setError(friendlyError(err));
     } finally {
       setLoading(false);
     }
@@ -66,7 +67,7 @@ export default function VendorEarningsPage() {
       setAmount('');
       loadEarnings();
     } catch (err: any) {
-      setError(err.message || 'Demande de versement échouée');
+      setError(friendlyError(err));
     } finally {
       setSubmitting(false);
     }

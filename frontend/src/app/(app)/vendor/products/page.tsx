@@ -12,6 +12,7 @@ import { EmptyState } from '@/components/empty-state';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { StoreIcon, TrashIcon, EditIcon } from '@/components/icons';
 import { formatPrice, PRODUCT_STATUS_BADGE, PRODUCT_STATUS_LABELS, CATEGORY_LABELS } from '@/lib/constants';
+import { friendlyError } from '@/lib/error-messages';
 
 interface Product {
   id: string;
@@ -37,7 +38,7 @@ export default function VendorProductsPage() {
       const result = await api.getVendorProducts();
       setProducts(result.products);
     } catch (err: any) {
-      setError(err.message || 'Impossible de charger les produits');
+      setError(friendlyError(err));
     } finally {
       setLoading(false);
     }
@@ -49,7 +50,7 @@ export default function VendorProductsPage() {
       await api.deleteProduct(toDelete.id);
       setProducts(products.filter((p) => p.id !== toDelete.id));
     } catch (err: any) {
-      setError(err.message || 'Suppression échouée');
+      setError(friendlyError(err));
     } finally {
       setToDelete(null);
     }

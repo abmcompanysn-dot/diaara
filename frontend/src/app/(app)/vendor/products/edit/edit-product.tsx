@@ -28,6 +28,7 @@ import { PageHeader } from '@/components/page-header';
 import { PageLoader } from '@/components/page-loader';
 import { ArrowLeftIcon } from '@/components/icons';
 import { CATEGORY_LABELS, PRODUCT_STATUS_BADGE, PRODUCT_STATUS_LABELS } from '@/lib/constants';
+import { friendlyError } from '@/lib/error-messages';
 
 export default function EditProduct() {
   const router = useRouter();
@@ -59,7 +60,7 @@ export default function EditProduct() {
         setMaxCommission(String(product.max_closer_commission_pct || 10));
         setStatus(product.moderation_status);
       })
-      .catch((err: any) => setError(err.message || 'Produit introuvable'))
+      .catch((err: any) => setError(friendlyError(err)))
       .finally(() => setLoading(false));
   }, [id]);
 
@@ -85,7 +86,7 @@ export default function EditProduct() {
       });
       router.push('/vendor/products');
     } catch (err: any) {
-      setError(err.message || 'Échec de la mise à jour');
+      setError(friendlyError(err));
     } finally {
       setSaving(false);
     }

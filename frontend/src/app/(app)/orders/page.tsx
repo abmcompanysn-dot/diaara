@@ -9,6 +9,7 @@ import { PageLoader } from '@/components/page-loader';
 import { EmptyState } from '@/components/empty-state';
 import { PackageIcon } from '@/components/icons';
 import { ORDER_STATUS_LABELS, SALE_STATUS_BADGE, formatPrice } from '@/lib/constants';
+import { friendlyError } from '@/lib/error-messages';
 
 interface Order {
   id: string;
@@ -33,7 +34,7 @@ export default function OrdersPage() {
       const result = await api.getOrders();
       setOrders(result.orders);
     } catch (err: any) {
-      setError(err.message || 'Impossible de charger les commandes');
+      setError(friendlyError(err));
     } finally {
       setLoading(false);
     }

@@ -15,8 +15,13 @@ type Product struct {
 	ModerationNote         *string   `json:"moderation_note,omitempty"`
 	AffiliateEnabled       bool      `json:"affiliate_enabled"`
 	MaxCloserCommissionPct float64   `json:"max_closer_commission_pct"`
-	CreatedAt              time.Time `json:"created_at"`
-	UpdatedAt              time.Time `json:"updated_at"`
+	// PreviewKeys : clés objet des aperçus filigranés générés automatiquement
+	// (1 à 3 selon le type de fichier : pages PDF, image réduite, extrait
+	// audio/vidéo). Vide tant que preview_status vaut "pending".
+	PreviewKeys   []string  `json:"preview_keys"`
+	PreviewStatus string    `json:"preview_status"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 type CreateProductInput struct {

@@ -17,6 +17,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { AuthShell } from '@/components/auth-shell';
+import { friendlyError } from '@/lib/error-messages';
 
 export default function LoginPage() {
   const router = useRouter();
@@ -36,7 +37,7 @@ export default function LoginPage() {
       await login(result.access_token);
       router.push('/dashboard');
     } catch (err: any) {
-      setError(err.message || 'Échec de la connexion');
+      setError(friendlyError(err));
     } finally {
       setLoading(false);
     }

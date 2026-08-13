@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AuthShell } from '@/components/auth-shell';
+import { friendlyError } from '@/lib/error-messages';
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState('');
@@ -23,7 +24,7 @@ export default function ForgotPasswordPage() {
       await api.forgotPassword(email);
       setSent(true);
     } catch (err: any) {
-      setError(err.message || 'Échec de la demande');
+      setError(friendlyError(err));
     } finally {
       setLoading(false);
     }

@@ -139,6 +139,59 @@ export default function ProductDetailPage() {
             </div>
           </div>
 
+          {product.preview_status === 'pending' && (
+            <div className="mt-6 bg-white rounded-xl p-6 sm:p-8 shadow-card border border-green-900/5">
+              <p className="font-mono text-sm text-green-700/60 uppercase tracking-widest mb-2">
+                // aperçu
+              </p>
+              <p className="text-sm text-green-900/60">
+                Génération de l&apos;aperçu en cours, réessayez dans un instant…
+              </p>
+            </div>
+          )}
+
+          {product.preview_status === 'ready' && !!product.preview_keys?.length && (
+            <div className="mt-6 bg-white rounded-xl p-6 sm:p-8 shadow-card border border-green-900/5">
+              <p className="font-mono text-sm text-green-700/60 uppercase tracking-widest mb-4">
+                // aperçu avant achat
+              </p>
+              {(() => {
+                const kind = previewKind(product.preview_keys![0]);
+                if (kind === 'audio') {
+                  return (
+                    <audio
+                      controls
+                      className="w-full"
+                      src={`${apiOrigin}/api/products/${product.id}/preview/0`}
+                    />
+                  );
+                }
+                if (kind === 'video') {
+                  return (
+                    <video
+                      controls
+                      className="w-full rounded-lg bg-black"
+                      src={`${apiOrigin}/api/products/${product.id}/preview/0`}
+                    />
+                  );
+                }
+                return (
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {product.preview_keys!.map((_, idx) => (
+                      <img
+                        key={idx}
+                        src={`${apiOrigin}/api/products/${product.id}/preview/${idx}`}
+                        alt={`Aperçu ${idx + 1}`}
+                        loading="lazy"
+                        className="w-full rounded-lg border border-green-900/10 object-cover"
+                      />
+                    ))}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+
           <div className="mt-6 bg-white rounded-xl p-6 sm:p-8 shadow-card border border-green-900/5">
             <p className="font-mono text-sm text-green-700/60 uppercase tracking-widest mb-4">
               // livraison

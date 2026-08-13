@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { PageHeader } from '@/components/page-header';
 import { PageLoader } from '@/components/page-loader';
+import { friendlyError } from '@/lib/error-messages';
 
 export default function AdminDashboardPage() {
   const [stats, setStats] = useState({ total_sales: 0, total_products: 0, total_revenue: 0, pending_moderation: 0 });
@@ -21,7 +22,7 @@ export default function AdminDashboardPage() {
       const result = await api.getStats();
       setStats(result);
     } catch (err: any) {
-      setError(err.message || 'Impossible de charger les statistiques');
+      setError(friendlyError(err));
     } finally {
       setLoading(false);
     }

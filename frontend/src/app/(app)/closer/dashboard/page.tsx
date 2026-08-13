@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { PageLoader } from '@/components/page-loader';
+import { friendlyError } from '@/lib/error-messages';
 import {
   Select,
   SelectContent,
@@ -68,7 +69,7 @@ function CloserDashboard() {
         setSelected(affiliateProducts[0].id);
       }
     } catch (err: any) {
-      setError(err.message || 'Impossible de charger vos liens');
+      setError(friendlyError(err));
     } finally {
       setLoading(false);
     }
@@ -91,7 +92,7 @@ function CloserDashboard() {
       setCommission('10');
       load();
     } catch (err: any) {
-      setError(err.message || 'Échec de la création du lien');
+      setError(friendlyError(err));
     }
   };
 

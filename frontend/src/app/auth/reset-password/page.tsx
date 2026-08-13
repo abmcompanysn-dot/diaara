@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { AuthShell } from '@/components/auth-shell';
+import { friendlyError } from '@/lib/error-messages';
 
 function ResetPasswordContent() {
   const params = useSearchParams();
@@ -41,7 +42,7 @@ function ResetPasswordContent() {
       await api.resetPassword(token, password);
       setDone(true);
     } catch (err: any) {
-      setError(err.message || 'Échec de la réinitialisation');
+      setError(friendlyError(err));
     } finally {
       setLoading(false);
     }

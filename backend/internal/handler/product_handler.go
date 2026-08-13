@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"html"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/diarra/backend/internal/middleware"
 	"github.com/diarra/backend/internal/model"
+	"github.com/diarra/backend/internal/preview"
 	"github.com/diarra/backend/internal/repository"
 	"github.com/diarra/backend/internal/service"
 	"github.com/diarra/backend/internal/storage"
@@ -28,6 +30,7 @@ type ProductHandler struct {
 // StorageService est l'interface minimale dont le handler a besoin.
 type StorageService interface {
 	Upload(ctx context.Context, key string, data []byte) error
+	Download(ctx context.Context, key string) ([]byte, error)
 	GenerateSignedURL(ctx context.Context, key string, expiry time.Duration) (string, error)
 }
 
@@ -184,6 +187,50 @@ func (h *ProductHandler) Cover(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, url, http.StatusFound)
 }
 
+// Preview — public (produits approuvés) ou vendeur/admin (produit en
+// attente). Redirige vers une URL signée (1 h) de l'aperçu filigrané
+// d'indice donné (0 = premier).
+func (h *ProductHandler) Preview(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	idxStr := chi.URLParam(r, "index")
+	idx, err := strconv.Atoi(idxStr)
+	if err != nil || idx < 0 {
+		http.Error(w, `{"error":"invalid_index"}`, http.StatusBadRequest)
+		return
+	}
+
+	product, err := h.productRepo.FindByID(r.Context(), id)
+	if err != nil {
+		http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
+		return
+	}
+	if product.ModerationStatus != "approved" {
+		userID := middleware.GetUserID(r.Context())
+		isAdmin := middleware.GetIsAdmin(r.Context())
+		if userID != product.VendorID && !isAdmin {
+			http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
+			return
+		}
+	}
+	if idx >= len(product.PreviewKeys) {
+		http.Error(w, `{"error":"no_preview"}`, http.StatusNotFound)
+		return
+	}
+
+	if h.storage == nil {
+		http.Error(w, `{"error":"storage_not_configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	url, err := h.storage.GenerateSignedURL(r.Context(), product.PreviewKeys[idx], time.Hour)
+	if err != nil {
+		http.Error(w, `{"error":"preview_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	http.Redirect(w, r, url, http.StatusFound)
+}
+
 // socialCrawlerUA reconnaît les robots des réseaux sociaux qui n'exécutent pas
 // de JavaScript et ont donc besoin des balises Open Graph directement dans le HTML.
 var socialCrawlerUA = []string{
@@ -300,9 +347,37 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.storage != nil {
+		go h.generatePreview(userID, product.ID, product.FileKey)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]interface{}{"product": product})
+}
+
+// generatePreview construit les aperçus filigranés en tâche de fond (peut
+// prendre de quelques secondes à ~1 min selon le fichier) puis enregistre
+// le résultat. Appelé après la réponse HTTP, sans bloquer le vendeur.
+func (h *ProductHandler) generatePreview(vendorID, productID, fileKey string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	keys, err := preview.Generate(ctx, h.storage, vendorID, productID, fileKey)
+	if keys == nil {
+		keys = []string{}
+	}
+	status := "ready"
+	switch {
+	case err != nil:
+		log.Printf("preview: échec génération pour produit %s: %v", productID, err)
+		status = "failed"
+	case len(keys) == 0:
+		status = "unsupported"
+	}
+	if err := h.productRepo.SetPreview(context.Background(), productID, keys, status); err != nil {
+		log.Printf("preview: échec enregistrement pour produit %s: %v", productID, err)
+	}
 }
 
 // Update — vendeur propriétaire

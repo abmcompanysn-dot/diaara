@@ -26,6 +26,7 @@ import {
 import { PageHeader } from '@/components/page-header';
 import { ArrowLeftIcon, FileIcon } from '@/components/icons';
 import { CATEGORY_LABELS } from '@/lib/constants';
+import { friendlyError } from '@/lib/error-messages';
 
 export default function NewProductPage() {
   const router = useRouter();
@@ -66,7 +67,7 @@ export default function NewProductPage() {
       const res = await api.uploadFile(form);
       setCoverKey(res.file_key);
     } catch (err: any) {
-      setError(err.message || 'Échec du téléversement de la couverture');
+      setError(friendlyError(err));
     }
   };
 
@@ -104,7 +105,7 @@ export default function NewProductPage() {
       });
       router.push('/vendor/products');
     } catch (err: any) {
-      setError(err.message || 'Échec de la création du produit');
+      setError(friendlyError(err));
     } finally {
       setUploading(false);
     }

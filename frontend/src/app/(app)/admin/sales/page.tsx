@@ -10,6 +10,7 @@ import { PageHeader } from '@/components/page-header';
 import { PageLoader } from '@/components/page-loader';
 import { EmptyState } from '@/components/empty-state';
 import { formatPrice, SALE_STATUS_BADGE, ORDER_STATUS_LABELS } from '@/lib/constants';
+import { friendlyError } from '@/lib/error-messages';
 
 interface Sale {
   id: string;
@@ -39,7 +40,7 @@ export default function AdminSalesPage() {
       const result = await api.getSales();
       setSales(result.sales);
     } catch (err: any) {
-      setError(err.message || 'Impossible de charger les ventes');
+      setError(friendlyError(err));
     } finally {
       setLoading(false);
     }

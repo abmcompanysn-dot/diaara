@@ -18,6 +18,7 @@ import {
 } from '@/components/ui/card';
 import { AuthShell } from '@/components/auth-shell';
 import { cn } from '@/lib/utils';
+import { friendlyError } from '@/lib/error-messages';
 
 const ROLE_OPTIONS = [
   {
@@ -68,7 +69,7 @@ export default function RegisterPage() {
           'Un compte existe déjà avec cet email. Connectez-vous avec votre mot de passe.'
         );
       } else {
-        setError(err.message || "Échec de l'inscription");
+        setError(friendlyError(err));
       }
     } finally {
       setLoading(false);

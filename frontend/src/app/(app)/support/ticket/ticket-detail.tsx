@@ -12,6 +12,7 @@ import { PageHeader } from '@/components/page-header';
 import { PageLoader } from '@/components/page-loader';
 import { ArrowLeftIcon } from '@/components/icons';
 import { TICKET_STATUS_LABELS } from '@/lib/constants';
+import { friendlyError } from '@/lib/error-messages';
 
 interface Message {
   id: string;
@@ -49,7 +50,7 @@ export default function TicketDetailPage() {
       setTicket(result.ticket);
       setMessages(result.messages);
     } catch (err: any) {
-      setError(err.message || 'Ticket introuvable');
+      setError(friendlyError(err));
     } finally {
       setLoading(false);
     }
@@ -64,7 +65,7 @@ export default function TicketDetailPage() {
       setBody('');
       await load();
     } catch (err: any) {
-      setError(err.message || 'Envoi impossible');
+      setError(friendlyError(err));
     } finally {
       setSending(false);
     }

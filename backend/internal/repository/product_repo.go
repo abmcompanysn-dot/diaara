@@ -22,13 +22,14 @@ func NewProductRepo(pool *pgxpool.Pool) *ProductRepo {
 }
 
 const productColumns = `id, vendor_id, title, description, price_cfa, category, file_key,
-	cover_image_key, moderation_status, moderation_note, affiliate_enabled, max_closer_commission_pct, created_at, updated_at`
+	cover_image_key, moderation_status, moderation_note, affiliate_enabled, max_closer_commission_pct,
+	preview_keys, preview_status, created_at, updated_at`
 
 func scanProduct(row pgx.Row) (*model.Product, error) {
 	p := &model.Product{}
 	err := row.Scan(&p.ID, &p.VendorID, &p.Title, &p.Description, &p.PriceCFA, &p.Category,
 		&p.FileKey, &p.CoverImageKey, &p.ModerationStatus, &p.ModerationNote, &p.AffiliateEnabled,
-		&p.MaxCloserCommissionPct, &p.CreatedAt, &p.UpdatedAt)
+		&p.MaxCloserCommissionPct, &p.PreviewKeys, &p.PreviewStatus, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, ErrProductNotFound
@@ -191,6 +192,16 @@ func (r *ProductRepo) UpdateModerationStatus(ctx context.Context, id, status str
 	_, err := r.pool.Exec(ctx,
 		`UPDATE products SET moderation_status = $2, moderation_note = $3, updated_at = NOW() WHERE id = $1`,
 		id, status, note)
+	return err
+}
+
+// SetPreview — enregistre le résultat de la génération d'aperçu (tâche de
+// fond après la création du produit). status : "ready", "unsupported" (type
+// de fichier sans aperçu géré) ou "failed".
+func (r *ProductRepo) SetPreview(ctx context.Context, id string, keys []string, status string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE products SET preview_keys = $2, preview_status = $3 WHERE id = $1`,
+		id, keys, status)
 	return err
 }
 
