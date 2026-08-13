@@ -48,11 +48,11 @@ jobs:
       # (donc les données) ne sont jamais touchés par ce script.
       - name: Build & redémarrage des conteneurs
         run: |
-          ssh "$VPS_USER@$VPS_HOST" bash -euo pipefail <<'EOF'
-            cd /opt/diarra
+          ssh "$VPS_USER@$VPS_HOST" bash -euo pipefail <<EOF
+            cd "$VPS_PATH"
 
             if [ ! -f .env ]; then
-              echo "ERREUR : /opt/diarra/.env introuvable sur le VPS." >&2
+              echo "ERREUR : $VPS_PATH/.env introuvable sur le VPS." >&2
               echo "À créer manuellement une seule fois (voir README section 7) avant le premier déploiement." >&2
               exit 1
             fi
