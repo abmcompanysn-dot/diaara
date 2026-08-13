@@ -5,7 +5,8 @@ import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
-import { CheckIcon, AlertTriangleIcon } from '@/components/icons';
+import { friendlyError } from '@/lib/error-messages';
+import { CheckIcon, AlertTriangleIcon, DownloadIcon } from '@/components/icons';
 
 type Step = 'pending' | 'done' | 'error';
 
@@ -15,7 +16,21 @@ export default function CheckoutReturnView() {
 
   const [step, setStep] = useState<Step>('pending');
   const [error, setError] = useState('');
+  const [deliveryUrl, setDeliveryUrl] = useState('');
+  const [delivering, setDelivering] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const handleDownload = async () => {
+    setDelivering(true);
+    try {
+      const result = await api.getDeliveryByToken(token);
+      setDeliveryUrl(result.signed_url);
+    } catch (err: any) {
+      setError(friendlyError(err));
+    } finally {
+      setDelivering(false);
+    }
+  };
 
   useEffect(() => {
     if (!token) {
@@ -82,15 +97,45 @@ export default function CheckoutReturnView() {
               Paiement confirmé
             </h1>
             <p className="mt-2 text-sm text-green-900/60 max-w-xs mx-auto">
-              Merci ! Votre commande est en cours de traitement. La livraison vous
-              sera envoyée par email.
+              Merci ! Un email de confirmation vous a été envoyé. Vous pouvez
+              aussi télécharger votre fichier directement ci-dessous.
             </p>
-            <div className="mt-6 flex flex-wrap justify-center gap-3">
-              <Button className="bg-lime text-green-950 font-semibold hover:bg-green-300" render={<Link href="/catalog" />}>
+
+            {error && (
+              <div className="mt-4 p-3 bg-red-50 text-red-700 rounded text-sm text-left" role="alert">
+                {error}
+              </div>
+            )}
+
+            <div className="mt-6">
+              {deliveryUrl ? (
+                <Button
+                  render={
+                    <a href={deliveryUrl} download className="block w-full">
+                      <DownloadIcon size={18} className="mr-2" />
+                      Télécharger mon fichier
+                    </a>
+                  }
+                  className="w-full h-11 font-semibold bg-lime text-green-950 hover:bg-green-300"
+                />
+              ) : (
+                <Button
+                  onClick={handleDownload}
+                  disabled={delivering}
+                  className="w-full h-11 font-semibold bg-lime text-green-950 hover:bg-green-300"
+                >
+                  <DownloadIcon size={18} className="mr-2" />
+                  {delivering ? 'Préparation du téléchargement…' : 'Télécharger mon fichier'}
+                </Button>
+              )}
+              <p className="mt-2 text-xs text-green-900/40 text-center">
+                Lien valable 5 minutes · 3 téléchargements maximum
+              </p>
+            </div>
+
+            <div className="mt-4 flex flex-wrap justify-center gap-3">
+              <Button variant="outline" render={<Link href="/catalog" />}>
                 Continuer mes achats
-              </Button>
-              <Button variant="outline" render={<Link href="/orders" />}>
-                Voir mes commandes
               </Button>
             </div>
           </div>

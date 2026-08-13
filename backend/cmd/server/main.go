@@ -309,6 +309,7 @@ func main() {
 			r.Use(middleware.RequireAuth(jwtManager))
 			r.Post("/", deliveryHandler.Generate)
 		})
+		r.Post("/api/orders/delivery", deliveryHandler.GenerateByToken) // Public (acheteur invité, par checkout_token)
 		r.Get("/api/delivery/{token}", deliveryHandler.Download)
 	}
 

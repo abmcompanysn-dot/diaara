@@ -63,6 +63,28 @@ func (h *DeliveryHandler) Generate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.generate(w, r, sale)
+}
+
+// GenerateByToken — l'acheteur invité (sans session) récupère son lien de
+// livraison via le checkout_token reçu à la commande. Mêmes règles que
+// Generate, mais accessible sans authentification.
+// POST /api/orders/delivery?token=...
+func (h *DeliveryHandler) GenerateByToken(w http.ResponseWriter, r *http.Request) {
+	token := r.URL.Query().Get("token")
+	if token == "" {
+		http.Error(w, `{"error":"token_required"}`, http.StatusBadRequest)
+		return
+	}
+	sale, err := h.saleRepo.FindByCheckoutToken(r.Context(), token)
+	if err != nil {
+		http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
+		return
+	}
+	h.generate(w, r, sale)
+}
+
+func (h *DeliveryHandler) generate(w http.ResponseWriter, r *http.Request, sale *model.Sale) {
 	if sale.Status != string(model.SalePaid) && sale.Status != string(model.SaleDelivered) {
 		http.Error(w, `{"error":"order_not_paid"}`, http.StatusBadRequest)
 		return
@@ -77,8 +99,8 @@ func (h *DeliveryHandler) Generate(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]interface{}{
-			"delivery":     existing,
-			"signed_url":   url,
+			"delivery":   existing,
+			"signed_url": url,
 		})
 		return
 	}

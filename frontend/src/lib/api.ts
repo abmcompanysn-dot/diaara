@@ -181,6 +181,13 @@ export const api = {
       method: 'POST',
     }),
 
+  // Livraison pour un acheteur invité (sans session), via checkout_token
+  getDeliveryByToken: (token: string) =>
+    fetchApi<{ delivery: any; signed_url: string }>(`/api/orders/delivery?token=${encodeURIComponent(token)}`, {
+      method: 'POST',
+      skipAuth: true,
+    }),
+
   // Vendor
   getVendorProducts: () => fetchApi<{ products: any[] }>('/api/vendor/products'),
 

@@ -140,11 +140,14 @@ func (n *NotificationService) SendPasswordReset(ctx context.Context, to, token s
 	return n.client.Send(ctx, to, "Réinitialisation de votre mot de passe", renderEmail(inner))
 }
 
-func (n *NotificationService) SendOrderConfirmed(ctx context.Context, to, orderID string) error {
-	link := fmt.Sprintf("%s/orders/%s", n.frontendURL, orderID)
-	body := fmt.Sprintf(`<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Votre commande a été payée avec succès. Vous serez notifié dès que le fichier sera livré.</p>
+// SendOrderConfirmed — le lien pointe vers la page de suivi publique (par
+// checkout_token) plutôt que /orders/{id}, car un acheteur invité n'a pas de
+// session pour accéder à son espace connecté.
+func (n *NotificationService) SendOrderConfirmed(ctx context.Context, to, orderID, checkoutToken string) error {
+	link := fmt.Sprintf("%s/checkout/return?token=%s", n.frontendURL, checkoutToken)
+	body := fmt.Sprintf(`<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Votre commande a été payée avec succès. Téléchargez votre fichier depuis le bouton ci-dessous.</p>
 <div style="margin:16px 0 0;padding:16px 18px;background-color:#f2f7f4;border-left:4px solid #0f7a50;border-radius:8px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#0a3225;">Commande <strong>%s</strong> &mdash; paiement confirmé.</div>`, orderID)
-	inner := contentHTML("Paiement confirmé !", body, "Suivre ma commande", link)
+	inner := contentHTML("Paiement confirmé !", body, "Télécharger mon fichier", link)
 	return n.client.Send(ctx, to, "Commande confirmée", renderEmail(inner))
 }
 

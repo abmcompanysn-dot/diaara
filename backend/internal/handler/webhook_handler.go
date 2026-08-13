@@ -302,8 +302,8 @@ func (h *WebhookHandler) notifyPaid(ctx context.Context, sale *model.Sale) {
 	if err != nil {
 		return
 	}
-	if buyer.Email != "" {
-		h.notifications.SendOrderConfirmed(ctx, buyer.Email, sale.ID)
+	if buyer.Email != "" && sale.CheckoutToken != nil {
+		h.notifications.SendOrderConfirmed(ctx, buyer.Email, sale.ID, *sale.CheckoutToken)
 	}
 
 	product, err := h.productRepo.FindByID(ctx, sale.ProductID)
