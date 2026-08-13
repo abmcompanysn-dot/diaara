@@ -238,6 +238,7 @@ func main() {
 
 	// Public product routes
 	r.Route("/api/products", func(r chi.Router) {
+		r.Use(middleware.OptionalAuth(jwtManager))
 		r.Get("/", productHandler.List)
 		r.Get("/{id}", productHandler.Get)
 		r.Get("/{id}/cover", productHandler.Cover)

@@ -8,6 +8,7 @@ import {
   MegaphoneIcon,
   ShieldIcon,
   HeadsetIcon,
+  ZapIcon,
 } from '@/components/icons';
 
 export type IconType = ComponentType<SVGProps<SVGSVGElement> & { size?: number }>;
@@ -65,15 +66,18 @@ export function visibleNavItems(user: UserLike | null): NavItem[] {
 
 /** Liens du header (publics + liens d'espace selon le rôle). */
 export function headerNavItems(user: UserLike | null) {
-  const links: { href: string; label: string }[] = [
-    { href: '/catalog', label: 'Catalogue' },
-    { href: '/how-it-works', label: 'Comment ça marche' },
+  const links: { href: string; label: string; Icon: IconType }[] = [
+    { href: '/catalog', label: 'Catalogue', Icon: CartIcon },
+    { href: '/how-it-works', label: 'Comment ça marche', Icon: ZapIcon },
   ];
   if (!user) return links;
-  links.push({ href: '/dashboard', label: 'Mon espace' });
-  if (user.roles?.includes('vendeur')) links.push({ href: '/vendor/products', label: 'Espace vendeur' });
-  if (user.roles?.includes('closer')) links.push({ href: '/closer/dashboard', label: 'Affiliation' });
-  if (user.is_admin) links.push({ href: '/admin', label: 'Admin' });
+  links.push({ href: '/dashboard', label: 'Mon espace', Icon: HomeIcon });
+  if (user.roles?.includes('vendeur'))
+    links.push({ href: '/vendor/products', label: 'Espace vendeur', Icon: StoreIcon });
+  if (user.roles?.includes('closer'))
+    links.push({ href: '/closer/dashboard', label: 'Affiliation', Icon: MegaphoneIcon });
+  if (user.is_admin) links.push({ href: '/admin', label: 'Admin', Icon: ShieldIcon });
+  links.push({ href: '/support', label: 'Support', Icon: HeadsetIcon });
   return links;
 }
 

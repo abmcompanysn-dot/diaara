@@ -49,6 +49,34 @@ func RequireAuth(jwtManager *auth.JWTManager) func(http.Handler) http.Handler {
 	}
 }
 
+// OptionalAuth remplit le contexte utilisateur si un token Bearer valide est
+// présent, mais ne bloque jamais la requête (token absent ou invalide = accès
+// public normal). Utile pour les routes publiques dont le contenu dépend de
+// l'identité du visiteur (ex: un vendeur qui consulte son propre produit en
+// attente de modération).
+func OptionalAuth(jwtManager *auth.JWTManager) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			header := r.Header.Get("Authorization")
+			if !strings.HasPrefix(header, "Bearer ") {
+				next.ServeHTTP(w, r)
+				return
+			}
+			token := strings.TrimPrefix(header, "Bearer ")
+			claims, err := jwtManager.ValidateAccessToken(token)
+			if err != nil {
+				next.ServeHTTP(w, r)
+				return
+			}
+			ctx := context.WithValue(r.Context(), UserIDKey, claims.UserID)
+			ctx = context.WithValue(ctx, IsAdminKey, claims.IsAdmin)
+			ctx = context.WithValue(ctx, RolesKey, claims.Roles)
+			ctx = context.WithValue(ctx, AdminPermissionsKey, claims.AdminPermissions)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
 // isWebSocketUpgrade détecte une tentative d'upgrade WebSocket (RFC 6455).
 func isWebSocketUpgrade(r *http.Request) bool {
 	return strings.EqualFold(r.Header.Get("Upgrade"), "websocket") &&

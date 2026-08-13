@@ -6,7 +6,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { headerNavItems } from '@/lib/navigation';
-import { MenuIcon, XIcon } from '@/components/icons';
+import { MenuIcon, XIcon, ChevronRightIcon } from '@/components/icons';
 import { cn } from '@/lib/utils';
 
 export function Header() {
@@ -65,10 +65,11 @@ export function Header() {
               href={link.href}
               aria-current={isActive(link.href) ? 'page' : undefined}
               className={cn(
-                'text-sm text-white/80 hover:text-green-300 transition-colors',
+                'flex items-center gap-1.5 text-sm text-white/80 hover:text-green-300 transition-colors',
                 isActive(link.href) && 'text-green-300 font-medium'
               )}
             >
+              <link.Icon size={16} className="shrink-0" />
               {link.label}
             </Link>
           ))}
@@ -132,7 +133,7 @@ export function Header() {
           />
           <div
             ref={panelRef}
-            className="absolute right-0 top-0 h-full w-72 max-w-[85vw] bg-green-950 text-white shadow-lift flex flex-col"
+            className="absolute right-0 top-0 h-full w-72 max-w-[85vw] bg-green-950 text-white shadow-lift flex flex-col animate-in slide-in-from-right duration-200"
           >
             <div className="flex items-center justify-between px-5 h-16 border-b border-white/10">
               <span className="font-display text-xl font-bold tracking-tight">DIARRA</span>
@@ -152,23 +153,36 @@ export function Header() {
               </div>
             )}
 
-            <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1" aria-label="Navigation mobile">
-              {links.map((link) => (
-                <Link
-                  key={link.href}
-                  href={link.href}
-                  onClick={() => setMenuOpen(false)}
-                  aria-current={isActive(link.href) ? 'page' : undefined}
-                  className={cn(
-                    'flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                    isActive(link.href)
-                      ? 'bg-white/10 text-lime'
-                      : 'text-white/80 hover:bg-white/5 hover:text-white'
-                  )}
-                >
-                  {link.label}
-                </Link>
-              ))}
+            <nav className="flex-1 overflow-y-auto py-4 px-3 space-y-1.5" aria-label="Navigation mobile">
+              {links.map((link) => {
+                const active = isActive(link.href);
+                return (
+                  <Link
+                    key={link.href}
+                    href={link.href}
+                    onClick={() => setMenuOpen(false)}
+                    aria-current={active ? 'page' : undefined}
+                    className={cn(
+                      'flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-colors',
+                      active
+                        ? 'bg-white/10 text-lime'
+                        : 'text-white/80 hover:bg-white/5 hover:text-white'
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        'inline-flex items-center justify-center w-9 h-9 rounded-lg shrink-0 transition-colors',
+                        active ? 'bg-lime/15 text-lime' : 'bg-white/10 text-white/70'
+                      )}
+                      aria-hidden
+                    >
+                      <link.Icon size={18} />
+                    </span>
+                    <span className="flex-1">{link.label}</span>
+                    <ChevronRightIcon size={16} className="text-white/30 shrink-0" />
+                  </Link>
+                );
+              })}
             </nav>
 
             <div className="px-5 py-5 border-t border-white/10 space-y-3">
