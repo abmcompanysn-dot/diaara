@@ -284,12 +284,24 @@ func (h *SaleHandler) initiatePaymentPage(ctx context.Context, sale *model.Sale,
 	if runes := []rune(reason); len(runes) > 50 {
 		reason = string(runes[:47]) + "..."
 	}
+
+	// Le catalogue est tarifé en XOF ; on convertit vers la devise locale du
+	// pays choisi (PawaPay exige le montant dans la devise du pays/opérateur).
+	currency := payment.CountryCurrency[country]
+	if currency == "" {
+		currency = "XOF"
+	}
+	amount, err := payment.ConvertFromXOF(sale.AmountCFA, currency)
+	if err != nil {
+		return nil, err
+	}
+
 	req := payment.PaymentPageRequest{
 		DepositId: sale.PaymentReference,
 		ReturnUrl: returnURL,
 		AmountDetails: payment.AmountDetails{
-			Amount:   fmt.Sprintf("%d", sale.AmountCFA),
-			Currency: "XOF",
+			Amount:   amount,
+			Currency: currency,
 		},
 		Country:         country,
 		Reason:          reason,

@@ -153,11 +153,14 @@ export default function CheckoutView() {
                 <SelectContent>
                   {CHECKOUT_COUNTRIES.map((c) => (
                     <SelectItem key={c.code} value={c.code}>
-                      {c.name}
+                      {c.name} ({c.currency})
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+              <p className="text-xs text-green-900/50">
+                Le montant est converti automatiquement dans la devise de votre pays.
+              </p>
             </div>
 
             {guest && (

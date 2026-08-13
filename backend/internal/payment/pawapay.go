@@ -482,6 +482,52 @@ func ResolveOperator(country, operator string) (*Operator, error) {
 	return nil, fmt.Errorf("opérateur non supporté pour ce pays: %s / %s", country, operator)
 }
 
+// --- Pays PawaPay et conversion de devise (Payment Page uniquement) ---------
+//
+// Liste complète des 20 pays couverts par PawaPay (docs.pawapay.io/v2/docs/providers).
+// Utilisée uniquement côté checkout (Payment Page) : le catalogue DIARRA est
+// tarifé en FCFA (XOF), donc pour tout pays hors zone XOF/XAF (parité fixe),
+// le montant doit être converti dans la devise locale avant d'être envoyé à
+// PawaPay. Les versements vendeur restent en XOF (XOFOperators ci-dessus) —
+// les convertir nécessiterait une seconde conversion (devise acheteur → XOF
+// → devise versement), hors périmètre pour l'instant.
+var CountryCurrency = map[string]string{
+	"BEN": "XOF", "BFA": "XOF", "CMR": "XAF", "CIV": "XOF", "COD": "CDF",
+	"ETH": "ETB", "GAB": "XAF", "GHA": "GHS", "KEN": "KES", "LSO": "LSL",
+	"MWI": "MWK", "MOZ": "MZN", "NGA": "NGN", "COG": "XAF", "RWA": "RWF",
+	"SEN": "XOF", "SLE": "SLE", "TZA": "TZS", "UGA": "UGX", "ZMB": "ZMW",
+}
+
+// USDRates — unités de devise pour 1 USD. Table statique fixée manuellement
+// (source : exchangerate-api.com, relevé le 2026-08-13), pas d'appel API
+// externe en temps réel. Les taux fluctuent — à remettre à jour périodiquement,
+// en particulier NGN, GHS et TZS qui bougent vite.
+var USDRates = map[string]float64{
+	"XOF": 568.76, "XAF": 568.76, "GHS": 11.58, "KES": 129.24, "NGN": 1360.25,
+	"RWF": 1474.52, "UGX": 3696.31, "TZS": 2644.86, "ZMW": 18.79, "MWK": 1739.93,
+	"MZN": 63.75, "LSL": 16.14, "ETB": 161.34, "SLE": 24.65, "CDF": 2281.76,
+}
+
+// ConvertFromXOF convertit un montant en FCFA (XOF) vers la devise cible, en
+// passant par le dollar US comme pivot (table USDRates). Retourne le montant
+// arrondi en string, au format attendu par l'API PawaPay.
+func ConvertFromXOF(amountXOF int, targetCurrency string) (string, error) {
+	if targetCurrency == "" || targetCurrency == "XOF" || targetCurrency == "XAF" {
+		return fmt.Sprintf("%d", amountXOF), nil
+	}
+	xofRate, ok := USDRates["XOF"]
+	if !ok {
+		return "", errors.New("taux XOF introuvable")
+	}
+	targetRate, ok := USDRates[targetCurrency]
+	if !ok {
+		return "", fmt.Errorf("devise non supportée: %s", targetCurrency)
+	}
+	usd := float64(amountXOF) / xofRate
+	converted := usd * targetRate
+	return fmt.Sprintf("%.0f", converted), nil
+}
+
 var nonDigits = regexp.MustCompile(`\D`)
 
 // NormalizePhone convertit un numéro local (ex "77 123 45 67") en MSISDN

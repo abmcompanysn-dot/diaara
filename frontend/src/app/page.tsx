@@ -43,6 +43,7 @@ const COUNTRIES = [
   { name: 'Gabon', flag: '🇬🇦' },
   { name: 'Ghana', flag: '🇬🇭' },
   { name: "Côte d'Ivoire", flag: '🇨🇮' },
+  { name: 'Éthiopie', flag: '🇪🇹' },
   { name: 'Kenya', flag: '🇰🇪' },
   { name: 'Lesotho', flag: '🇱🇸' },
   { name: 'Malawi', flag: '🇲🇼' },
@@ -205,9 +206,8 @@ export default function Home() {
               Disponible dans <span className="underline-accent text-lime">toute l&apos;Afrique</span>
             </h2>
             <p className="mt-4 text-white/70 max-w-2xl mx-auto">
-              DIARRA s&apos;appuie sur le réseau mobile money PawaPay, présent dans {COUNTRIES.length} pays.
-              Le paiement est déjà actif au Sénégal, en Côte d&apos;Ivoire, au Bénin et au Burkina Faso,
-              et s&apos;étend progressivement au reste du continent.
+              Le paiement mobile money est actif dans les {COUNTRIES.length} pays du réseau PawaPay,
+              chacun payé automatiquement dans sa devise locale.
             </p>
           </div>
           <div className="flex flex-wrap justify-center gap-3">
