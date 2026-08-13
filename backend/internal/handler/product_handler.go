@@ -254,6 +254,16 @@ func (h *ProductHandler) Update(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Un produit déjà approuvé repasse en attente après modification : le
+	// contenu a changé, il doit être revalidé avant de redevenir visible.
+	if product.ModerationStatus == "approved" {
+		if err := h.productRepo.UpdateModerationStatus(r.Context(), id, "pending", nil); err != nil {
+			http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
+			return
+		}
+		updated.ModerationStatus = "pending"
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"product": updated})
 }

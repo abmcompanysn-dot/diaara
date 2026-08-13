@@ -158,6 +158,13 @@ export const ChevronRightIcon = (props: IconProps) => (
   </svg>
 );
 
+export const EditIcon = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M17 3.5a2.1 2.1 0 0 1 3 3L8 18.5l-4 1 1-4z" />
+    <path d="m15 5.5 3 3" />
+  </svg>
+);
+
 export const LinkIcon = (props: IconProps) => (
   <svg {...base(props)}>
     <path d="M10 13a5 5 0 0 0 7.5.5l2.5-2.5a5 5 0 0 0-7-7l-1.5 1.5" />

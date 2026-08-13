@@ -10,7 +10,7 @@ import { PageHeader } from '@/components/page-header';
 import { PageLoader } from '@/components/page-loader';
 import { EmptyState } from '@/components/empty-state';
 import { ConfirmDialog } from '@/components/confirm-dialog';
-import { StoreIcon, TrashIcon } from '@/components/icons';
+import { StoreIcon, TrashIcon, EditIcon } from '@/components/icons';
 import { formatPrice, PRODUCT_STATUS_BADGE, PRODUCT_STATUS_LABELS, CATEGORY_LABELS } from '@/lib/constants';
 
 interface Product {
@@ -128,7 +128,16 @@ export default function VendorProductsPage() {
                         {PRODUCT_STATUS_LABELS[product.moderation_status] || product.moderation_status}
                       </Badge>
                     </TableCell>
-                    <TableCell className="text-right">
+                    <TableCell className="text-right space-x-1">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="min-h-9"
+                        render={<Link href={`/vendor/products/edit?id=${product.id}`} />}
+                      >
+                        <EditIcon size={16} className="mr-1.5" />
+                        Modifier
+                      </Button>
                       <Button
                         variant="ghost"
                         size="sm"
