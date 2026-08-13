@@ -172,7 +172,7 @@ func main() {
 	// Handlers
 	healthHandler := handler.NewHealthHandler(pool)
 	authHandler := handler.NewAuthHandler(authService)
-	productHandler := handler.NewProductHandler(productRepo, storageService)
+	productHandler := handler.NewProductHandler(productRepo, storageService, os.Getenv("FRONTEND_URL"))
 	saleHandler := handler.NewSaleHandler(saleRepo, productRepo, referralRepo, userRepo, pawapay)
 	closerHandler := handler.NewCloserHandler(referralRepo, productRepo, os.Getenv("FRONTEND_URL"))
 	webhookHandler := handler.NewWebhookHandler(saleRepo, userRepo, productRepo, payoutRepo, pawapay, notifications, allowedIPs)
@@ -278,6 +278,9 @@ func main() {
 
 	// Redirection publique d'un lien d'affiliation (compte les clics)
 	r.Get("/r/{slug}", closerHandler.Redirect)
+
+	// Lien de partage produit (carte Open Graph pour WhatsApp/Facebook/etc.)
+	r.Get("/p/{id}", productHandler.Share)
 
 	// Webhooks (pas de JWT)
 	r.Route("/api/webhooks", func(r chi.Router) {

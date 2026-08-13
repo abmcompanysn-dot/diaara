@@ -3,9 +3,12 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"html"
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/diarra/backend/internal/middleware"
@@ -19,6 +22,7 @@ import (
 type ProductHandler struct {
 	productRepo *repository.ProductRepo
 	storage     StorageService
+	frontendURL string
 }
 
 // StorageService est l'interface minimale dont le handler a besoin.
@@ -27,8 +31,8 @@ type StorageService interface {
 	GenerateSignedURL(ctx context.Context, key string, expiry time.Duration) (string, error)
 }
 
-func NewProductHandler(productRepo *repository.ProductRepo, storage StorageService) *ProductHandler {
-	return &ProductHandler{productRepo: productRepo, storage: storage}
+func NewProductHandler(productRepo *repository.ProductRepo, storage StorageService, frontendURL string) *ProductHandler {
+	return &ProductHandler{productRepo: productRepo, storage: storage, frontendURL: frontendURL}
 }
 
 // List — public, produits approuvés
@@ -178,6 +182,92 @@ func (h *ProductHandler) Cover(w http.ResponseWriter, r *http.Request) {
 	}
 
 	http.Redirect(w, r, url, http.StatusFound)
+}
+
+// socialCrawlerUA reconnaît les robots des réseaux sociaux qui n'exécutent pas
+// de JavaScript et ont donc besoin des balises Open Graph directement dans le HTML.
+var socialCrawlerUA = []string{
+	"facebookexternalhit", "twitterbot", "whatsapp", "telegrambot",
+	"linkedinbot", "slackbot", "discordbot", "pinterest", "skypeuripreview",
+}
+
+func isSocialCrawler(userAgent string) bool {
+	ua := strings.ToLower(userAgent)
+	for _, needle := range socialCrawlerUA {
+		if strings.Contains(ua, needle) {
+			return true
+		}
+	}
+	return false
+}
+
+// Share — GET /p/{id}, lien public à partager (WhatsApp, Facebook, etc.).
+// Sert une carte Open Graph aux robots des réseaux sociaux, redirige les
+// visiteurs humains vers la fiche produit réelle du frontend.
+func (h *ProductHandler) Share(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	product, err := h.productRepo.FindByID(r.Context(), id)
+	if err != nil || product.ModerationStatus != "approved" {
+		http.NotFound(w, r)
+		return
+	}
+
+	productURL := fmt.Sprintf("%s/product?id=%s", strings.TrimSuffix(h.frontendURL, "/"), id)
+
+	if !isSocialCrawler(r.Header.Get("User-Agent")) {
+		http.Redirect(w, r, productURL, http.StatusFound)
+		return
+	}
+
+	scheme := "https"
+	if r.Header.Get("X-Forwarded-Proto") != "" {
+		scheme = r.Header.Get("X-Forwarded-Proto")
+	} else if r.TLS == nil {
+		scheme = "http"
+	}
+	shareURL := fmt.Sprintf("%s://%s/p/%s", scheme, r.Host, id)
+
+	description := ""
+	if product.Description != nil {
+		description = *product.Description
+	}
+	if len(description) > 200 {
+		description = description[:200] + "…"
+	}
+	if description == "" {
+		description = fmt.Sprintf("%d FCFA — produit numérique sur DIARRA", product.PriceCFA)
+	}
+
+	var imageTag string
+	if product.CoverImageKey != nil && *product.CoverImageKey != "" {
+		imageURL := fmt.Sprintf("%s://%s/api/products/%s/cover", scheme, r.Host, id)
+		imageTag = fmt.Sprintf(`<meta property="og:image" content="%s">`, html.EscapeString(imageURL))
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprintf(w, `<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<title>%s</title>
+<meta property="og:type" content="product">
+<meta property="og:site_name" content="DIARRA">
+<meta property="og:title" content="%s">
+<meta property="og:description" content="%s">
+<meta property="og:url" content="%s">
+%s
+<meta name="twitter:card" content="summary_large_image">
+<meta http-equiv="refresh" content="0; url=%s">
+</head>
+<body></body>
+</html>`,
+		html.EscapeString(product.Title),
+		html.EscapeString(product.Title),
+		html.EscapeString(description),
+		html.EscapeString(shareURL),
+		imageTag,
+		html.EscapeString(productURL),
+	)
 }
 
 // Create — vendeur authentifié

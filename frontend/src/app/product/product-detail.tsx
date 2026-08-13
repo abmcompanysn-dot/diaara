@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ProductImage } from '@/components/product-image';
 import CheckoutModal from '@/components/checkout-modal';
-import { ArrowLeftIcon, CheckIcon, LockIcon, ZapIcon } from '@/components/icons';
+import { ArrowLeftIcon, CheckIcon, LockIcon, ZapIcon, LinkIcon } from '@/components/icons';
 import { CATEGORY_LABELS, PAYMENTS } from '@/lib/constants';
 
 interface Product {
@@ -28,6 +28,18 @@ export default function ProductDetailPage() {
   const [loading, setLoading] = useState(true);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [error, setError] = useState('');
+  const [copied, setCopied] = useState(false);
+
+  const handleShare = async () => {
+    const url = `${window.location.origin}/p/${id}`;
+    try {
+      await navigator.clipboard.writeText(url);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      window.prompt('Copiez ce lien :', url);
+    }
+  };
 
   useEffect(() => {
     if (id) loadProduct();
@@ -153,6 +165,15 @@ export default function ProductDetailPage() {
               className="w-full h-11 mt-6 rounded-full bg-lime text-green-950 font-semibold hover:bg-green-300 text-base"
             >
               Acheter maintenant
+            </Button>
+
+            <Button
+              onClick={handleShare}
+              variant="outline"
+              className="w-full h-10 mt-2.5 rounded-full border-green-900/15 text-green-900/70 hover:bg-green-900/5"
+            >
+              <LinkIcon size={16} className="mr-2" />
+              {copied ? 'Lien copié !' : 'Partager ce produit'}
             </Button>
 
             <ul className="mt-6 space-y-2.5">
