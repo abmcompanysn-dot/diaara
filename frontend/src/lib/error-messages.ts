@@ -41,7 +41,8 @@ const ERROR_MESSAGES: Record<string, string> = {
 
   // Versements
   invalid_amount: 'Montant invalide.',
-  insufficient_balance: 'Solde disponible insuffisant.',
+  amount_below_minimum: 'Le montant minimum de versement est de 1 000 FCFA.',
+  insufficient_balance: 'Solde disponible insuffisant pour ce montant.',
   payout_rejected: 'Le versement a été refusé par votre opérateur mobile money.',
   payout_method_required: 'Merci d\'enregistrer votre moyen de versement avant de demander un retrait.',
 

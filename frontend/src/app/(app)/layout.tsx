@@ -6,19 +6,37 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth';
 import { RequireAuth } from '@/lib/guards';
 import { NAV_SECTIONS, userRoleLabels, visibleNavItems } from '@/lib/navigation';
-import { HomeIcon } from '@/components/icons';
+import { useMobileMenu } from '@/lib/mobile-menu-context';
+import { HomeIcon, CartIcon, PackageIcon, StoreIcon, ShieldIcon, MenuIcon } from '@/components/icons';
 
 const BASE_ICON = 'w-5 h-5 shrink-0';
 
 export default function ClientLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const { user } = useAuth();
+  const { setOpen: setMenuOpen } = useMobileMenu();
 
   const links = visibleNavItems(user);
   const roles = userRoleLabels(user);
 
   const isActive = (href: string) =>
     href === '/dashboard' ? pathname === href : pathname === href || pathname.startsWith(href + '/');
+
+  // Barre du bas mobile : 3 raccourcis universels + 1 raccourci contextuel selon le rôle
+  // le plus pertinent + le menu (qui ouvre le tiroir complet du header, toutes les sections).
+  // Limité à 5 icônes pour éviter la troncature de texte sur petit écran (voir header.tsx).
+  const contextualItem = user?.roles?.includes('vendeur')
+    ? { href: '/vendor/products', label: 'Vendre', Icon: StoreIcon }
+    : user?.is_admin
+      ? { href: '/admin', label: 'Admin', Icon: ShieldIcon }
+      : null;
+
+  const mobileNavItems = [
+    { href: '/dashboard', label: 'Accueil', Icon: HomeIcon },
+    { href: '/catalog', label: 'Catalogue', Icon: CartIcon },
+    { href: '/orders', label: 'Commandes', Icon: PackageIcon },
+    ...(contextualItem ? [contextualItem] : []),
+  ];
 
   return (
     <RequireAuth>
@@ -96,8 +114,9 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
             </div>
           </aside>
 
-          {/* Contenu */}
-          <main className="flex-1 min-w-0 pb-20 md:pb-0">
+          {/* Contenu : pb-24 (96px) pour ne jamais laisser la barre du bas fixe recouvrir le
+              contenu en fin de défilement (voir espace vendeur / admin, ergonomie mobile). */}
+          <main className="flex-1 min-w-0 pb-24 md:pb-0">
 
             {/* Bannière de vérification en attente */}
             {user && !user.email_verified_at && (
@@ -115,13 +134,16 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
         </div>
       </div>
 
-      {/* Barre de navigation mobile (bas d'écran, façon application) */}
+      {/* Barre de navigation mobile (bas d'écran, façon application) : 4-5 raccourcis
+          universels maximum + "Menu" qui ouvre le tiroir complet (header.tsx) pour les
+          liens spécialisés (Administration, Support, Affiliation...). Évite la troncature
+          de texte et le débordement horizontal observés avec les 7 liens précédents. */}
       <nav
-        className="md:hidden fixed bottom-0 inset-x-0 z-40 bg-white border-t border-green-900/10 pb-[env(safe-area-inset-bottom)]"
+        className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-white border-t border-green-900/10 pb-[env(safe-area-inset-bottom)]"
         aria-label="Navigation mobile"
       >
-        <div className="flex overflow-x-auto no-scrollbar">
-          {links.map((l) => {
+        <div className="flex">
+          {mobileNavItems.map((l) => {
             const active = isActive(l.href);
             return (
               <Link
@@ -129,7 +151,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
                 href={l.href}
                 aria-current={active ? 'page' : undefined}
                 className={cn(
-                  'flex-1 min-w-17 flex flex-col items-center justify-center gap-1 py-2.5 transition-colors',
+                  'flex-1 flex flex-col items-center justify-center gap-1 py-2.5 transition-colors',
                   active ? 'text-green-700' : 'text-green-900/45'
                 )}
               >
@@ -140,6 +162,14 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
               </Link>
             );
           })}
+          <button
+            type="button"
+            onClick={() => setMenuOpen(true)}
+            className="flex-1 flex flex-col items-center justify-center gap-1 py-2.5 text-green-900/45 transition-colors"
+          >
+            <MenuIcon size={21} />
+            <span className="text-[10.5px] font-medium leading-none truncate max-w-16 px-1">Menu</span>
+          </button>
         </div>
       </nav>
     </RequireAuth>

@@ -465,5 +465,5 @@ func validAffiliateConfig(enabled bool, maxPct float64) bool {
 	if !enabled {
 		return true
 	}
-	return maxPct > 0 && maxPct <= (100-float64(service.PlatformFeePct))
+	return maxPct > 0 && maxPct <= (100-float64(service.DefaultPlatformFeePct))
 }

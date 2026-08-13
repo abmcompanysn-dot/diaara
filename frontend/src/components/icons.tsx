@@ -210,6 +210,45 @@ export const AlertTriangleIcon = (props: IconProps) => (
   </svg>
 );
 
+export const SearchIcon = (props: IconProps) => (
+  <svg {...base(props)}>
+    <circle cx="11" cy="11" r="7" />
+    <path d="m20 20-3.5-3.5" />
+  </svg>
+);
+
+export const GridIcon = (props: IconProps) => (
+  <svg {...base(props)}>
+    <rect x="3" y="3" width="8" height="8" rx="1.5" />
+    <rect x="13" y="3" width="8" height="8" rx="1.5" />
+    <rect x="3" y="13" width="8" height="8" rx="1.5" />
+    <rect x="13" y="13" width="8" height="8" rx="1.5" />
+  </svg>
+);
+
+export const ListIcon = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M8 6h13" />
+    <path d="M8 12h13" />
+    <path d="M8 18h13" />
+    <path d="M3 6h.01" />
+    <path d="M3 12h.01" />
+    <path d="M3 18h.01" />
+  </svg>
+);
+
+export const ChevronDownIcon = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="m6 9 6 6 6-6" />
+  </svg>
+);
+
+export const StarIcon = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="m12 3 2.7 5.9 6.3.6-4.8 4.3 1.4 6.3L12 17l-5.6 3.1 1.4-6.3-4.8-4.3 6.3-.6z" />
+  </svg>
+);
+
 export const TrashIcon = (props: IconProps) => (
   <svg {...base(props)}>
     <path d="M4 7h16" />

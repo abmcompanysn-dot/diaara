@@ -306,6 +306,26 @@ func (r *UserRepo) SetAdminStatus(ctx context.Context, userID string, isAdmin bo
 	return err
 }
 
+// UserRoleCounts — répartition des utilisateurs par rôle (un compte peut
+// cumuler plusieurs rôles, donc la somme peut dépasser le total).
+type UserRoleCounts struct {
+	Total   int `json:"total"`
+	Vendors int `json:"vendors"`
+	Closers int `json:"closers"`
+	Admins  int `json:"admins"`
+}
+
+func (r *UserRepo) CountByRole(ctx context.Context) (UserRoleCounts, error) {
+	var c UserRoleCounts
+	err := r.pool.QueryRow(ctx, `SELECT
+		(SELECT COUNT(*) FROM users),
+		(SELECT COUNT(DISTINCT user_id) FROM user_roles WHERE role = 'vendeur'),
+		(SELECT COUNT(DISTINCT user_id) FROM user_roles WHERE role = 'closer'),
+		(SELECT COUNT(*) FROM users WHERE is_admin)`,
+	).Scan(&c.Total, &c.Vendors, &c.Closers, &c.Admins)
+	return c, err
+}
+
 // CountAllUsers compte les utilisateurs (pour les stats admin).
 func (r *UserRepo) CountAllUsers(ctx context.Context) (int, error) {
 	var count int

@@ -13,11 +13,12 @@ import (
 )
 
 type PayoutHandler struct {
-	payoutRepo  *repository.PayoutRepo
-	saleRepo    *repository.SaleRepo
-	productRepo *repository.ProductRepo
-	userRepo    *repository.UserRepo
-	pawapay     *payment.PawaPayClient
+	payoutRepo   *repository.PayoutRepo
+	saleRepo     *repository.SaleRepo
+	productRepo  *repository.ProductRepo
+	userRepo     *repository.UserRepo
+	settingsRepo *repository.SettingsRepo
+	pawapay      *payment.PawaPayClient
 }
 
 func NewPayoutHandler(
@@ -25,14 +26,16 @@ func NewPayoutHandler(
 	saleRepo *repository.SaleRepo,
 	productRepo *repository.ProductRepo,
 	userRepo *repository.UserRepo,
+	settingsRepo *repository.SettingsRepo,
 	pawapay *payment.PawaPayClient,
 ) *PayoutHandler {
 	return &PayoutHandler{
-		payoutRepo:  payoutRepo,
-		saleRepo:    saleRepo,
-		productRepo: productRepo,
-		userRepo:    userRepo,
-		pawapay:     pawapay,
+		payoutRepo:   payoutRepo,
+		saleRepo:     saleRepo,
+		productRepo:  productRepo,
+		userRepo:     userRepo,
+		settingsRepo: settingsRepo,
+		pawapay:      pawapay,
 	}
 }
 
@@ -92,6 +95,10 @@ func (h *PayoutHandler) SetPayoutMethod(w http.ResponseWriter, r *http.Request) 
 	op, err := payment.ResolveOperator(input.Country, input.Operator)
 	if err != nil {
 		http.Error(w, `{"error":"unsupported_operator"}`, http.StatusBadRequest)
+		return
+	}
+	if key := payment.GatewaySettingKey(op.Provider); key != "" && !h.settingsRepo.GetBool(r.Context(), key, true) {
+		http.Error(w, `{"error":"gateway_disabled"}`, http.StatusBadRequest)
 		return
 	}
 	msisdn, err := payment.NormalizePhone(op.DialCode, input.Phone)
@@ -176,6 +183,10 @@ func (h *PayoutHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	if input.AmountCFA <= 0 {
 		http.Error(w, `{"error":"invalid_amount"}`, http.StatusBadRequest)
+		return
+	}
+	if input.AmountCFA < model.MinPayoutAmountCFA {
+		http.Error(w, `{"error":"amount_below_minimum"}`, http.StatusBadRequest)
 		return
 	}
 

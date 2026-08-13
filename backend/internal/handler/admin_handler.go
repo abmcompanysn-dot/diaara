@@ -28,6 +28,9 @@ type AdminHandler struct {
 	userRepo      *repository.UserRepo
 	referralRepo  *repository.ReferralRepo
 	adminPermRepo *repository.AdminPermissionRepo
+	payoutRepo    *repository.PayoutRepo
+	settingsRepo  *repository.SettingsRepo
+	ticketRepo    *repository.TicketRepo
 	pool          *pgxpool.Pool
 	storage       s3Pinger // nil si stockage objet non configuré
 	startTime     time.Time
@@ -40,6 +43,9 @@ func NewAdminHandler(
 	userRepo *repository.UserRepo,
 	referralRepo *repository.ReferralRepo,
 	adminPermRepo *repository.AdminPermissionRepo,
+	payoutRepo *repository.PayoutRepo,
+	settingsRepo *repository.SettingsRepo,
+	ticketRepo *repository.TicketRepo,
 	pool *pgxpool.Pool,
 	storage s3Pinger,
 	startTime time.Time,
@@ -51,6 +57,9 @@ func NewAdminHandler(
 		userRepo:      userRepo,
 		referralRepo:  referralRepo,
 		adminPermRepo: adminPermRepo,
+		payoutRepo:    payoutRepo,
+		settingsRepo:  settingsRepo,
+		ticketRepo:    ticketRepo,
 		pool:          pool,
 		storage:       storage,
 		startTime:     startTime,
@@ -179,7 +188,7 @@ func (h *AdminHandler) Stats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	totalUsers, err := h.userRepo.CountAllUsers(r.Context())
+	roleCounts, err := h.userRepo.CountByRole(r.Context())
 	if err != nil {
 		http.Error(w, `{"error":"stats_failed"}`, http.StatusInternalServerError)
 		return
@@ -197,13 +206,204 @@ func (h *AdminHandler) Stats(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	gmv, err := h.saleRepo.GMV(r.Context())
+	if err != nil {
+		http.Error(w, `{"error":"stats_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	revenueThisMonth, revenueLastMonth, err := h.saleRepo.RevenueThisAndLastMonth(r.Context())
+	if err != nil {
+		http.Error(w, `{"error":"stats_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	growthPct := 0.0
+	if revenueLastMonth > 0 {
+		growthPct = (float64(revenueThisMonth) - float64(revenueLastMonth)) / float64(revenueLastMonth) * 100
+	} else if revenueThisMonth > 0 {
+		growthPct = 100
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"total_sales":        totalSales,
-		"total_products":     totalProducts,
-		"total_users":        totalUsers,
-		"total_revenue":      totalRevenue,
-		"pending_moderation": pendingCount,
+		"total_sales":         totalSales,
+		"total_products":      totalProducts,
+		"pending_moderation":  pendingCount,
+		"active_products":     totalProducts - pendingCount,
+		"total_users":         roleCounts.Total,
+		"total_vendors":       roleCounts.Vendors,
+		"total_closers":       roleCounts.Closers,
+		"total_admins":        roleCounts.Admins,
+		"total_revenue":       totalRevenue,
+		"gmv":                 gmv,
+		"revenue_this_month":  revenueThisMonth,
+		"revenue_last_month":  revenueLastMonth,
+		"revenue_growth_pct":  growthPct,
+	})
+}
+
+// GetSettings — GET /api/admin/settings (scope "finance")
+func (h *AdminHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
+	settings, err := h.settingsRepo.All(r.Context())
+	if err != nil {
+		http.Error(w, `{"error":"settings_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"settings": settings})
+}
+
+// UpdateSettings — PUT /api/admin/settings (scope "finance")
+func (h *AdminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
+	var input model.UpdateSettingsInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+	if rate, ok := input[model.SettingCommissionRatePct]; ok {
+		if f, err := parseRate(rate); err != nil || f < 0 || f > 100 {
+			http.Error(w, `{"error":"invalid_commission_rate"}`, http.StatusBadRequest)
+			return
+		}
+	}
+	if err := h.settingsRepo.SetMany(r.Context(), input); err != nil {
+		http.Error(w, `{"error":"settings_update_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	settings, err := h.settingsRepo.All(r.Context())
+	if err != nil {
+		http.Error(w, `{"error":"settings_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"settings": settings})
+}
+
+func parseRate(s string) (float64, error) {
+	var f float64
+	_, err := fmt.Sscanf(s, "%f", &f)
+	return f, err
+}
+
+// Payouts — GET /api/admin/payouts (scope "finance") : tous les versements,
+// tous vendeurs/affiliés confondus.
+func (h *AdminHandler) Payouts(w http.ResponseWriter, r *http.Request) {
+	payouts, err := h.payoutRepo.ListAllAdmin(r.Context())
+	if err != nil {
+		http.Error(w, `{"error":"list_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"payouts": payouts})
+}
+
+// RetryPayout — POST /api/admin/payouts/{id}/retry (scope "finance") :
+// relance un versement resté en échec (nouvel essai PawaPay avec un nouvel ID).
+func (h *AdminHandler) RetryPayout(w http.ResponseWriter, r *http.Request) {
+	if h.pawapay == nil {
+		http.Error(w, `{"error":"payment_not_configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+	id := chi.URLParam(r, "id")
+	payout, err := h.payoutRepo.FindByID(r.Context(), id)
+	if err != nil {
+		http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
+		return
+	}
+	if payout.Status != "failed" {
+		http.Error(w, `{"error":"payout_not_retryable"}`, http.StatusBadRequest)
+		return
+	}
+
+	pawapayID := uuidString()
+	resp, err := h.pawapay.InitiatePayout(r.Context(), payment.PayoutRequest{
+		PayoutId: pawapayID,
+		Recipient: payment.Payer{
+			Type: "MMO",
+			AccountDetails: payment.AccountDetails{
+				PhoneNumber: payout.PhoneNumber,
+				Provider:    payout.Operator,
+			},
+		},
+		Amount:            fmt.Sprintf("%d", payout.AmountCFA),
+		Currency:          "XOF",
+		ClientReferenceId: payout.ID,
+		CustomerMessage:   "VERSEMENT DIARRA",
+	})
+	if err != nil || resp.Status != "ACCEPTED" {
+		reason := "payout_retry_failed"
+		if err == nil && resp.FailureReason != nil {
+			reason = resp.FailureReason.FailureCode
+		}
+		http.Error(w, fmt.Sprintf(`{"error":"payout_rejected","reason":"%s"}`, reason), http.StatusBadGateway)
+		return
+	}
+	if err := h.payoutRepo.SetPawaPayReference(r.Context(), payout.ID, pawapayID); err != nil {
+		http.Error(w, `{"error":"payout_update_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "processing"})
+}
+
+// ActivityFeed — GET /api/admin/activity (scope "finance") : dernières
+// actions sur la plateforme (ventes, inscriptions, demandes de versement).
+func (h *AdminHandler) ActivityFeed(w http.ResponseWriter, r *http.Request) {
+	rows, err := h.pool.Query(r.Context(), `
+		(SELECT 'sale' AS kind, s.id, s.created_at AS at,
+		        json_build_object('product_title', p.title, 'amount_cfa', s.amount_cfa, 'status', s.status) AS data
+		 FROM sales s JOIN products p ON p.id = s.product_id
+		 ORDER BY s.created_at DESC LIMIT 10)
+		UNION ALL
+		(SELECT 'user' AS kind, u.id, u.created_at AS at,
+		        json_build_object('email', u.email) AS data
+		 FROM users u ORDER BY u.created_at DESC LIMIT 10)
+		UNION ALL
+		(SELECT 'payout' AS kind, po.id, po.requested_at AS at,
+		        json_build_object('amount_cfa', po.amount_cfa, 'status', po.status, 'email', u.email) AS data
+		 FROM payouts po JOIN users u ON u.id = po.user_id
+		 ORDER BY po.requested_at DESC LIMIT 10)
+		ORDER BY at DESC LIMIT 20`)
+	if err != nil {
+		http.Error(w, `{"error":"activity_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	defer rows.Close()
+
+	type activityItem struct {
+		Kind string                 `json:"kind"`
+		ID   string                 `json:"id"`
+		At   time.Time              `json:"at"`
+		Data map[string]interface{} `json:"data"`
+	}
+	items := []activityItem{}
+	for rows.Next() {
+		var it activityItem
+		if err := rows.Scan(&it.Kind, &it.ID, &it.At, &it.Data); err != nil {
+			http.Error(w, `{"error":"activity_failed"}`, http.StatusInternalServerError)
+			return
+		}
+		items = append(items, it)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"activity": items})
+}
+
+// Notifications — GET /api/admin/notifications (tout admin, pas de scope
+// dédié : chacun doit voir ce qui touche à son périmètre au minimum).
+func (h *AdminHandler) Notifications(w http.ResponseWriter, r *http.Request) {
+	pendingModeration, _ := h.pendingCount(r.Context())
+	openTickets, _ := h.ticketRepo.CountOpen(r.Context())
+	failedSales24h, _ := h.saleRepo.FailedCount24h(r.Context())
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"pending_moderation": pendingModeration,
+		"open_tickets":       openTickets,
+		"failed_sales_24h":   failedSales24h,
+		"total":              pendingModeration + openTickets + failedSales24h,
 	})
 }
 
@@ -400,9 +600,16 @@ func (h *AdminHandler) SystemHealth(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(health)
 }
 
-// Analytics — GET /api/admin/analytics (scope "finance")
+// Analytics — GET /api/admin/analytics?days=7|30|365 (scope "finance")
 func (h *AdminHandler) Analytics(w http.ResponseWriter, r *http.Request) {
-	salesByDay, err := h.saleRepo.SalesByDay(r.Context(), 30)
+	days := 30
+	switch r.URL.Query().Get("days") {
+	case "7":
+		days = 7
+	case "365":
+		days = 365
+	}
+	salesByDay, err := h.saleRepo.SalesByDay(r.Context(), days)
 	if err != nil {
 		http.Error(w, `{"error":"analytics_failed"}`, http.StatusInternalServerError)
 		return

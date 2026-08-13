@@ -92,6 +92,7 @@ func main() {
 	payoutRepo := repository.NewPayoutRepo(pool)
 	referralRepo := repository.NewReferralRepo(pool)
 	adminPermRepo := repository.NewAdminPermissionRepo(pool)
+	settingsRepo := repository.NewSettingsRepo(pool)
 
 	// OTP service
 	otpService := otp.NewService(otpRepo)
@@ -173,7 +174,7 @@ func main() {
 	healthHandler := handler.NewHealthHandler(pool)
 	authHandler := handler.NewAuthHandler(authService)
 	productHandler := handler.NewProductHandler(productRepo, storageService, os.Getenv("FRONTEND_URL"))
-	saleHandler := handler.NewSaleHandler(saleRepo, productRepo, referralRepo, userRepo, pawapay, os.Getenv("FRONTEND_URL"))
+	saleHandler := handler.NewSaleHandler(saleRepo, productRepo, referralRepo, userRepo, settingsRepo, pawapay, os.Getenv("FRONTEND_URL"))
 	closerHandler := handler.NewCloserHandler(referralRepo, productRepo, os.Getenv("FRONTEND_URL"))
 	webhookHandler := handler.NewWebhookHandler(saleRepo, userRepo, productRepo, payoutRepo, pawapay, notifications, allowedIPs)
 
@@ -191,14 +192,14 @@ func main() {
 	}
 
 	// Versements & revenus vendeur
-	payoutHandler := handler.NewPayoutHandler(payoutRepo, saleRepo, productRepo, userRepo, pawapay)
-
-	// Administration
-	adminHandler := handler.NewAdminHandler(productRepo, saleRepo, userRepo, referralRepo, adminPermRepo, pool, storageHealthPinger, startTime, pawapay)
+	payoutHandler := handler.NewPayoutHandler(payoutRepo, saleRepo, productRepo, userRepo, settingsRepo, pawapay)
 
 	// Support tickets
 	ticketRepo := repository.NewTicketRepo(pool)
 	ticketHandler := handler.NewTicketHandler(ticketRepo)
+
+	// Administration
+	adminHandler := handler.NewAdminHandler(productRepo, saleRepo, userRepo, referralRepo, adminPermRepo, payoutRepo, settingsRepo, ticketRepo, pool, storageHealthPinger, startTime, pawapay)
 
 	r := chi.NewRouter()
 
@@ -349,7 +350,16 @@ func main() {
 			r.Get("/sales", adminHandler.Sales)
 			r.Get("/analytics", adminHandler.Analytics)
 			r.Post("/sales/{id}/refund", adminHandler.RefundSale)
+			r.Get("/settings", adminHandler.GetSettings)
+			r.Put("/settings", adminHandler.UpdateSettings)
+			r.Get("/payouts", adminHandler.Payouts)
+			r.Post("/payouts/{id}/retry", adminHandler.RetryPayout)
+			r.Get("/activity", adminHandler.ActivityFeed)
 		})
+
+		// Notifications : accessible à tout admin (même restreint), pour que
+		// chacun voie au moins ce qui concerne son propre périmètre.
+		r.Get("/notifications", adminHandler.Notifications)
 
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAdminScope(model.AdminPermInfra))

@@ -138,6 +138,41 @@ func (r *SaleRepo) Count(ctx context.Context) (int, error) {
 	return count, err
 }
 
+// GMV — volume total des transactions abouties (Gross Merchandise Value).
+func (r *SaleRepo) GMV(ctx context.Context) (int, error) {
+	var total int
+	err := r.pool.QueryRow(ctx,
+		`SELECT COALESCE(SUM(amount_cfa), 0) FROM sales WHERE status NOT IN ('failed', 'pending')`,
+	).Scan(&total)
+	return total, err
+}
+
+// RevenueThisAndLastMonth — revenu plateforme (frais) du mois en cours et du
+// mois précédent, pour calculer un indicateur de croissance (%).
+func (r *SaleRepo) RevenueThisAndLastMonth(ctx context.Context) (thisMonth, lastMonth int, err error) {
+	err = r.pool.QueryRow(ctx, `SELECT
+		COALESCE(SUM(platform_fee_cfa) FILTER (
+			WHERE created_at >= date_trunc('month', now())
+		), 0),
+		COALESCE(SUM(platform_fee_cfa) FILTER (
+			WHERE created_at >= date_trunc('month', now() - interval '1 month')
+			  AND created_at < date_trunc('month', now())
+		), 0)
+		FROM sales WHERE status NOT IN ('failed', 'pending')`,
+	).Scan(&thisMonth, &lastMonth)
+	return thisMonth, lastMonth, err
+}
+
+// FailedCount24h — nombre de ventes échouées dans les dernières 24h
+// (pour les alertes/notifications admin).
+func (r *SaleRepo) FailedCount24h(ctx context.Context) (int, error) {
+	var count int
+	err := r.pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM sales WHERE status = 'failed' AND created_at >= now() - interval '24 hours'`,
+	).Scan(&count)
+	return count, err
+}
+
 func (r *SaleRepo) CountByVendor(ctx context.Context, vendorID string) (int, error) {
 	var count int
 	err := r.pool.QueryRow(ctx,

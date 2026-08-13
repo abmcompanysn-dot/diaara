@@ -97,6 +97,13 @@ func (r *TicketRepo) ListAll(ctx context.Context) ([]*model.SupportTicket, error
 	return tickets, rows.Err()
 }
 
+// CountOpen — tickets support en attente de réponse (pour les notifications admin).
+func (r *TicketRepo) CountOpen(ctx context.Context) (int, error) {
+	var count int
+	err := r.pool.QueryRow(ctx, `SELECT COUNT(*) FROM support_tickets WHERE status = 'open'`).Scan(&count)
+	return count, err
+}
+
 func (r *TicketRepo) AddMessage(ctx context.Context, ticketID, authorID, body string) (*model.TicketMessage, error) {
 	return scanMessage(r.pool.QueryRow(ctx,
 		`INSERT INTO ticket_messages (ticket_id, author_id, body)

@@ -249,14 +249,61 @@ export const api = {
 
   getSales: () => fetchApi<{ sales: any[] }>('/api/admin/sales'),
 
+  refundSale: (id: string) =>
+    fetchApi<{ status: string; refund_id: string }>(`/api/admin/sales/${id}/refund`, {
+      method: 'POST',
+    }),
+
   getStats: () =>
     fetchApi<{
       total_sales: number;
-      total_users: number;
       total_products: number;
-      total_revenue: number;
       pending_moderation: number;
+      active_products: number;
+      total_users: number;
+      total_vendors: number;
+      total_closers: number;
+      total_admins: number;
+      total_revenue: number;
+      gmv: number;
+      revenue_this_month: number;
+      revenue_last_month: number;
+      revenue_growth_pct: number;
     }>('/api/admin/stats'),
+
+  getAnalytics: (days?: 7 | 30 | 365) =>
+    fetchApi<{
+      sales_by_day: { day: string; sales: number; revenue_cfa: number }[];
+      top_products: any[];
+      top_vendors: any[];
+      top_closers: any[];
+    }>(`/api/admin/analytics${days ? `?days=${days}` : ''}`),
+
+  getAdminSettings: () => fetchApi<{ settings: Record<string, string> }>('/api/admin/settings'),
+
+  updateAdminSettings: (values: Record<string, string>) =>
+    fetchApi<{ settings: Record<string, string> }>('/api/admin/settings', {
+      method: 'PUT',
+      body: JSON.stringify(values),
+    }),
+
+  getAdminPayouts: () => fetchApi<{ payouts: any[] }>('/api/admin/payouts'),
+
+  retryPayout: (id: string) =>
+    fetchApi<{ status: string }>(`/api/admin/payouts/${id}/retry`, { method: 'POST' }),
+
+  getActivityFeed: () =>
+    fetchApi<{ activity: { kind: string; id: string; at: string; data: any }[] }>(
+      '/api/admin/activity'
+    ),
+
+  getAdminNotifications: () =>
+    fetchApi<{
+      pending_moderation: number;
+      open_tickets: number;
+      failed_sales_24h: number;
+      total: number;
+    }>('/api/admin/notifications'),
 
   // Support
   createTicket: (data: { sale_id?: string; subject: string; message: string }) =>

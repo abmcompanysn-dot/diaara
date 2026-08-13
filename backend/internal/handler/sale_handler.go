@@ -32,6 +32,7 @@ type SaleHandler struct {
 	productRepo   *repository.ProductRepo
 	referralRepo  *repository.ReferralRepo
 	userRepo      *repository.UserRepo
+	settingsRepo  *repository.SettingsRepo
 	pawapay       *payment.PawaPayClient
 	commissionSvc *service.CommissionService
 	frontendURL   string
@@ -42,6 +43,7 @@ func NewSaleHandler(
 	productRepo *repository.ProductRepo,
 	referralRepo *repository.ReferralRepo,
 	userRepo *repository.UserRepo,
+	settingsRepo *repository.SettingsRepo,
 	pawapay *payment.PawaPayClient,
 	frontendURL string,
 ) *SaleHandler {
@@ -50,6 +52,7 @@ func NewSaleHandler(
 		productRepo:   productRepo,
 		referralRepo:  referralRepo,
 		userRepo:      userRepo,
+		settingsRepo:  settingsRepo,
 		pawapay:       pawapay,
 		commissionSvc: service.NewCommissionService(),
 		frontendURL:   strings.TrimSuffix(frontendURL, "/"),
@@ -115,15 +118,18 @@ func (h *SaleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Commission : avec ou sans lien d'affiliation (closer).
-	comm := h.commissionSvc.Calculate(product.PriceCFA)
+	// Commission : taux configurable depuis l'admin (settings.commission_rate_pct,
+	// 15% par défaut). Calculé ici plutôt que via CommissionService (qui reste
+	// au taux fixe pour ses autres usages) pour ne dépendre que de ce réglage.
+	rate := h.settingsRepo.GetFloat(r.Context(), model.SettingCommissionRatePct, service.DefaultPlatformFeePct)
+	platformFee := int(float64(product.PriceCFA) * rate / 100.0)
 	sale := &model.Sale{
 		ProductID:       product.ID,
 		BuyerID:         userID,
 		BuyerName:       input.BuyerName,
 		AmountCFA:       product.PriceCFA,
-		PlatformFeeCFA:  comm.PlatformFeeCFA,
-		VendorAmountCFA: comm.VendorAmountCFA,
+		PlatformFeeCFA:  platformFee,
+		VendorAmountCFA: product.PriceCFA - platformFee,
 		PaymentProvider: "pawapay",
 		Status:          string(model.SalePending),
 	}
@@ -150,10 +156,14 @@ func (h *SaleHandler) Create(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		commCloser := h.commissionSvc.CalculateWithCloser(product.PriceCFA, link.CommissionPct)
+		closerFee := int(float64(product.PriceCFA) * link.CommissionPct / 100.0)
+		rest := product.PriceCFA - platformFee
+		if closerFee > rest {
+			closerFee = rest
+		}
 		sale.ReferralLinkID = &link.ID
-		sale.CloserCommissionCFA = commCloser.CloserCommissionCFA
-		sale.VendorAmountCFA = commCloser.VendorAmountCFA
+		sale.CloserCommissionCFA = closerFee
+		sale.VendorAmountCFA = rest - closerFee
 	}
 
 	// payment_reference = depositId PawaPay (UUID fourni par nous, unique).

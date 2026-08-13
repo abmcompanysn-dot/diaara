@@ -64,6 +64,36 @@ func (r *PayoutRepo) FindByID(ctx context.Context, id string) (*model.Payout, er
 		`SELECT `+payoutColumns+` FROM payouts WHERE id = $1`, id))
 }
 
+// PayoutWithUser — versement enrichi de l'email du demandeur, pour la vue admin globale.
+type PayoutWithUser struct {
+	model.Payout
+	UserEmail string `json:"user_email"`
+}
+
+// ListAllAdmin — tous les versements, tous vendeurs/affiliés confondus (vue admin).
+func (r *PayoutRepo) ListAllAdmin(ctx context.Context) ([]*PayoutWithUser, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT p.id, p.user_id, p.amount_cfa, p.status, p.phone_number, p.operator,
+		        p.pawapay_payout_id, p.failure_reason, p.requested_at, p.paid_at, u.email
+		 FROM payouts p JOIN users u ON u.id = p.user_id
+		 ORDER BY p.requested_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []*PayoutWithUser{}
+	for rows.Next() {
+		p := &PayoutWithUser{}
+		if err := rows.Scan(&p.ID, &p.UserID, &p.AmountCFA, &p.Status, &p.PhoneNumber, &p.Operator,
+			&p.PawaPayPayoutID, &p.FailureReason, &p.RequestedAt, &p.PaidAt, &p.UserEmail); err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 func (r *PayoutRepo) FindByPawaPayID(ctx context.Context, pawapayPayoutID string) (*model.Payout, error) {
 	return scanPayout(r.pool.QueryRow(ctx,
 		`SELECT `+payoutColumns+` FROM payouts WHERE pawapay_payout_id = $1`, pawapayPayoutID))

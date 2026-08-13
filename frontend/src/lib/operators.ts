@@ -7,29 +7,30 @@ export interface CheckoutCountry {
   code: string; // ISO 3166-1 alpha-3
   name: string;
   currency: string;
+  flag: string; // Emoji drapeau, pour le sélecteur pays du checkout.
 }
 
 export const CHECKOUT_COUNTRIES: CheckoutCountry[] = [
-  { code: 'SEN', name: 'Sénégal', currency: 'XOF' },
-  { code: 'CIV', name: "Côte d'Ivoire", currency: 'XOF' },
-  { code: 'BEN', name: 'Bénin', currency: 'XOF' },
-  { code: 'BFA', name: 'Burkina Faso', currency: 'XOF' },
-  { code: 'CMR', name: 'Cameroun', currency: 'XAF' },
-  { code: 'GAB', name: 'Gabon', currency: 'XAF' },
-  { code: 'COG', name: 'Congo-Brazzaville', currency: 'XAF' },
-  { code: 'COD', name: 'RD Congo', currency: 'CDF' },
-  { code: 'GHA', name: 'Ghana', currency: 'GHS' },
-  { code: 'NGA', name: 'Nigeria', currency: 'NGN' },
-  { code: 'KEN', name: 'Kenya', currency: 'KES' },
-  { code: 'RWA', name: 'Rwanda', currency: 'RWF' },
-  { code: 'UGA', name: 'Ouganda', currency: 'UGX' },
-  { code: 'TZA', name: 'Tanzanie', currency: 'TZS' },
-  { code: 'ZMB', name: 'Zambie', currency: 'ZMW' },
-  { code: 'MWI', name: 'Malawi', currency: 'MWK' },
-  { code: 'MOZ', name: 'Mozambique', currency: 'MZN' },
-  { code: 'LSO', name: 'Lesotho', currency: 'LSL' },
-  { code: 'SLE', name: 'Sierra Leone', currency: 'SLE' },
-  { code: 'ETH', name: 'Éthiopie', currency: 'ETB' },
+  { code: 'SEN', name: 'Sénégal', currency: 'XOF', flag: '🇸🇳' },
+  { code: 'CIV', name: "Côte d'Ivoire", currency: 'XOF', flag: '🇨🇮' },
+  { code: 'BEN', name: 'Bénin', currency: 'XOF', flag: '🇧🇯' },
+  { code: 'BFA', name: 'Burkina Faso', currency: 'XOF', flag: '🇧🇫' },
+  { code: 'CMR', name: 'Cameroun', currency: 'XAF', flag: '🇨🇲' },
+  { code: 'GAB', name: 'Gabon', currency: 'XAF', flag: '🇬🇦' },
+  { code: 'COG', name: 'Congo-Brazzaville', currency: 'XAF', flag: '🇨🇬' },
+  { code: 'COD', name: 'RD Congo', currency: 'CDF', flag: '🇨🇩' },
+  { code: 'GHA', name: 'Ghana', currency: 'GHS', flag: '🇬🇭' },
+  { code: 'NGA', name: 'Nigeria', currency: 'NGN', flag: '🇳🇬' },
+  { code: 'KEN', name: 'Kenya', currency: 'KES', flag: '🇰🇪' },
+  { code: 'RWA', name: 'Rwanda', currency: 'RWF', flag: '🇷🇼' },
+  { code: 'UGA', name: 'Ouganda', currency: 'UGX', flag: '🇺🇬' },
+  { code: 'TZA', name: 'Tanzanie', currency: 'TZS', flag: '🇹🇿' },
+  { code: 'ZMB', name: 'Zambie', currency: 'ZMW', flag: '🇿🇲' },
+  { code: 'MWI', name: 'Malawi', currency: 'MWK', flag: '🇲🇼' },
+  { code: 'MOZ', name: 'Mozambique', currency: 'MZN', flag: '🇲🇿' },
+  { code: 'LSO', name: 'Lesotho', currency: 'LSL', flag: '🇱🇸' },
+  { code: 'SLE', name: 'Sierra Leone', currency: 'SLE', flag: '🇸🇱' },
+  { code: 'ETH', name: 'Éthiopie', currency: 'ETB', flag: '🇪🇹' },
 ];
 
 // Opérateurs mobile money par pays — utilisé pour le moyen de versement
@@ -101,6 +102,30 @@ export const PAYOUT_COUNTRIES: PayoutCountry[] = [
     ],
   },
 ];
+
+// Retrouve un opérateur de versement à partir de son provider (ex: "WAVE_SEN"),
+// tous pays confondus — utile pour afficher l'historique des versements où
+// seul le provider est stocké (pas le pays séparément).
+export function findPayoutOperator(provider: string | null | undefined): (PayoutOperator & { countryName: string; dialCode: string }) | undefined {
+  if (!provider) return undefined;
+  for (const country of PAYOUT_COUNTRIES) {
+    const op = country.operators.find((o) => o.provider === provider);
+    if (op) return { ...op, countryName: country.name, dialCode: country.dialCode };
+  }
+  return undefined;
+}
+
+// Masque un numéro au format "+221 77 *** 89" : garde les 2 premiers et 2
+// derniers chiffres locaux, masque le reste. `msisdn` est le numéro complet
+// stocké (indicatif + numéro local, sans le "+").
+export function maskPhone(msisdn: string | null | undefined, dialCode: string | undefined): string {
+  if (!msisdn) return '';
+  const local = dialCode && msisdn.startsWith(dialCode) ? msisdn.slice(dialCode.length) : msisdn;
+  if (local.length < 4) return `+${dialCode ? `${dialCode} ` : ''}${local}`;
+  const first = local.slice(0, 2);
+  const last = local.slice(-2);
+  return `+${dialCode || ''} ${first} *** ${last}`;
+}
 
 export function isLoggedIn(): boolean {
   if (typeof window === 'undefined') return false;

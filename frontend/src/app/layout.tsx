@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { AuthProvider } from '@/lib/auth';
+import { MobileMenuProvider } from '@/lib/mobile-menu-context';
 import { Header } from '@/components/header';
 import './globals.css';
 
@@ -74,9 +75,11 @@ export default function RootLayout({
       </head>
       <body className="min-h-screen flex flex-col">
         <AuthProvider>
-          <Header />
-          <div className="flex-1">{children}</div>
-          <Footer />
+          <MobileMenuProvider>
+            <Header />
+            <div className="flex-1">{children}</div>
+            <Footer />
+          </MobileMenuProvider>
         </AuthProvider>
       </body>
     </html>

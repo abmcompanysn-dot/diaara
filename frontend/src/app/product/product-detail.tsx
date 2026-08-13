@@ -85,7 +85,7 @@ export default function ProductDetailPage() {
   const formatPrice = (price: number) => `${price.toLocaleString()} FCFA`;
 
   return (
-    <main className="bg-paper">
+    <main className="bg-paper pb-24 sm:pb-0">
       {/* Bande produit */}
       <section className="gradient-green text-white relative overflow-hidden">
         <div className="grid-pattern absolute inset-0" aria-hidden />
@@ -128,7 +128,22 @@ export default function ProductDetailPage() {
       <section className="max-w-6xl mx-auto px-4 py-10 grid lg:grid-cols-5 gap-8">
         <div className="lg:col-span-3">
           <div className="bg-white rounded-xl overflow-hidden shadow-card border border-green-900/5">
-            <ProductImage product={product} className="h-64 sm:h-80" />
+            <div className="relative">
+              <ProductImage product={product} className="h-64 sm:h-80" />
+              <button
+                type="button"
+                onClick={handleShare}
+                aria-label="Partager ce produit"
+                className="absolute top-3 right-3 w-10 h-10 rounded-full bg-white/90 backdrop-blur text-green-950 flex items-center justify-center shadow-card hover:bg-white transition-colors"
+              >
+                <LinkIcon size={17} />
+              </button>
+              {copied && (
+                <span className="absolute top-3 right-14 px-2.5 py-1.5 rounded-lg bg-green-950 text-white text-xs font-medium shadow-lift">
+                  Lien copié !
+                </span>
+              )}
+            </div>
             <div className="p-6 sm:p-8">
               <p className="font-mono text-sm text-green-700/60 uppercase tracking-widest mb-3">
                 // description
@@ -141,10 +156,15 @@ export default function ProductDetailPage() {
 
           {product.preview_status === 'pending' && (
             <div className="mt-6 bg-white rounded-xl p-6 sm:p-8 shadow-card border border-green-900/5">
-              <p className="font-mono text-sm text-green-700/60 uppercase tracking-widest mb-2">
+              <p className="font-mono text-sm text-green-700/60 uppercase tracking-widest mb-4">
                 // aperçu
               </p>
-              <p className="text-sm text-green-900/60">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3" aria-hidden>
+                {[0, 1, 2].map((i) => (
+                  <div key={i} className="h-28 rounded-lg bg-green-900/5 animate-pulse" />
+                ))}
+              </div>
+              <p className="text-sm text-green-900/50 mt-4">
                 Génération de l&apos;aperçu en cours, réessayez dans un instant…
               </p>
             </div>
@@ -227,15 +247,6 @@ export default function ProductDetailPage() {
               Acheter maintenant
             </Button>
 
-            <Button
-              onClick={handleShare}
-              variant="outline"
-              className="w-full h-10 mt-2.5 rounded-full border-green-900/15 text-green-900/70 hover:bg-green-900/5"
-            >
-              <LinkIcon size={16} className="mr-2" />
-              {copied ? 'Lien copié !' : 'Partager ce produit'}
-            </Button>
-
             <ul className="mt-6 space-y-2.5">
               {[
                 'Paiement mobile money vérifié (PawaPay)',
@@ -267,6 +278,23 @@ export default function ProductDetailPage() {
           </div>
         </aside>
       </section>
+
+      {/* Barre d'achat fixe (mobile uniquement) : le prix et le CTA restent accessibles
+          à tout moment du défilement, sans dupliquer la carte sticky desktop. */}
+      <div className="sm:hidden fixed bottom-0 inset-x-0 z-50 bg-white border-t border-green-900/10 shadow-lift px-4 py-3 flex items-center gap-3 pb-[calc(env(safe-area-inset-bottom)+0.75rem)]">
+        <div className="min-w-0">
+          <p className="text-[10px] text-green-900/50 uppercase tracking-wide">Prix</p>
+          <p className="font-display font-bold text-lg text-green-950 truncate">
+            {formatPrice(product.price_cfa)}
+          </p>
+        </div>
+        <Button
+          render={<Link href={`/checkout?product=${product.id}`} />}
+          className="flex-1 h-12 rounded-full bg-lime text-green-950 font-semibold hover:bg-green-300 text-base"
+        >
+          🛒 Acheter maintenant
+        </Button>
+      </div>
     </main>
   );
 }

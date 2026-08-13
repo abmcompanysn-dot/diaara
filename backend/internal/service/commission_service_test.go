@@ -4,7 +4,7 @@ import "testing"
 
 func TestCalculateNoCloser(t *testing.T) {
 	c := NewCommissionService()
-	res := c.Calculate(10000)
+	res := c.Calculate(10000, DefaultPlatformFeePct)
 
 	if res.PlatformFeeCFA != 1500 {
 		t.Fatalf("PlatformFeeCFA = %d, want 1500", res.PlatformFeeCFA)
@@ -21,7 +21,7 @@ func TestCalculateWithCloser(t *testing.T) {
 	c := NewCommissionService()
 
 	// 10 000 FCFA, commission closer 20% => plateforme 1500, closer 2000, vendeur 6500.
-	res := c.CalculateWithCloser(10000, 20)
+	res := c.CalculateWithCloser(10000, DefaultPlatformFeePct, 20)
 	if res.PlatformFeeCFA != 1500 {
 		t.Fatalf("PlatformFeeCFA = %d, want 1500", res.PlatformFeeCFA)
 	}
@@ -38,7 +38,7 @@ func TestCalculateWithCloserCapped(t *testing.T) {
 
 	// Une commission trop élevée ne doit jamais dépasser la part restante
 	// après la plateforme.
-	res := c.CalculateWithCloser(10000, 90)
+	res := c.CalculateWithCloser(10000, DefaultPlatformFeePct, 90)
 	if res.CloserCommissionCFA+res.PlatformFeeCFA > 10000 {
 		t.Fatalf("closer+platform = %d, exceeds amount", res.CloserCommissionCFA+res.PlatformFeeCFA)
 	}
