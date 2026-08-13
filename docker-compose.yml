@@ -19,6 +19,11 @@ services:
       dockerfile: Dockerfile
     ports:
       - "127.0.0.1:${BACKEND_HOST_PORT:-8080}:8080"
+    extra_hosts:
+      # Le VPS resout son propre hostname vers 127.0.1.1 (config cloud-init),
+      # ce qui casse la connexion SMTP sortante vers le serveur mail depuis
+      # ce conteneur. On force la vraie IP publique.
+      - "srv1790747.hstgr.cloud:187.77.178.170"
     environment:
       DATABASE_URL: postgres://diarra:${POSTGRES_PASSWORD:-diarra_dev}@postgres:5432/diarra?sslmode=disable
       PORT: "8080"
