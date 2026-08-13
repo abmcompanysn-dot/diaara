@@ -1,0 +1,70 @@
+name: Déploiement VPS
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch: {}
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+env:
+  VPS_HOST: srv1790747.hstgr.cloud
+  VPS_USER: root
+  VPS_PATH: /home/president/apps/diarra
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout du code
+        uses: actions/checkout@v4
+
+      - name: Configurer la clé SSH
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+
+      - name: Ajouter le VPS aux hôtes connus
+        run: ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+
+      # Rend le VPS identique au code qui vient d'être poussé sur master,
+      # SANS toucher aux fichiers propres au VPS (.env, secrets, données).
+      - name: Synchroniser le code vers le VPS
+        run: |
+          rsync -rlt --delete --no-owner --no-group \
+            --exclude='.git/' \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            --exclude='node_modules/' \
+            --exclude='.next/' \
+            --exclude='out/' \
+            --exclude='.wrangler/' \
+            ./ "$VPS_USER@$VPS_HOST:$VPS_PATH/"
+
+      # Rebuild + redémarre uniquement les conteneurs applicatifs.
+      # Jamais de `docker compose down -v` : les volumes Postgres/MinIO
+      # (donc les données) ne sont jamais touchés par ce script.
+      - name: Build & redémarrage des conteneurs
+        run: |
+          ssh "$VPS_USER@$VPS_HOST" bash -euo pipefail <<'EOF'
+            cd /opt/diarra
+
+            if [ ! -f .env ]; then
+              echo "ERREUR : /opt/diarra/.env introuvable sur le VPS." >&2
+              echo "À créer manuellement une seule fois (voir README section 7) avant le premier déploiement." >&2
+              exit 1
+            fi
+
+            docker compose build backend frontend
+            docker compose up -d --remove-orphans backend frontend postgres minio
+            docker image prune -f
+          EOF
+
+      - name: Vérification de santé
+        run: |
+          sleep 5
+          curl -sf https://diarra.abmcy.com/api/products > /dev/null \
+            && echo "OK : le backend répond" \
+            || (echo "ÉCHEC du health check après déploiement" && exit 1)
