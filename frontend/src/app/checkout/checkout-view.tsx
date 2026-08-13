@@ -1,6 +1,8 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,50 +15,61 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { CHECKOUT_COUNTRIES, isLoggedIn } from '@/lib/operators';
-import { XIcon, CheckIcon, AlertTriangleIcon } from '@/components/icons';
+import { ArrowLeftIcon, CheckIcon, AlertTriangleIcon, LockIcon } from '@/components/icons';
 
-interface CheckoutModalProps {
-  product: { id: string; title: string; price_cfa: number } | null;
-  open: boolean;
-  onClose: () => void;
+interface Product {
+  id: string;
+  title: string;
+  price_cfa: number;
 }
 
 type Step = 'form' | 'pending' | 'done' | 'error';
 
 const formatPrice = (price: number) => `${price.toLocaleString()} FCFA`;
 
-export default function CheckoutModal({ product, open, onClose }: CheckoutModalProps) {
+export default function CheckoutView() {
+  const searchParams = useSearchParams();
+  const productId = searchParams.get('product') || '';
+
+  const [product, setProduct] = useState<Product | null>(null);
+  const [loadingProduct, setLoadingProduct] = useState(true);
+  const [productError, setProductError] = useState('');
+
   const [country, setCountry] = useState('SEN');
   const [operator, setOperator] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
   const [step, setStep] = useState<Step>('form');
-  const [orderToken, setOrderToken] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const modalRef = useRef<HTMLDivElement>(null);
 
   const countryConfig = CHECKOUT_COUNTRIES.find((c) => c.code === country) || CHECKOUT_COUNTRIES[0];
   const operators = countryConfig.operators;
   const guest = !isLoggedIn();
 
-  // Réinitialise le formulaire à chaque ouverture.
   useEffect(() => {
-    if (open) {
-      setStep('form');
-      setError('');
-      setSubmitting(false);
-      setPhone('');
-      setEmail('');
-      setOperator(operators[0]?.label || '');
-      if (pollRef.current) {
-        clearInterval(pollRef.current);
-        pollRef.current = null;
-      }
+    if (!productId) {
+      setProductError('Produit introuvable');
+      setLoadingProduct(false);
+      return;
     }
+    api
+      .getProduct(productId)
+      .then((res) => {
+        setProduct(res.product);
+        setLoadingProduct(false);
+      })
+      .catch(() => {
+        setProductError('Produit introuvable');
+        setLoadingProduct(false);
+      });
+  }, [productId]);
+
+  useEffect(() => {
+    setOperator(operators[0]?.label || '');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open]);
+  }, [country]);
 
   useEffect(() => {
     return () => {
@@ -64,25 +77,8 @@ export default function CheckoutModal({ product, open, onClose }: CheckoutModalP
     };
   }, []);
 
-  // Ferme la modal avec Échap et bloque le scroll
-  useEffect(() => {
-    if (!open) return;
-    document.body.style.overflow = 'hidden';
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    document.addEventListener('keydown', handleEscape);
-    return () => {
-      document.body.style.overflow = '';
-      document.removeEventListener('keydown', handleEscape);
-    };
-  }, [open, onClose]);
-
   const handleCountryChange = (code: string | null) => {
-    const c = code || 'SEN';
-    setCountry(c);
-    const ops = CHECKOUT_COUNTRIES.find((x) => x.code === c)?.operators || [];
-    setOperator(ops[0]?.label || '');
+    setCountry(code || 'SEN');
   };
 
   const handleSubmit = async () => {
@@ -99,7 +95,6 @@ export default function CheckoutModal({ product, open, onClose }: CheckoutModalP
       });
       const token = result.order?.checkout_token;
       if (!token) throw new Error('checkout_token_missing');
-      setOrderToken(token);
       setStep('pending');
       startPolling(token);
     } catch (err: any) {
@@ -137,40 +132,54 @@ export default function CheckoutModal({ product, open, onClose }: CheckoutModalP
     }
   };
 
-  if (!open || !product) return null;
+  if (loadingProduct) {
+    return (
+      <main className="min-h-[calc(100vh-4rem)] flex items-center justify-center">
+        <p className="font-mono text-green-900/50">chargement…</p>
+      </main>
+    );
+  }
+
+  if (!product) {
+    return (
+      <main className="min-h-[calc(100vh-4rem)] flex flex-col items-center justify-center gap-4">
+        <p className="text-destructive font-semibold">{productError}</p>
+        <Button variant="outline" size="sm" render={<Link href="/catalog" />}>
+          <ArrowLeftIcon size={16} className="mr-2" />
+          Retour au catalogue
+        </Button>
+      </main>
+    );
+  }
 
   return (
-    <div
-      ref={modalRef}
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="checkout-title"
-      className="fixed inset-0 z-[100] flex items-center justify-center p-4"
-    >
-      <div className="absolute inset-0 bg-green-950/60 backdrop-blur-sm" onClick={onClose} aria-hidden />
-      <div className="relative w-full max-w-md rounded-2xl bg-white shadow-lift border border-green-900/10 overflow-hidden">
-        <div className="gradient-green text-white px-6 py-5 relative overflow-hidden">
-          <div className="wax-pattern absolute inset-0" aria-hidden />
-          <div className="relative flex justify-between items-start">
-            <div>
-              <p className="font-mono text-[11px] text-green-300 uppercase tracking-widest">// paiement sécurisé</p>
-              <h2 id="checkout-title" className="font-display text-xl font-bold mt-1">{product.title}</h2>
-              <p className="mt-1 font-mono text-lime font-semibold">{formatPrice(product.price_cfa)}</p>
-            </div>
-            <button
-              onClick={onClose}
-              className="text-white/70 hover:text-white transition-colors"
-              aria-label="Fermer"
-            >
-              <XIcon size={24} />
-            </button>
-          </div>
+    <main className="bg-paper min-h-[calc(100vh-4rem)]">
+      <section className="gradient-green text-white relative overflow-hidden">
+        <div className="wax-pattern absolute inset-0" aria-hidden />
+        <div className="relative max-w-2xl mx-auto px-4 py-10">
+          <Link
+            href={`/product?id=${product.id}`}
+            className="inline-flex items-center gap-2 font-mono text-sm text-white/60 hover:text-lime transition-colors"
+          >
+            <ArrowLeftIcon size={16} />
+            {product.title}
+          </Link>
+          <p className="font-mono text-sm text-green-300 mt-6 uppercase tracking-widest">
+            // paiement sécurisé
+          </p>
+          <h1 className="font-display text-2xl sm:text-3xl font-bold tracking-tight mt-2">
+            {product.title}
+          </h1>
+          <p className="mt-2 font-mono text-lime font-semibold text-lg">{formatPrice(product.price_cfa)}</p>
         </div>
+      </section>
 
-        <div className="p-6">
+      <section className="max-w-2xl mx-auto px-4 py-10">
+        <div className="bg-white rounded-xl shadow-card border border-green-900/5 p-6 sm:p-8">
           {step === 'form' && (
             <div className="space-y-4">
-              <p className="text-sm text-green-900/60">
+              <p className="text-sm text-green-900/60 flex items-start gap-2">
+                <LockIcon size={16} className="mt-0.5 shrink-0 text-green-600" />
                 Payez par mobile money. Un message vous sera envoyé sur votre téléphone pour
                 confirmer le paiement.
               </p>
@@ -259,9 +268,9 @@ export default function CheckoutModal({ product, open, onClose }: CheckoutModalP
           {step === 'pending' && (
             <div className="text-center py-8">
               <div className="mx-auto w-12 h-12 rounded-full border-4 border-green-100 border-t-lime animate-spin" />
-              <h3 className="font-display text-lg font-bold mt-4 text-green-950">
+              <h2 className="font-display text-lg font-bold mt-4 text-green-950">
                 Confirmez sur votre téléphone
-              </h3>
+              </h2>
               <p className="mt-2 text-sm text-green-900/60 max-w-xs mx-auto">
                 Un message vous a été envoyé pour autoriser le paiement. Entrez votre code PIN
                 lorsque vous le recevez.
@@ -277,19 +286,21 @@ export default function CheckoutModal({ product, open, onClose }: CheckoutModalP
               <div className="mx-auto w-14 h-14 rounded-full bg-lime/20 flex items-center justify-center">
                 <CheckIcon size={32} className="text-green-700" />
               </div>
-              <h3 className="font-display text-lg font-bold mt-4 text-green-950">
+              <h2 className="font-display text-lg font-bold mt-4 text-green-950">
                 Paiement confirmé
-              </h3>
+              </h2>
               <p className="mt-2 text-sm text-green-900/60 max-w-xs mx-auto">
                 Merci ! Votre commande est en cours de traitement. La livraison vous sera envoyée
                 par email.
               </p>
-              <Button
-                onClick={onClose}
-                className="mt-6 bg-lime text-green-950 font-semibold hover:bg-green-300"
-              >
-                Continuer
-              </Button>
+              <div className="mt-6 flex flex-wrap justify-center gap-3">
+                <Button className="bg-lime text-green-950 font-semibold hover:bg-green-300" render={<Link href="/catalog" />}>
+                  Continuer mes achats
+                </Button>
+                <Button variant="outline" render={<Link href="/orders" />}>
+                  Voir mes commandes
+                </Button>
+              </div>
             </div>
           )}
 
@@ -298,9 +309,9 @@ export default function CheckoutModal({ product, open, onClose }: CheckoutModalP
               <div className="mx-auto w-14 h-14 rounded-full bg-red-50 flex items-center justify-center">
                 <AlertTriangleIcon size={32} className="text-red-600" />
               </div>
-              <h3 className="font-display text-lg font-bold mt-4 text-green-950">
+              <h2 className="font-display text-lg font-bold mt-4 text-green-950">
                 Paiement non abouti
-              </h3>
+              </h2>
               <p className="mt-2 text-sm text-green-900/60 max-w-xs mx-auto">{error}</p>
               <Button
                 onClick={() => setStep('form')}
@@ -311,7 +322,7 @@ export default function CheckoutModal({ product, open, onClose }: CheckoutModalP
             </div>
           )}
         </div>
-      </div>
-    </div>
+      </section>
+    </main>
   );
 }

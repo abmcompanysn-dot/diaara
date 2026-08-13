@@ -3,11 +3,10 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { api } from '@/lib/api';
+import { api, apiOrigin } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ProductImage } from '@/components/product-image';
-import CheckoutModal from '@/components/checkout-modal';
 import { ArrowLeftIcon, CheckIcon, LockIcon, ZapIcon, LinkIcon } from '@/components/icons';
 import { CATEGORY_LABELS, PAYMENTS } from '@/lib/constants';
 
@@ -19,14 +18,22 @@ interface Product {
   category: string;
   moderation_status: string;
   cover_image_key?: string;
+  preview_keys?: string[];
+  preview_status?: string;
 }
+
+const previewKind = (key: string): 'image' | 'audio' | 'video' => {
+  const ext = key.split('.').pop()?.toLowerCase() || '';
+  if (['mp3', 'wav', 'm4a', 'ogg', 'flac'].includes(ext)) return 'audio';
+  if (['mp4', 'mov', 'webm', 'mkv', 'avi'].includes(ext)) return 'video';
+  return 'image';
+};
 
 export default function ProductDetailPage() {
   const searchParams = useSearchParams();
   const id = searchParams.get('id') || '';
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
-  const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
 
@@ -161,7 +168,7 @@ export default function ProductDetailPage() {
             </p>
 
             <Button
-              onClick={() => setCheckoutOpen(true)}
+              render={<Link href={`/checkout?product=${product.id}`} />}
               className="w-full h-11 mt-6 rounded-full bg-lime text-green-950 font-semibold hover:bg-green-300 text-base"
             >
               Acheter maintenant
@@ -207,12 +214,6 @@ export default function ProductDetailPage() {
           </div>
         </aside>
       </section>
-
-      <CheckoutModal
-        product={product}
-        open={checkoutOpen}
-        onClose={() => setCheckoutOpen(false)}
-      />
     </main>
   );
 }
