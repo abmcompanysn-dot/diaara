@@ -5,23 +5,21 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/page-header';
 import { PageLoader } from '@/components/page-loader';
+import { PayoutMethodForm } from '@/components/payout-method-form';
 import { ArrowLeftIcon } from '@/components/icons';
 import { formatPrice, PAYOUT_STATUS_BADGE, PAYOUT_STATUS_LABELS } from '@/lib/constants';
 import { friendlyError } from '@/lib/error-messages';
 import { PAYOUT_COUNTRIES } from '@/lib/operators';
+
+function operatorLogo(country: string | null, operator: string | null): string | undefined {
+  if (!country || !operator) return undefined;
+  return PAYOUT_COUNTRIES.find((c) => c.code === country)?.operators.find((o) => o.provider === operator)?.logo;
+}
 
 interface Payout {
   id: string;
@@ -49,13 +47,9 @@ export default function VendorEarningsPage() {
 
   const [payoutMethod, setPayoutMethod] = useState<PayoutMethod | null>(null);
   const [editingMethod, setEditingMethod] = useState(false);
-  const [methodCountry, setMethodCountry] = useState('SEN');
-  const [methodOperator, setMethodOperator] = useState('');
-  const [methodPhone, setMethodPhone] = useState('');
   const [methodSubmitting, setMethodSubmitting] = useState(false);
   const [methodError, setMethodError] = useState('');
 
-  const countryOperators = PAYOUT_COUNTRIES.find((c) => c.code === methodCountry)?.operators || [];
   const hasPayoutMethod = Boolean(payoutMethod?.operator);
 
   useEffect(() => {
@@ -88,28 +82,14 @@ export default function VendorEarningsPage() {
 
   const openEditMethod = () => {
     setMethodError('');
-    setMethodCountry(payoutMethod?.country || 'SEN');
-    setMethodOperator(payoutMethod?.operator || '');
-    setMethodPhone(payoutMethod?.phone || '');
     setEditingMethod(true);
   };
 
-  const handleCountryChange = (code: string | null) => {
-    const c = code || 'SEN';
-    setMethodCountry(c);
-    const ops = PAYOUT_COUNTRIES.find((x) => x.code === c)?.operators || [];
-    setMethodOperator(ops[0]?.provider || '');
-  };
-
-  const handleSaveMethod = async () => {
+  const handleSaveMethod = async (data: { phone: string; operator: string; country: string }) => {
     setMethodError('');
     setMethodSubmitting(true);
     try {
-      const result = await api.setPayoutMethod({
-        phone: methodPhone,
-        operator: methodOperator,
-        country: methodCountry,
-      });
+      const result = await api.setPayoutMethod(data);
       setPayoutMethod(result.payout_method);
       setEditingMethod(false);
     } catch (err: any) {
@@ -210,9 +190,17 @@ export default function VendorEarningsPage() {
             {!editingMethod ? (
               hasPayoutMethod ? (
                 <div className="flex items-center gap-3">
-                  <Badge className="bg-green-100 text-green-700 hover:bg-green-100">
-                    {payoutMethod!.operator_label}
-                  </Badge>
+                  {operatorLogo(payoutMethod!.country, payoutMethod!.operator) ? (
+                    <img
+                      src={`/payments/${operatorLogo(payoutMethod!.country, payoutMethod!.operator)}`}
+                      alt={payoutMethod!.operator_label}
+                      className="h-8 max-w-[110px] object-contain"
+                    />
+                  ) : (
+                    <Badge className="bg-green-100 text-green-700 hover:bg-green-100">
+                      {payoutMethod!.operator_label}
+                    </Badge>
+                  )}
                   <span className="font-mono text-sm text-green-900/70">{payoutMethod!.phone}</span>
                 </div>
               ) : (
@@ -221,70 +209,15 @@ export default function VendorEarningsPage() {
                 </p>
               )
             ) : (
-              <div className="space-y-4 max-w-sm">
-                <div className="space-y-2">
-                  <Label htmlFor="pm-country">Pays</Label>
-                  <Select value={methodCountry} onValueChange={handleCountryChange}>
-                    <SelectTrigger className="bg-white">
-                      <SelectValue placeholder="Choisir le pays" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PAYOUT_COUNTRIES.map((c) => (
-                        <SelectItem key={c.code} value={c.code}>
-                          {c.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="pm-operator">Opérateur mobile money</Label>
-                  <Select value={methodOperator} onValueChange={(v) => setMethodOperator(v || '')}>
-                    <SelectTrigger className="bg-white">
-                      <SelectValue placeholder="Choisir l'opérateur" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {countryOperators.map((op) => (
-                        <SelectItem key={op.provider} value={op.provider}>
-                          {op.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="pm-phone">Numéro de téléphone</Label>
-                  <Input
-                    id="pm-phone"
-                    type="tel"
-                    inputMode="numeric"
-                    placeholder="Ex : 77 123 45 67"
-                    value={methodPhone}
-                    onChange={(e) => setMethodPhone(e.target.value)}
-                    className="bg-white"
-                  />
-                </div>
-
-                {methodError && (
-                  <div className="p-3 bg-red-50 text-red-700 rounded text-sm" role="alert">
-                    {methodError}
-                  </div>
-                )}
-
-                <div className="flex gap-3">
-                  <Button
-                    onClick={handleSaveMethod}
-                    disabled={methodSubmitting || !methodPhone || !methodOperator}
-                  >
-                    {methodSubmitting ? 'Enregistrement…' : 'Enregistrer'}
-                  </Button>
-                  <Button variant="outline" onClick={() => setEditingMethod(false)}>
-                    Annuler
-                  </Button>
-                </div>
-              </div>
+              <PayoutMethodForm
+                initialCountry={payoutMethod?.country}
+                initialOperator={payoutMethod?.operator}
+                initialPhone={payoutMethod?.phone}
+                onSave={handleSaveMethod}
+                onCancel={() => setEditingMethod(false)}
+                saving={methodSubmitting}
+                error={methodError}
+              />
             )}
           </CardContent>
         </Card>

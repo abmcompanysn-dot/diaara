@@ -471,11 +471,37 @@ var XOFOperators = []Operator{
 	{Label: "Orange Money", Provider: "ORANGE_BFA", Country: "BFA", DialCode: "226"},
 }
 
+// GatewaySettingKey retourne la clé settings ("gateway_...") correspondant à un
+// provider PawaPay (ex: "ORANGE_SEN" -> "gateway_orange_money"), pour vérifier
+// si l'admin a désactivé cette passerelle. Chaîne vide si non reconnu (jamais
+// bloqué dans ce cas, pour ne pas casser un nouvel opérateur pas encore mappé).
+func GatewaySettingKey(provider string) string {
+	switch {
+	case strings.HasPrefix(provider, "ORANGE_"):
+		return "gateway_orange_money"
+	case strings.HasPrefix(provider, "WAVE_"):
+		return "gateway_wave"
+	case strings.HasPrefix(provider, "MTN_MOMO"):
+		return "gateway_mtn_momo"
+	case strings.HasPrefix(provider, "FREE_"):
+		return "gateway_free_money"
+	case strings.HasPrefix(provider, "MOOV_"):
+		return "gateway_moov_money"
+	default:
+		return ""
+	}
+}
+
 // ResolveOperator retourne l'opérateur correspondant au couple (pays, opérateur).
+// "operator" peut être le libellé ("Orange Money") ou le code PawaPay
+// ("ORANGE_SEN") — le frontend envoie le code depuis la sélection par cartes.
 func ResolveOperator(country, operator string) (*Operator, error) {
 	for i := range XOFOperators {
 		o := &XOFOperators[i]
-		if strings.EqualFold(o.Country, country) && strings.EqualFold(o.Label, operator) {
+		if !strings.EqualFold(o.Country, country) {
+			continue
+		}
+		if strings.EqualFold(o.Label, operator) || strings.EqualFold(o.Provider, operator) {
 			return o, nil
 		}
 	}

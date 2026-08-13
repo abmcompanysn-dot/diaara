@@ -36,14 +36,24 @@ export const CHECKOUT_COUNTRIES: CheckoutCountry[] = [
 // vendeur (PawaPay n'a pas de page hébergée pour les versements, contrairement
 // au checkout : l'opérateur doit être choisi explicitement ici). Miroir exact
 // de payment.XOFOperators côté backend.
+//
+// phoneLength = nombre de chiffres attendu du numéro local (sans le 0, sans
+// l'indicatif) — indicatif à titre de guide pour l'UI, la validation finale
+// reste côté PawaPay. logo = fichier dans /public/payments ; sinon badge texte
+// (badgeColor/badgeText, mêmes conventions que la page d'accueil).
 export interface PayoutOperator {
   label: string;
   provider: string;
+  logo?: string;
+  badgeColor?: string;
+  badgeText?: string;
 }
 
 export interface PayoutCountry {
   code: string;
   name: string;
+  dialCode: string;
+  phoneLength: number;
   operators: PayoutOperator[];
 }
 
@@ -51,35 +61,43 @@ export const PAYOUT_COUNTRIES: PayoutCountry[] = [
   {
     code: 'SEN',
     name: 'Sénégal',
+    dialCode: '221',
+    phoneLength: 9,
     operators: [
-      { label: 'Orange Money', provider: 'ORANGE_SEN' },
-      { label: 'Wave', provider: 'WAVE_SEN' },
-      { label: 'Free Money', provider: 'FREE_SEN' },
+      { label: 'Orange Money', provider: 'ORANGE_SEN', logo: 'orange-money.png' },
+      { label: 'Wave', provider: 'WAVE_SEN', badgeColor: 'bg-green-400', badgeText: 'text-green-950' },
+      { label: 'Free Money', provider: 'FREE_SEN', badgeColor: 'bg-white border border-green-900/15', badgeText: 'text-green-950' },
     ],
   },
   {
     code: 'CIV',
     name: "Côte d'Ivoire",
+    dialCode: '225',
+    phoneLength: 10,
     operators: [
-      { label: 'MTN MoMo', provider: 'MTN_MOMO_CIV' },
-      { label: 'Orange Money', provider: 'ORANGE_CIV' },
-      { label: 'Wave', provider: 'WAVE_CIV' },
+      { label: 'MTN MoMo', provider: 'MTN_MOMO_CIV', logo: 'mtn-momo.png' },
+      { label: 'Orange Money', provider: 'ORANGE_CIV', logo: 'orange-money.png' },
+      { label: 'Wave', provider: 'WAVE_CIV', badgeColor: 'bg-green-400', badgeText: 'text-green-950' },
     ],
   },
   {
     code: 'BEN',
     name: 'Bénin',
+    dialCode: '229',
+    phoneLength: 8,
     operators: [
-      { label: 'MTN MoMo', provider: 'MTN_MOMO_BEN' },
-      { label: 'Moov Money', provider: 'MOOV_BEN' },
+      { label: 'MTN MoMo', provider: 'MTN_MOMO_BEN', logo: 'mtn-momo.png' },
+      { label: 'Moov Money', provider: 'MOOV_BEN', logo: 'moov-money.png' },
     ],
   },
   {
     code: 'BFA',
     name: 'Burkina Faso',
+    dialCode: '226',
+    phoneLength: 8,
     operators: [
-      { label: 'Moov Money', provider: 'MOOV_BFA' },
-      { label: 'Orange Money', provider: 'ORANGE_BFA' },
+      { label: 'Moov Money', provider: 'MOOV_BFA', logo: 'moov-money.png' },
+      { label: 'Orange Money', provider: 'ORANGE_BFA', logo: 'orange-money.png' },
     ],
   },
 ];
