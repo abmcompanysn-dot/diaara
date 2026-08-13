@@ -7,7 +7,14 @@ import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { isLoggedIn } from '@/lib/operators';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { CHECKOUT_COUNTRIES, isLoggedIn } from '@/lib/operators';
 import { friendlyError } from '@/lib/error-messages';
 import { ArrowLeftIcon, LockIcon } from '@/components/icons';
 
@@ -28,6 +35,7 @@ export default function CheckoutView() {
   const [productError, setProductError] = useState('');
 
   const [name, setName] = useState('');
+  const [country, setCountry] = useState('SEN');
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -60,6 +68,7 @@ export default function CheckoutView() {
       const result = await api.createOrder({
         product_id: product.id,
         buyer_name: name,
+        country,
         ...(guest ? { buyer_email: email } : {}),
       });
       const redirectUrl = result.checkout?.redirect_url;
@@ -133,6 +142,22 @@ export default function CheckoutView() {
                 onChange={(e) => setName(e.target.value)}
                 className="bg-white"
               />
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="cc-country">Pays</Label>
+              <Select value={country} onValueChange={(v) => setCountry(v || 'SEN')}>
+                <SelectTrigger className="bg-white">
+                  <SelectValue placeholder="Choisir le pays" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CHECKOUT_COUNTRIES.map((c) => (
+                    <SelectItem key={c.code} value={c.code}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             {guest && (

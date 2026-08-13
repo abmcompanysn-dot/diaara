@@ -25,6 +25,7 @@ type CreateOrderInput struct {
 	ProductID      string  `json:"product_id"`
 	BuyerName      string  `json:"buyer_name"`
 	BuyerEmail     *string `json:"buyer_email,omitempty"`
+	Country        string  `json:"country"` // ISO 3166-1 alpha-3, ex "SEN" — requis par la Payment Page PawaPay
 	ReferralLinkID *string `json:"referral_link_id,omitempty"`
 }
 

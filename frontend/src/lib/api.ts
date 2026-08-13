@@ -156,6 +156,7 @@ export const api = {
     product_id: string;
     buyer_name: string;
     buyer_email?: string;
+    country: string;
     referral_link_id?: string;
   }) =>
     fetchApi<{ order: any; checkout: { deposit_id: string; redirect_url: string } }>('/api/orders', {

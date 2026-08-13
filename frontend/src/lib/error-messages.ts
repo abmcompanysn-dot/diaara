@@ -16,6 +16,7 @@ const ERROR_MESSAGES: Record<string, string> = {
 
   // Checkout / commandes
   name_required: 'Merci d\'indiquer votre nom complet.',
+  country_required: 'Merci de choisir votre pays.',
   email_required_for_guest_checkout: 'Merci d\'indiquer votre email pour recevoir votre commande.',
   payment_details_required: 'Merci de renseigner votre numéro et votre opérateur mobile money.',
   unsupported_operator: "Cet opérateur n'est pas disponible pour ce pays.",

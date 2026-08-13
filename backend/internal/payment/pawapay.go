@@ -231,7 +231,7 @@ func (c *PawaPayClient) CreatePaymentPage(ctx context.Context, req PaymentPageRe
 		return nil, err
 	}
 
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		return nil, fmt.Errorf("%w: status %d: %s", ErrPaymentFailed, resp.StatusCode, string(respBody))
 	}
 

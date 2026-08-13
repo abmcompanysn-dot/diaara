@@ -70,6 +70,10 @@ func (h *SaleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"name_required"}`, http.StatusBadRequest)
 		return
 	}
+	if input.Country == "" {
+		http.Error(w, `{"error":"country_required"}`, http.StatusBadRequest)
+		return
+	}
 
 	// Guest Checkout : si non connecté, on exige l'email
 	if userID == "" {
@@ -166,7 +170,7 @@ func (h *SaleHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	// Page de paiement PawaPay hébergée : l'acheteur y choisit lui-même son
 	// opérateur mobile money, PawaPay le redirige ensuite vers ReturnUrl.
-	page, err := h.initiatePaymentPage(r.Context(), created, product)
+	page, err := h.initiatePaymentPage(r.Context(), created, product, input.Country)
 	if err != nil || page == nil || page.RedirectUrl == "" {
 		log.Printf("payment_init_failed sale=%s: %v", created.ID, err)
 		h.saleRepo.UpdateStatus(r.Context(), created.ID, string(model.SaleFailed))
@@ -269,7 +273,9 @@ func newUUID() string {
 
 // initiatePaymentPage crée une page de paiement PawaPay hébergée pour une vente :
 // l'acheteur y choisit lui-même son opérateur mobile money et son téléphone.
-func (h *SaleHandler) initiatePaymentPage(ctx context.Context, sale *model.Sale, product *model.Product) (*payment.PaymentPageResponse, error) {
+// PawaPay exige un pays (ou un téléphone) dès qu'un montant est fourni — on ne
+// demande que le pays, l'opérateur reste au choix de l'acheteur sur leur page.
+func (h *SaleHandler) initiatePaymentPage(ctx context.Context, sale *model.Sale, product *model.Product, country string) (*payment.PaymentPageResponse, error) {
 	if h.pawapay == nil {
 		return nil, errors.New("payment non configuré")
 	}
@@ -285,6 +291,7 @@ func (h *SaleHandler) initiatePaymentPage(ctx context.Context, sale *model.Sale,
 			Amount:   fmt.Sprintf("%d", sale.AmountCFA),
 			Currency: "XOF",
 		},
+		Country:         country,
 		Reason:          reason,
 		CustomerMessage: "PAIEMENT DIARRA",
 		Language:        "FR",
