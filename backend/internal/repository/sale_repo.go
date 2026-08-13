@@ -20,13 +20,13 @@ func NewSaleRepo(pool *pgxpool.Pool) *SaleRepo {
 }
 
 const saleColumns = `id, product_id, buyer_id, referral_link_id, amount_cfa, platform_fee_cfa,
-	closer_commission_cfa, vendor_amount_cfa, payment_provider, payment_reference, checkout_token, status, delivered_at, created_at`
+	closer_commission_cfa, vendor_amount_cfa, payment_provider, payment_reference, checkout_token, status, refund_reference, delivered_at, created_at`
 
 func scanSale(row pgx.Row) (*model.Sale, error) {
 	s := &model.Sale{}
 	err := row.Scan(&s.ID, &s.ProductID, &s.BuyerID, &s.ReferralLinkID, &s.AmountCFA,
 		&s.PlatformFeeCFA, &s.CloserCommissionCFA, &s.VendorAmountCFA, &s.PaymentProvider,
-		&s.PaymentReference, &s.CheckoutToken, &s.Status, &s.DeliveredAt, &s.CreatedAt)
+		&s.PaymentReference, &s.CheckoutToken, &s.Status, &s.RefundReference, &s.DeliveredAt, &s.CreatedAt)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, ErrSaleNotFound
@@ -110,6 +110,20 @@ func (r *SaleRepo) UpdatePaymentReference(ctx context.Context, id, ref string) e
 	_, err := r.pool.Exec(ctx,
 		`UPDATE sales SET payment_reference = $2 WHERE id = $1`, id, ref)
 	return err
+}
+
+// SetRefundReference — enregistre l'ID de remboursement PawaPay et bascule
+// la vente en 'refund_pending' (le webhook confirmera avec 'refunded').
+func (r *SaleRepo) SetRefundReference(ctx context.Context, id, refundReference string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE sales SET refund_reference = $2, status = 'refund_pending' WHERE id = $1`,
+		id, refundReference)
+	return err
+}
+
+func (r *SaleRepo) FindByRefundReference(ctx context.Context, ref string) (*model.Sale, error) {
+	return scanSale(r.pool.QueryRow(ctx,
+		`SELECT `+saleColumns+` FROM sales WHERE refund_reference = $1`, ref))
 }
 
 func (r *SaleRepo) MarkDelivered(ctx context.Context, id string) error {

@@ -12,6 +12,7 @@ import (
 
 	"github.com/diarra/backend/internal/email"
 	"github.com/diarra/backend/internal/model"
+	"github.com/diarra/backend/internal/payment"
 	"github.com/diarra/backend/internal/repository"
 	"github.com/diarra/backend/internal/service"
 )
@@ -20,6 +21,8 @@ type WebhookHandler struct {
 	saleRepo      *repository.SaleRepo
 	userRepo      *repository.UserRepo
 	productRepo   *repository.ProductRepo
+	payoutRepo    *repository.PayoutRepo
+	pawapay       *payment.PawaPayClient
 	commissionSvc *service.CommissionService
 	notifications *email.NotificationService
 	allowedIPs    map[string]bool
@@ -29,6 +32,8 @@ func NewWebhookHandler(
 	saleRepo *repository.SaleRepo,
 	userRepo *repository.UserRepo,
 	productRepo *repository.ProductRepo,
+	payoutRepo *repository.PayoutRepo,
+	pawapay *payment.PawaPayClient,
 	notifications *email.NotificationService,
 	allowedIPs []string,
 ) *WebhookHandler {
@@ -40,10 +45,127 @@ func NewWebhookHandler(
 		saleRepo:      saleRepo,
 		userRepo:      userRepo,
 		productRepo:   productRepo,
+		payoutRepo:    payoutRepo,
+		pawapay:       pawapay,
 		commissionSvc: service.NewCommissionService(),
 		notifications: notifications,
 		allowedIPs:    ips,
 	}
+}
+
+// verifyRequest applique les mêmes vérifications (digest + IP) que le webhook
+// de dépôt, et retourne le corps lu. Renvoie false si la requête a déjà été
+// rejetée (réponse déjà écrite).
+func (h *WebhookHandler) verifyRequest(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, `{"error":"read_failed"}`, http.StatusBadRequest)
+		return nil, false
+	}
+	if digest := r.Header.Get("Content-Digest"); digest != "" {
+		if !h.verifyContentDigest(body, digest) {
+			http.Error(w, `{"error":"invalid_digest"}`, http.StatusUnauthorized)
+			return nil, false
+		}
+	}
+	if len(h.allowedIPs) > 0 {
+		ip := clientIP(r)
+		if !h.allowedIPs[ip] {
+			http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+			return nil, false
+		}
+	}
+	return body, true
+}
+
+// PawaPayPayoutWebhook reçoit la confirmation d'un versement vendeur. Par
+// prudence (le schéma exact du corps du callback n'est pas garanti), on ne
+// se fie qu'à l'ID transmis puis on revérifie le statut via l'API PawaPay.
+func (h *WebhookHandler) PawaPayPayoutWebhook(w http.ResponseWriter, r *http.Request) {
+	body, ok := h.verifyRequest(w, r)
+	if !ok {
+		return
+	}
+
+	var payload struct {
+		PayoutId string `json:"payoutId"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil || payload.PayoutId == "" {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+
+	payout, err := h.payoutRepo.FindByPawaPayID(r.Context(), payload.PayoutId)
+	if err != nil {
+		http.Error(w, `{"error":"payout_not_found"}`, http.StatusNotFound)
+		return
+	}
+	if payout.Status == "paid" || payout.Status == "failed" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": payout.Status})
+		return
+	}
+
+	status, err := h.pawapay.GetPayoutStatus(r.Context(), payload.PayoutId)
+	if err != nil || status.Data == nil {
+		http.Error(w, `{"error":"status_check_failed"}`, http.StatusBadGateway)
+		return
+	}
+
+	switch status.Data.Status {
+	case "COMPLETED":
+		h.payoutRepo.UpdateStatus(r.Context(), payout.ID, "paid", nil)
+	case "FAILED":
+		reason := ""
+		if status.Data.FailureReason != nil {
+			reason = status.Data.FailureReason.FailureCode
+		}
+		h.payoutRepo.UpdateStatus(r.Context(), payout.ID, "failed", &reason)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": status.Data.Status})
+}
+
+// PawaPayRefundWebhook reçoit la confirmation d'un remboursement. Même
+// principe défensif que pour les payouts : revérification via l'API.
+func (h *WebhookHandler) PawaPayRefundWebhook(w http.ResponseWriter, r *http.Request) {
+	body, ok := h.verifyRequest(w, r)
+	if !ok {
+		return
+	}
+
+	var payload struct {
+		RefundId string `json:"refundId"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil || payload.RefundId == "" {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+
+	sale, err := h.saleRepo.FindByRefundReference(r.Context(), payload.RefundId)
+	if err != nil {
+		http.Error(w, `{"error":"sale_not_found"}`, http.StatusNotFound)
+		return
+	}
+	if sale.Status == string(model.SaleRefunded) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": sale.Status})
+		return
+	}
+
+	status, err := h.pawapay.GetRefundStatus(r.Context(), payload.RefundId)
+	if err != nil || status.Data == nil {
+		http.Error(w, `{"error":"status_check_failed"}`, http.StatusBadGateway)
+		return
+	}
+
+	if status.Data.Status == "COMPLETED" {
+		h.saleRepo.UpdateStatus(r.Context(), sale.ID, string(model.SaleRefunded))
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": status.Data.Status})
 }
 
 // PawaPayDepositCallback est le corps du callback PawaPay (statut final d'un dépôt).

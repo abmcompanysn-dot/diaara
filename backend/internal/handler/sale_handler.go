@@ -298,8 +298,8 @@ func (h *SaleHandler) initiateDeposit(ctx context.Context, sale *model.Sale, pro
 		ClientReferenceId: sale.ID,
 		CustomerMessage:   "PAIEMENT DIARRA",
 		Metadata: []payment.MetadataItem{
-			{Key: "saleId", Value: sale.ID},
-			{Key: "product", Value: product.Title},
+			{"saleId": sale.ID},
+			{"product": product.Title},
 		},
 	}
 	return h.pawapay.InitiateDeposit(ctx, req)

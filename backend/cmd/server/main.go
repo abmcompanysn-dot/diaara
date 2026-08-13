@@ -175,7 +175,7 @@ func main() {
 	productHandler := handler.NewProductHandler(productRepo, storageService)
 	saleHandler := handler.NewSaleHandler(saleRepo, productRepo, referralRepo, userRepo, pawapay)
 	closerHandler := handler.NewCloserHandler(referralRepo, productRepo, os.Getenv("FRONTEND_URL"))
-	webhookHandler := handler.NewWebhookHandler(saleRepo, userRepo, productRepo, notifications, allowedIPs)
+	webhookHandler := handler.NewWebhookHandler(saleRepo, userRepo, productRepo, payoutRepo, pawapay, notifications, allowedIPs)
 
 	// Temps réel (LISTEN/NOTIFY + WebSocket)
 	hub := realtime.NewHub(pool)
@@ -191,10 +191,10 @@ func main() {
 	}
 
 	// Versements & revenus vendeur
-	payoutHandler := handler.NewPayoutHandler(payoutRepo, saleRepo, productRepo)
+	payoutHandler := handler.NewPayoutHandler(payoutRepo, saleRepo, productRepo, pawapay)
 
 	// Administration
-	adminHandler := handler.NewAdminHandler(productRepo, saleRepo, userRepo, referralRepo, adminPermRepo, pool, storageHealthPinger, startTime)
+	adminHandler := handler.NewAdminHandler(productRepo, saleRepo, userRepo, referralRepo, adminPermRepo, pool, storageHealthPinger, startTime, pawapay)
 
 	// Support tickets
 	ticketRepo := repository.NewTicketRepo(pool)
@@ -282,6 +282,8 @@ func main() {
 	// Webhooks (pas de JWT)
 	r.Route("/api/webhooks", func(r chi.Router) {
 		r.Post("/pawapay", webhookHandler.PawaPayWebhook)
+		r.Post("/pawapay/payout", webhookHandler.PawaPayPayoutWebhook)
+		r.Post("/pawapay/refund", webhookHandler.PawaPayRefundWebhook)
 	})
 
 	// WebSocket temps réel
@@ -339,6 +341,7 @@ func main() {
 			r.Get("/stats", adminHandler.Stats)
 			r.Get("/sales", adminHandler.Sales)
 			r.Get("/analytics", adminHandler.Analytics)
+			r.Post("/sales/{id}/refund", adminHandler.RefundSale)
 		})
 
 		r.Group(func(r chi.Router) {

@@ -3,12 +3,14 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"runtime"
 	"time"
 
 	"github.com/diarra/backend/internal/middleware"
 	"github.com/diarra/backend/internal/model"
+	"github.com/diarra/backend/internal/payment"
 	"github.com/diarra/backend/internal/repository"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -29,6 +31,7 @@ type AdminHandler struct {
 	pool          *pgxpool.Pool
 	storage       s3Pinger // nil si stockage objet non configuré
 	startTime     time.Time
+	pawapay       *payment.PawaPayClient
 }
 
 func NewAdminHandler(
@@ -40,6 +43,7 @@ func NewAdminHandler(
 	pool *pgxpool.Pool,
 	storage s3Pinger,
 	startTime time.Time,
+	pawapay *payment.PawaPayClient,
 ) *AdminHandler {
 	return &AdminHandler{
 		productRepo:   productRepo,
@@ -50,6 +54,7 @@ func NewAdminHandler(
 		pool:          pool,
 		storage:       storage,
 		startTime:     startTime,
+		pawapay:       pawapay,
 	}
 }
 
@@ -212,6 +217,49 @@ func (h *AdminHandler) Sales(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"sales": sales})
+}
+
+// RefundSale — POST /api/admin/sales/{id}/refund (remboursement total, mobile money)
+func (h *AdminHandler) RefundSale(w http.ResponseWriter, r *http.Request) {
+	if h.pawapay == nil {
+		http.Error(w, `{"error":"payment_not_configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+	sale, err := h.saleRepo.FindByID(r.Context(), id)
+	if err != nil {
+		http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
+		return
+	}
+	if sale.Status != string(model.SalePaid) {
+		http.Error(w, `{"error":"sale_not_refundable"}`, http.StatusBadRequest)
+		return
+	}
+
+	refundId := uuidString()
+	resp, err := h.pawapay.InitiateRefund(r.Context(), payment.RefundRequest{
+		RefundId:          refundId,
+		DepositId:         sale.PaymentReference,
+		Currency:          "XOF",
+		ClientReferenceId: sale.ID,
+	})
+	if err != nil || resp.Status != "ACCEPTED" {
+		reason := "refund_init_failed"
+		if err == nil && resp.FailureReason != nil {
+			reason = resp.FailureReason.FailureCode
+		}
+		http.Error(w, fmt.Sprintf(`{"error":"refund_rejected","reason":"%s"}`, reason), http.StatusBadGateway)
+		return
+	}
+
+	if err := h.saleRepo.SetRefundReference(r.Context(), sale.ID, refundId); err != nil {
+		http.Error(w, `{"error":"refund_update_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "refund_pending", "refund_id": refundId})
 }
 
 func (h *AdminHandler) totalRevenue(ctx context.Context) (int, error) {

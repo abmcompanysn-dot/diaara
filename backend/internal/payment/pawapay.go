@@ -67,10 +67,12 @@ type AccountDetails struct {
 	Provider    string `json:"provider"`    // ex "ORANGE_SEN"
 }
 
-type MetadataItem struct {
-	Key   string `json:"key"`
-	Value string `json:"value"`
-}
+// MetadataItem est un objet à clé dynamique, ex: {"saleId": "abc"} ou
+// {"customerId": "x@y.com", "isPII": true}. PawaPay exige ce format précis
+// (pas de structure {"key":..,"value":..}, qui déclenche DUPLICATE_METADATA_FIELD
+// car "key" et "value" seraient alors vus comme des noms de champ dupliqués
+// entre plusieurs entrées du tableau).
+type MetadataItem map[string]interface{}
 
 type FailureReason struct {
 	FailureCode    string `json:"failureCode"`
@@ -170,6 +172,201 @@ func (c *PawaPayClient) GetDepositStatus(ctx context.Context, depositId string) 
 func (c *PawaPayClient) setHeaders(req *http.Request) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)
+}
+
+// --- Versements vendeurs (payouts) ------------------------------------------
+
+type PayoutRequest struct {
+	PayoutId          string         `json:"payoutId"`
+	Recipient         Payer          `json:"recipient"`
+	Amount            string         `json:"amount"`
+	Currency          string         `json:"currency"`
+	ClientReferenceId string         `json:"clientReferenceId,omitempty"`
+	CustomerMessage   string         `json:"customerMessage,omitempty"`
+	Metadata          []MetadataItem `json:"metadata,omitempty"`
+}
+
+type PayoutInitiationResponse struct {
+	PayoutId      string         `json:"payoutId"`
+	Status        string         `json:"status"` // ACCEPTED | REJECTED | DUPLICATE_IGNORED
+	Created       string         `json:"created"`
+	FailureReason *FailureReason `json:"failureReason,omitempty"`
+}
+
+type PayoutStatusResponse struct {
+	Status string      `json:"status"` // FOUND | NOT_FOUND
+	Data   *PayoutData `json:"data,omitempty"`
+}
+
+type PayoutData struct {
+	PayoutId              string         `json:"payoutId"`
+	Status                string         `json:"status"` // ACCEPTED | ENQUEUED | PROCESSING | IN_RECONCILIATION | COMPLETED | FAILED
+	Amount                string         `json:"amount"`
+	Currency               string        `json:"currency"`
+	Country                string        `json:"country"`
+	ProviderTransactionId string         `json:"providerTransactionId"`
+	FailureReason          *FailureReason `json:"failureReason,omitempty"`
+}
+
+// InitiatePayout — POST /v2/payouts
+func (c *PawaPayClient) InitiatePayout(ctx context.Context, req PayoutRequest) (*PayoutInitiationResponse, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.cfg.BaseURL+"/v2/payouts", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	c.setHeaders(httpReq)
+
+	resp, err := c.client.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%w: status %d: %s", ErrPaymentFailed, resp.StatusCode, string(respBody))
+	}
+
+	var result PayoutInitiationResponse
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// GetPayoutStatus — GET /v2/payouts/{payoutId}
+func (c *PawaPayClient) GetPayoutStatus(ctx context.Context, payoutId string) (*PayoutStatusResponse, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		c.cfg.BaseURL+"/v2/payouts/"+payoutId, nil)
+	if err != nil {
+		return nil, err
+	}
+	c.setHeaders(httpReq)
+
+	resp, err := c.client.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%w: status %d: %s", ErrPaymentFailed, resp.StatusCode, string(respBody))
+	}
+
+	var result PayoutStatusResponse
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// --- Remboursements (refunds) -----------------------------------------------
+
+type RefundRequest struct {
+	RefundId          string         `json:"refundId"`
+	DepositId         string         `json:"depositId"`
+	Amount            string         `json:"amount,omitempty"` // vide = remboursement total
+	Currency          string         `json:"currency"`
+	ClientReferenceId string         `json:"clientReferenceId,omitempty"`
+	Metadata          []MetadataItem `json:"metadata,omitempty"`
+}
+
+type RefundInitiationResponse struct {
+	RefundId      string         `json:"refundId"`
+	Status        string         `json:"status"` // ACCEPTED | REJECTED | DUPLICATE_IGNORED
+	Created       string         `json:"created"`
+	FailureReason *FailureReason `json:"failureReason,omitempty"`
+}
+
+type RefundStatusResponse struct {
+	Status string      `json:"status"` // FOUND | NOT_FOUND
+	Data   *RefundData `json:"data,omitempty"`
+}
+
+type RefundData struct {
+	RefundId               string         `json:"refundId"`
+	Status                 string         `json:"status"` // ACCEPTED | ENQUEUED | PROCESSING | IN_RECONCILIATION | COMPLETED | FAILED
+	Amount                 string         `json:"amount"`
+	Currency               string         `json:"currency"`
+	Country                string         `json:"country"`
+	ProviderTransactionId  string         `json:"providerTransactionId"`
+	FailureReason          *FailureReason `json:"failureReason,omitempty"`
+}
+
+// InitiateRefund — POST /v2/refunds
+func (c *PawaPayClient) InitiateRefund(ctx context.Context, req RefundRequest) (*RefundInitiationResponse, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost,
+		c.cfg.BaseURL+"/v2/refunds", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	c.setHeaders(httpReq)
+
+	resp, err := c.client.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%w: status %d: %s", ErrPaymentFailed, resp.StatusCode, string(respBody))
+	}
+
+	var result RefundInitiationResponse
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// GetRefundStatus — GET /v2/refunds/{refundId}
+func (c *PawaPayClient) GetRefundStatus(ctx context.Context, refundId string) (*RefundStatusResponse, error) {
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		c.cfg.BaseURL+"/v2/refunds/"+refundId, nil)
+	if err != nil {
+		return nil, err
+	}
+	c.setHeaders(httpReq)
+
+	resp, err := c.client.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%w: status %d: %s", ErrPaymentFailed, resp.StatusCode, string(respBody))
+	}
+
+	var result RefundStatusResponse
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
 
 // --- Opérateurs mobile money (pays de la zone CFA) ---------------------------

@@ -3,10 +3,12 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 
 	"github.com/diarra/backend/internal/middleware"
 	"github.com/diarra/backend/internal/model"
+	"github.com/diarra/backend/internal/payment"
 	"github.com/diarra/backend/internal/repository"
 )
 
@@ -14,17 +16,20 @@ type PayoutHandler struct {
 	payoutRepo  *repository.PayoutRepo
 	saleRepo    *repository.SaleRepo
 	productRepo *repository.ProductRepo
+	pawapay     *payment.PawaPayClient
 }
 
 func NewPayoutHandler(
 	payoutRepo *repository.PayoutRepo,
 	saleRepo *repository.SaleRepo,
 	productRepo *repository.ProductRepo,
+	pawapay *payment.PawaPayClient,
 ) *PayoutHandler {
 	return &PayoutHandler{
 		payoutRepo:  payoutRepo,
 		saleRepo:    saleRepo,
 		productRepo: productRepo,
+		pawapay:     pawapay,
 	}
 }
 
@@ -91,6 +96,21 @@ func (h *PayoutHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if input.Phone == "" || input.Operator == "" || input.Country == "" {
+		http.Error(w, `{"error":"payment_details_required"}`, http.StatusBadRequest)
+		return
+	}
+	op, err := payment.ResolveOperator(input.Country, input.Operator)
+	if err != nil {
+		http.Error(w, `{"error":"unsupported_operator"}`, http.StatusBadRequest)
+		return
+	}
+	msisdn, err := payment.NormalizePhone(op.DialCode, input.Phone)
+	if err != nil {
+		http.Error(w, `{"error":"invalid_phone_number"}`, http.StatusBadRequest)
+		return
+	}
+
 	// Vérifier que le montant est disponible
 	totalEarned, err := h.totalEarned(r.Context(), userID)
 	if err != nil {
@@ -116,10 +136,44 @@ func (h *PayoutHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	payout, err := h.payoutRepo.Create(r.Context(), userID, input.AmountCFA)
+	payout, err := h.payoutRepo.Create(r.Context(), userID, input.AmountCFA, msisdn, op.Provider)
 	if err != nil {
 		http.Error(w, `{"error":"payout_creation_failed"}`, http.StatusInternalServerError)
 		return
+	}
+
+	// Déclenche le versement mobile money PawaPay (asynchrone, comme le checkout).
+	if h.pawapay != nil {
+		pawapayID := uuidString()
+		resp, err := h.pawapay.InitiatePayout(r.Context(), payment.PayoutRequest{
+			PayoutId: pawapayID,
+			Recipient: payment.Payer{
+				Type: "MMO",
+				AccountDetails: payment.AccountDetails{
+					PhoneNumber: msisdn,
+					Provider:    op.Provider,
+				},
+			},
+			Amount:            fmt.Sprintf("%d", payout.AmountCFA),
+			Currency:          "XOF",
+			ClientReferenceId: payout.ID,
+			CustomerMessage:   "VERSEMENT DIARRA",
+		})
+		if err != nil || resp.Status != "ACCEPTED" {
+			reason := "payout_init_failed"
+			if err == nil && resp.FailureReason != nil {
+				reason = resp.FailureReason.FailureCode
+			}
+			h.payoutRepo.UpdateStatus(r.Context(), payout.ID, "failed", &reason)
+			http.Error(w, fmt.Sprintf(`{"error":"payout_rejected","reason":"%s"}`, reason), http.StatusBadGateway)
+			return
+		}
+		if err := h.payoutRepo.SetPawaPayReference(r.Context(), payout.ID, pawapayID); err != nil {
+			http.Error(w, `{"error":"payout_update_failed"}`, http.StatusInternalServerError)
+			return
+		}
+		payout.PawaPayPayoutID = &pawapayID
+		payout.Status = "processing"
 	}
 
 	w.Header().Set("Content-Type", "application/json")
