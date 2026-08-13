@@ -16,6 +16,7 @@ type PayoutHandler struct {
 	payoutRepo  *repository.PayoutRepo
 	saleRepo    *repository.SaleRepo
 	productRepo *repository.ProductRepo
+	userRepo    *repository.UserRepo
 	pawapay     *payment.PawaPayClient
 }
 
@@ -23,14 +24,96 @@ func NewPayoutHandler(
 	payoutRepo *repository.PayoutRepo,
 	saleRepo *repository.SaleRepo,
 	productRepo *repository.ProductRepo,
+	userRepo *repository.UserRepo,
 	pawapay *payment.PawaPayClient,
 ) *PayoutHandler {
 	return &PayoutHandler{
 		payoutRepo:  payoutRepo,
 		saleRepo:    saleRepo,
 		productRepo: productRepo,
+		userRepo:    userRepo,
 		pawapay:     pawapay,
 	}
+}
+
+// GetPayoutMethod — GET /api/vendor/payout-method
+// Retourne le moyen de versement enregistré du vendeur (nuls si jamais renseigné).
+func (h *PayoutHandler) GetPayoutMethod(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	phone, operator, country, err := h.userRepo.GetPayoutMethod(r.Context(), userID)
+	if err != nil {
+		http.Error(w, `{"error":"payout_method_lookup_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	label := ""
+	if operator != nil {
+		for _, op := range payment.XOFOperators {
+			if op.Provider == *operator {
+				label = op.Label
+				break
+			}
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"payout_method": map[string]interface{}{
+			"phone":         phone,
+			"operator":      operator,
+			"operator_label": label,
+			"country":       country,
+		},
+	})
+}
+
+// SetPayoutMethod — PUT /api/vendor/payout-method
+// Le vendeur enregistre ou modifie le compte mobile money qui recevra ses versements.
+func (h *PayoutHandler) SetPayoutMethod(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	var input model.SetPayoutMethodInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+	if input.Phone == "" || input.Operator == "" || input.Country == "" {
+		http.Error(w, `{"error":"payment_details_required"}`, http.StatusBadRequest)
+		return
+	}
+	op, err := payment.ResolveOperator(input.Country, input.Operator)
+	if err != nil {
+		http.Error(w, `{"error":"unsupported_operator"}`, http.StatusBadRequest)
+		return
+	}
+	msisdn, err := payment.NormalizePhone(op.DialCode, input.Phone)
+	if err != nil {
+		http.Error(w, `{"error":"invalid_phone_number"}`, http.StatusBadRequest)
+		return
+	}
+
+	if err := h.userRepo.SetPayoutMethod(r.Context(), userID, msisdn, op.Provider, input.Country); err != nil {
+		http.Error(w, `{"error":"payout_method_save_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"payout_method": map[string]interface{}{
+			"phone":          msisdn,
+			"operator":       op.Provider,
+			"operator_label": op.Label,
+			"country":        input.Country,
+		},
+	})
 }
 
 // Earnings — GET /api/vendor/earnings
@@ -96,18 +179,15 @@ func (h *PayoutHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if input.Phone == "" || input.Operator == "" || input.Country == "" {
-		http.Error(w, `{"error":"payment_details_required"}`, http.StatusBadRequest)
+	// Le compte destinataire est celui enregistré au préalable (voir SetPayoutMethod),
+	// pas resaisi à chaque demande de versement.
+	msisdn, provider, _, err := h.userRepo.GetPayoutMethod(r.Context(), userID)
+	if err != nil {
+		http.Error(w, `{"error":"payout_method_lookup_failed"}`, http.StatusInternalServerError)
 		return
 	}
-	op, err := payment.ResolveOperator(input.Country, input.Operator)
-	if err != nil {
-		http.Error(w, `{"error":"unsupported_operator"}`, http.StatusBadRequest)
-		return
-	}
-	msisdn, err := payment.NormalizePhone(op.DialCode, input.Phone)
-	if err != nil {
-		http.Error(w, `{"error":"invalid_phone_number"}`, http.StatusBadRequest)
+	if msisdn == nil || provider == nil || *msisdn == "" || *provider == "" {
+		http.Error(w, `{"error":"payout_method_required"}`, http.StatusBadRequest)
 		return
 	}
 
@@ -136,7 +216,7 @@ func (h *PayoutHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	payout, err := h.payoutRepo.Create(r.Context(), userID, input.AmountCFA, msisdn, op.Provider)
+	payout, err := h.payoutRepo.Create(r.Context(), userID, input.AmountCFA, *msisdn, *provider)
 	if err != nil {
 		http.Error(w, `{"error":"payout_creation_failed"}`, http.StatusInternalServerError)
 		return
@@ -150,8 +230,8 @@ func (h *PayoutHandler) Create(w http.ResponseWriter, r *http.Request) {
 			Recipient: payment.Payer{
 				Type: "MMO",
 				AccountDetails: payment.AccountDetails{
-					PhoneNumber: msisdn,
-					Provider:    op.Provider,
+					PhoneNumber: *msisdn,
+					Provider:    *provider,
 				},
 			},
 			Amount:            fmt.Sprintf("%d", payout.AmountCFA),

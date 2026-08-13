@@ -43,6 +43,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   invalid_amount: 'Montant invalide.',
   insufficient_balance: 'Solde disponible insuffisant.',
   payout_rejected: 'Le versement a été refusé par votre opérateur mobile money.',
+  payout_method_required: 'Merci d\'enregistrer votre moyen de versement avant de demander un retrait.',
 
   // Générique
   invalid_request: 'Requête invalide, vérifiez les informations saisies.',

@@ -191,7 +191,7 @@ func main() {
 	}
 
 	// Versements & revenus vendeur
-	payoutHandler := handler.NewPayoutHandler(payoutRepo, saleRepo, productRepo, pawapay)
+	payoutHandler := handler.NewPayoutHandler(payoutRepo, saleRepo, productRepo, userRepo, pawapay)
 
 	// Administration
 	adminHandler := handler.NewAdminHandler(productRepo, saleRepo, userRepo, referralRepo, adminPermRepo, pool, storageHealthPinger, startTime, pawapay)
@@ -318,6 +318,8 @@ func main() {
 		r.Use(middleware.RequireAuth(jwtManager))
 		r.Use(middleware.RequireRole(model.RoleVendeur))
 		r.Get("/earnings", payoutHandler.Earnings)
+		r.Get("/payout-method", payoutHandler.GetPayoutMethod)
+		r.With(middleware.RequireVerifiedPhone(userRepo)).Put("/payout-method", payoutHandler.SetPayoutMethod)
 		r.With(middleware.RequireVerifiedPhone(userRepo)).Post("/payouts", payoutHandler.Create)
 		r.Get("/payouts", payoutHandler.Earnings)
 	})

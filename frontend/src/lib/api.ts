@@ -207,6 +207,17 @@ export const api = {
       body: JSON.stringify({ amount }),
     }),
 
+  getPayoutMethod: () =>
+    fetchApi<{ payout_method: { phone: string | null; operator: string | null; operator_label: string; country: string | null } }>(
+      '/api/vendor/payout-method'
+    ),
+
+  setPayoutMethod: (data: { phone: string; operator: string; country: string }) =>
+    fetchApi<{ payout_method: { phone: string; operator: string; operator_label: string; country: string } }>(
+      '/api/vendor/payout-method',
+      { method: 'PUT', body: JSON.stringify(data) }
+    ),
+
   // Closer (affiliation)
   getCloserLinks: () => fetchApi<{ links: any[] }>('/api/closer/links'),
 

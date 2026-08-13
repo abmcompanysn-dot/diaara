@@ -47,6 +47,24 @@ func (r *UserRepo) FindByEmail(ctx context.Context, email string) (*model.User, 
 	return user, nil
 }
 
+// GetPayoutMethod retourne le moyen de versement enregistré du vendeur
+// (nil si jamais renseigné).
+func (r *UserRepo) GetPayoutMethod(ctx context.Context, userID string) (phone, operator, country *string, err error) {
+	err = r.pool.QueryRow(ctx,
+		`SELECT payout_phone, payout_operator, payout_country FROM users WHERE id = $1`, userID,
+	).Scan(&phone, &operator, &country)
+	return
+}
+
+// SetPayoutMethod enregistre/remplace le moyen de versement du vendeur.
+// phone et operator sont déjà normalisés/validés par l'appelant.
+func (r *UserRepo) SetPayoutMethod(ctx context.Context, userID, phone, operator, country string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE users SET payout_phone = $2, payout_operator = $3, payout_country = $4 WHERE id = $1`,
+		userID, phone, operator, country)
+	return err
+}
+
 func (r *UserRepo) FindByID(ctx context.Context, id string) (*model.User, error) {
 	user := &model.User{}
 	err := r.pool.QueryRow(ctx,

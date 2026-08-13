@@ -5,7 +5,15 @@ import Link from 'next/link';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/page-header';
@@ -13,12 +21,20 @@ import { PageLoader } from '@/components/page-loader';
 import { ArrowLeftIcon } from '@/components/icons';
 import { formatPrice, PAYOUT_STATUS_BADGE, PAYOUT_STATUS_LABELS } from '@/lib/constants';
 import { friendlyError } from '@/lib/error-messages';
+import { PAYOUT_COUNTRIES } from '@/lib/operators';
 
 interface Payout {
   id: string;
   amount_cfa: number;
   status: string;
   requested_at: string;
+}
+
+interface PayoutMethod {
+  phone: string | null;
+  operator: string | null;
+  operator_label: string;
+  country: string | null;
 }
 
 export default function VendorEarningsPage() {
@@ -31,8 +47,20 @@ export default function VendorEarningsPage() {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
 
+  const [payoutMethod, setPayoutMethod] = useState<PayoutMethod | null>(null);
+  const [editingMethod, setEditingMethod] = useState(false);
+  const [methodCountry, setMethodCountry] = useState('SEN');
+  const [methodOperator, setMethodOperator] = useState('');
+  const [methodPhone, setMethodPhone] = useState('');
+  const [methodSubmitting, setMethodSubmitting] = useState(false);
+  const [methodError, setMethodError] = useState('');
+
+  const countryOperators = PAYOUT_COUNTRIES.find((c) => c.code === methodCountry)?.operators || [];
+  const hasPayoutMethod = Boolean(payoutMethod?.operator);
+
   useEffect(() => {
     loadEarnings();
+    loadPayoutMethod();
   }, []);
 
   const loadEarnings = async () => {
@@ -46,6 +74,48 @@ export default function VendorEarningsPage() {
       setError(friendlyError(err));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadPayoutMethod = async () => {
+    try {
+      const result = await api.getPayoutMethod();
+      setPayoutMethod(result.payout_method);
+    } catch {
+      // Pas grave si l'appel échoue au chargement initial : le formulaire sera vide.
+    }
+  };
+
+  const openEditMethod = () => {
+    setMethodError('');
+    setMethodCountry(payoutMethod?.country || 'SEN');
+    setMethodOperator(payoutMethod?.operator || '');
+    setMethodPhone(payoutMethod?.phone || '');
+    setEditingMethod(true);
+  };
+
+  const handleCountryChange = (code: string | null) => {
+    const c = code || 'SEN';
+    setMethodCountry(c);
+    const ops = PAYOUT_COUNTRIES.find((x) => x.code === c)?.operators || [];
+    setMethodOperator(ops[0]?.provider || '');
+  };
+
+  const handleSaveMethod = async () => {
+    setMethodError('');
+    setMethodSubmitting(true);
+    try {
+      const result = await api.setPayoutMethod({
+        phone: methodPhone,
+        operator: methodOperator,
+        country: methodCountry,
+      });
+      setPayoutMethod(result.payout_method);
+      setEditingMethod(false);
+    } catch (err: any) {
+      setMethodError(friendlyError(err));
+    } finally {
+      setMethodSubmitting(false);
     }
   };
 
@@ -125,11 +195,111 @@ export default function VendorEarningsPage() {
         </div>
 
         <Card className="border-green-900/5">
+          <CardHeader className="pb-3 flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-lg">Moyen de versement</CardTitle>
+              <CardDescription>Le compte mobile money qui recevra vos versements</CardDescription>
+            </div>
+            {!editingMethod && (
+              <Button variant="outline" size="sm" onClick={openEditMethod}>
+                {hasPayoutMethod ? 'Modifier' : 'Ajouter'}
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent>
+            {!editingMethod ? (
+              hasPayoutMethod ? (
+                <div className="flex items-center gap-3">
+                  <Badge className="bg-green-100 text-green-700 hover:bg-green-100">
+                    {payoutMethod!.operator_label}
+                  </Badge>
+                  <span className="font-mono text-sm text-green-900/70">{payoutMethod!.phone}</span>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Aucun moyen de versement enregistré. Ajoutez-en un pour pouvoir demander un versement.
+                </p>
+              )
+            ) : (
+              <div className="space-y-4 max-w-sm">
+                <div className="space-y-2">
+                  <Label htmlFor="pm-country">Pays</Label>
+                  <Select value={methodCountry} onValueChange={handleCountryChange}>
+                    <SelectTrigger className="bg-white">
+                      <SelectValue placeholder="Choisir le pays" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PAYOUT_COUNTRIES.map((c) => (
+                        <SelectItem key={c.code} value={c.code}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="pm-operator">Opérateur mobile money</Label>
+                  <Select value={methodOperator} onValueChange={(v) => setMethodOperator(v || '')}>
+                    <SelectTrigger className="bg-white">
+                      <SelectValue placeholder="Choisir l'opérateur" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {countryOperators.map((op) => (
+                        <SelectItem key={op.provider} value={op.provider}>
+                          {op.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="pm-phone">Numéro de téléphone</Label>
+                  <Input
+                    id="pm-phone"
+                    type="tel"
+                    inputMode="numeric"
+                    placeholder="Ex : 77 123 45 67"
+                    value={methodPhone}
+                    onChange={(e) => setMethodPhone(e.target.value)}
+                    className="bg-white"
+                  />
+                </div>
+
+                {methodError && (
+                  <div className="p-3 bg-red-50 text-red-700 rounded text-sm" role="alert">
+                    {methodError}
+                  </div>
+                )}
+
+                <div className="flex gap-3">
+                  <Button
+                    onClick={handleSaveMethod}
+                    disabled={methodSubmitting || !methodPhone || !methodOperator}
+                  >
+                    {methodSubmitting ? 'Enregistrement…' : 'Enregistrer'}
+                  </Button>
+                  <Button variant="outline" onClick={() => setEditingMethod(false)}>
+                    Annuler
+                  </Button>
+                </div>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card className="border-green-900/5">
           <CardHeader className="pb-3">
             <CardTitle className="text-lg">Demander un versement</CardTitle>
             <CardDescription>Commission plateforme : 15 % sur chaque vente</CardDescription>
           </CardHeader>
           <CardContent>
+            {!hasPayoutMethod && (
+              <p className="mb-3 text-sm text-yellow-700 bg-yellow-50 rounded p-3">
+                Enregistrez d&apos;abord votre moyen de versement ci-dessus.
+              </p>
+            )}
             <form onSubmit={handlePayout} className="flex flex-col sm:flex-row gap-3 sm:gap-4">
               <Input
                 type="number"
@@ -139,8 +309,9 @@ export default function VendorEarningsPage() {
                 className="flex-1"
                 min={1}
                 max={available}
+                disabled={!hasPayoutMethod}
               />
-              <Button type="submit" disabled={submitting || available <= 0} className="sm:self-start">
+              <Button type="submit" disabled={submitting || available <= 0 || !hasPayoutMethod} className="sm:self-start">
                 {submitting ? 'Envoi…' : 'Demander'}
               </Button>
             </form>

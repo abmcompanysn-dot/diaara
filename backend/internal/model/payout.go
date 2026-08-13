@@ -15,11 +15,18 @@ type Payout struct {
 	PaidAt          *time.Time `json:"paid_at,omitempty"`
 }
 
-// CreatePayoutInput — le vendeur choisit le compte mobile money qui recevra
-// le versement (même format que le checkout : pays + libellé opérateur).
+// CreatePayoutInput — le montant à verser. Le compte mobile money destinataire
+// est celui enregistré au préalable via SetPayoutMethodInput (voir plus bas),
+// pas resaisi à chaque demande.
 type CreatePayoutInput struct {
-	AmountCFA int    `json:"amount"`
-	Phone     string `json:"phone"`
-	Operator  string `json:"operator"`
-	Country   string `json:"country"`
+	AmountCFA int `json:"amount"`
+}
+
+// SetPayoutMethodInput — le vendeur choisit/modifie le compte mobile money qui
+// recevra ses versements (même format que l'ancien checkout : pays + libellé
+// opérateur), enregistré une fois pour toutes.
+type SetPayoutMethodInput struct {
+	Phone    string `json:"phone"`
+	Operator string `json:"operator"`
+	Country  string `json:"country"`
 }
