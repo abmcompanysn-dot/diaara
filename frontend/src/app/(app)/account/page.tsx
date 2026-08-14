@@ -138,7 +138,7 @@ export default function AccountPage() {
                 </div>
                 <Button
                   variant="outline"
-                  size="sm"
+                  className="h-9"
                   onClick={async () => {
                     try {
                       await api.updateProfile({ display_name: displayName || undefined, shop_name: shopName || undefined });
@@ -172,7 +172,7 @@ export default function AccountPage() {
                 <CardDescription>Le compte mobile money utilisé pour vous envoyer de l&apos;argent (ex : un remboursement)</CardDescription>
               </div>
               {!editingMethod && (
-                <Button variant="outline" size="sm" onClick={() => { setMethodError(''); setEditingMethod(true); }}>
+                <Button variant="outline" className="h-9" onClick={() => { setMethodError(''); setEditingMethod(true); }}>
                   {hasPayoutMethod ? 'Modifier' : 'Ajouter'}
                 </Button>
               )}
@@ -214,7 +214,7 @@ export default function AccountPage() {
             </CardContent>
           </Card>
 
-          <Button variant="outline" size="sm" render={<Link href="/dashboard" />}>
+          <Button variant="outline" className="h-10" render={<Link href="/dashboard" />}>
             ← Mon espace
           </Button>
         </section>

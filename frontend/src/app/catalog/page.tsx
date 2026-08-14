@@ -319,9 +319,8 @@ export default function CatalogPage() {
                       {formatPrice(product.price_cfa)}
                     </span>
                     <Button
-                      size="sm"
                       render={<Link href={`/product?id=${product.id}`} />}
-                      className="rounded-full bg-green-950 text-white hover:bg-green-900 px-3.5"
+                      className="h-9 rounded-full bg-green-950 text-white hover:bg-green-900 px-3.5"
                     >
                       Voir
                     </Button>

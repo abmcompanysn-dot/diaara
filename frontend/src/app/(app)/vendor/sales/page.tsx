@@ -127,40 +127,68 @@ export default function VendorSalesPage() {
         ) : filtered.length === 0 ? (
           <EmptyState title="Aucun résultat" description="Aucune vente ne correspond à cette recherche." />
         ) : (
-          <div className="rounded-xl border border-green-900/10 bg-white shadow-card overflow-hidden overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Date</TableHead>
-                  <TableHead>Produit</TableHead>
-                  <TableHead>Client</TableHead>
-                  <TableHead>Email</TableHead>
-                  <TableHead>Pays</TableHead>
-                  <TableHead>Montant</TableHead>
-                  <TableHead>Statut</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((sale) => (
-                  <TableRow key={sale.id}>
-                    <TableCell className="text-sm whitespace-nowrap">
-                      {new Date(sale.created_at).toLocaleString('fr-FR')}
-                    </TableCell>
-                    <TableCell className="max-w-[160px] truncate">{sale.product_title}</TableCell>
-                    <TableCell>{sale.buyer_name}</TableCell>
-                    <TableCell className="text-sm text-green-900/70">{sale.buyer_email}</TableCell>
-                    <TableCell className="whitespace-nowrap">{countryName(sale.country)}</TableCell>
-                    <TableCell className="font-mono">{formatPrice(sale.amount_cfa)}</TableCell>
-                    <TableCell>
-                      <Badge variant="outline" className={SALE_STATUS_BADGE[sale.status]}>
-                        {ORDER_STATUS_LABELS[sale.status] || sale.status}
-                      </Badge>
-                    </TableCell>
+          <>
+            {/* Vue mobile : cartes empilées, pas de scroll horizontal */}
+            <div className="sm:hidden space-y-2">
+              {filtered.map((sale) => (
+                <div key={sale.id} className="bg-white rounded-xl border border-green-900/10 shadow-card p-3.5">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-green-950 truncate">{sale.product_title}</p>
+                      <p className="text-xs text-green-900/60 truncate">{sale.buyer_name} · {sale.buyer_email}</p>
+                    </div>
+                    <span className="font-mono text-sm font-bold text-green-950 shrink-0">
+                      {formatPrice(sale.amount_cfa)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between gap-2 mt-3 pt-3 border-t border-green-900/5">
+                    <span className="text-xs text-green-900/50">
+                      {countryName(sale.country)} · {new Date(sale.created_at).toLocaleDateString('fr-FR')}
+                    </span>
+                    <Badge variant="outline" className={SALE_STATUS_BADGE[sale.status]}>
+                      {ORDER_STATUS_LABELS[sale.status] || sale.status}
+                    </Badge>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Vue desktop : tableau */}
+            <div className="hidden sm:block rounded-xl border border-green-900/10 bg-white shadow-card overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Date</TableHead>
+                    <TableHead>Produit</TableHead>
+                    <TableHead>Client</TableHead>
+                    <TableHead>Email</TableHead>
+                    <TableHead>Pays</TableHead>
+                    <TableHead>Montant</TableHead>
+                    <TableHead>Statut</TableHead>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
+                </TableHeader>
+                <TableBody>
+                  {filtered.map((sale) => (
+                    <TableRow key={sale.id}>
+                      <TableCell className="text-sm whitespace-nowrap">
+                        {new Date(sale.created_at).toLocaleString('fr-FR')}
+                      </TableCell>
+                      <TableCell className="max-w-[160px] truncate">{sale.product_title}</TableCell>
+                      <TableCell>{sale.buyer_name}</TableCell>
+                      <TableCell className="text-sm text-green-900/70">{sale.buyer_email}</TableCell>
+                      <TableCell className="whitespace-nowrap">{countryName(sale.country)}</TableCell>
+                      <TableCell className="font-mono">{formatPrice(sale.amount_cfa)}</TableCell>
+                      <TableCell>
+                        <Badge variant="outline" className={SALE_STATUS_BADGE[sale.status]}>
+                          {ORDER_STATUS_LABELS[sale.status] || sale.status}
+                        </Badge>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </>
         )}
       </section>
     </main>

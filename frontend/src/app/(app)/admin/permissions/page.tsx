@@ -146,7 +146,7 @@ export default function AdminPermissionsPage() {
                             })
                           }
                           className={cn(
-                            'px-3 py-1.5 rounded-full text-xs font-medium border transition-colors',
+                            'px-3 py-2 rounded-lg text-xs font-medium border transition-colors text-left',
                             active
                               ? 'bg-green-100 text-green-700 border-green-200 hover:bg-green-200'
                               : 'bg-white text-green-900/50 border-green-900/15 hover:bg-green-50'
@@ -160,8 +160,7 @@ export default function AdminPermissionsPage() {
 
                   <Button
                     variant="outline"
-                    size="sm"
-                    className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                    className="h-9 text-destructive hover:text-destructive hover:bg-destructive/10"
                     onClick={() => setToDemote(admin)}
                   >
                     Retirer les droits admin

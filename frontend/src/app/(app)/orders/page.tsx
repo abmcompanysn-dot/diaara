@@ -235,23 +235,21 @@ export default function OrdersPage() {
                         </div>
                       </Link>
 
-                      <div className="flex items-center gap-2 px-4 pb-4">
+                      <div className="flex items-center flex-wrap gap-2 px-4 pb-4">
                         {available ? (
                           <>
                             <Button
-                              size="sm"
                               onClick={() => handleDownload(order)}
                               disabled={downloadingId === order.id}
-                              className="flex-1 gap-1.5"
+                              className="h-9 flex-1 gap-1.5"
                             >
                               <DownloadIcon size={14} />
                               {downloadingId === order.id ? 'Préparation…' : 'Télécharger'}
                             </Button>
                             <Button
-                              size="sm"
                               variant="outline"
                               onClick={() => openSaleReceipt(order, product ? { title: product.title } : null)}
-                              className="gap-1.5"
+                              className="h-9 gap-1.5"
                             >
                               <FileIcon size={14} />
                               Reçu
@@ -265,10 +263,9 @@ export default function OrdersPage() {
                           </p>
                         )}
                         <Button
-                          size="sm"
                           variant="outline"
                           render={<Link href="/support" />}
-                          className="gap-1.5"
+                          className="h-9 gap-1.5"
                         >
                           <HeadsetIcon size={14} />
                           Aide

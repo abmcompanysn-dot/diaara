@@ -181,9 +181,8 @@ export function Header() {
                 Connexion
               </Button>
               <Button
-                size="sm"
                 render={<Link href="/auth/register" />}
-                className="bg-green-400 text-green-950 font-semibold hover:bg-green-300"
+                className="h-10 bg-green-400 text-green-950 font-semibold hover:bg-green-300"
               >
                 Créer un compte
               </Button>

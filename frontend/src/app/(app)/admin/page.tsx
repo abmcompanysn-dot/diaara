@@ -232,7 +232,7 @@ export default function AdminDashboardPage() {
                         {PAYOUT_STATUS_LABELS[p.status] || p.status}
                       </Badge>
                       {p.status === 'failed' && (
-                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setRetryTarget(p.id)}>
+                        <Button variant="ghost" className="h-9 px-3 text-xs" onClick={() => setRetryTarget(p.id)}>
                           Relancer
                         </Button>
                       )}

@@ -126,7 +126,7 @@ export default function CheckoutReturnView() {
                   se confirmer — vous recevrez un email dès que ce sera fait.
                 </p>
                 <div className="mt-4 flex flex-col gap-2">
-                  <Button variant="outline" onClick={handleManualCheck} disabled={checkingNow}>
+                  <Button className="h-10" variant="outline" onClick={handleManualCheck} disabled={checkingNow}>
                     {checkingNow ? 'Vérification...' : 'Vérifier maintenant'}
                   </Button>
                   <div className="flex justify-center gap-4 text-sm">
@@ -189,7 +189,7 @@ export default function CheckoutReturnView() {
             </div>
 
             <div className="mt-4 flex flex-wrap justify-center gap-3">
-              <Button variant="outline" render={<Link href="/catalog" />}>
+              <Button className="h-10" variant="outline" render={<Link href="/catalog" />}>
                 Continuer mes achats
               </Button>
             </div>
@@ -208,13 +208,13 @@ export default function CheckoutReturnView() {
             <div className="mt-6 flex flex-col items-center gap-2">
               {productId && (
                 <Button
-                  className="w-full max-w-[220px] bg-lime text-green-950 font-semibold hover:bg-green-300"
+                  className="h-10 w-full max-w-[220px] bg-lime text-green-950 font-semibold hover:bg-green-300"
                   render={<Link href={`/product?id=${productId}`} />}
                 >
                   Réessayer le paiement
                 </Button>
               )}
-              <Button variant="outline" className="w-full max-w-[220px]" render={<Link href="/catalog" />}>
+              <Button variant="outline" className="h-10 w-full max-w-[220px]" render={<Link href="/catalog" />}>
                 Retour au catalogue
               </Button>
               <Link href="/support" className="text-sm text-green-700 underline mt-1">

@@ -60,7 +60,9 @@ function RowMenu({
   onPromote: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
   const ref = useRef<HTMLDivElement>(null);
+  const btnRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
@@ -72,18 +74,40 @@ function RowMenu({
 
   const suspended = isSuspended(user);
 
+  // Position en `fixed` (calculée depuis le bouton) plutôt qu'`absolute` dans
+  // la ligne du tableau : le tableau est un conteneur de scroll horizontal
+  // (overflow-x-auto), qui coupe tout menu positionné en absolute dès que la
+  // ligne est proche du bas visible. `fixed` échappe à ce clipping.
+  const toggleOpen = () => {
+    if (!open && btnRef.current) {
+      const rect = btnRef.current.getBoundingClientRect();
+      const menuHeight = 260; // estimation, suffisant pour décider haut/bas
+      const openUpward = rect.bottom + menuHeight > window.innerHeight;
+      setMenuPos({
+        top: openUpward ? rect.top - menuHeight : rect.bottom + 4,
+        left: Math.min(rect.right - 224, window.innerWidth - 232), // 224 = largeur du menu (w-56)
+      });
+    }
+    setOpen((v) => !v);
+  };
+
   return (
     <div className="relative inline-block" ref={ref}>
       <button
+        ref={btnRef}
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggleOpen}
         aria-label="Actions"
         className="w-9 h-9 inline-flex items-center justify-center rounded-lg hover:bg-green-900/5 text-green-900/60"
       >
         <MoreVerticalIcon size={18} />
       </button>
-      {open && (
-        <div className="absolute right-0 mt-1 w-56 bg-white rounded-xl shadow-lift border border-green-900/10 py-1.5 z-20 text-sm">
+      {open && menuPos && (
+        <div
+          data-row-menu
+          style={{ position: 'fixed', top: menuPos.top, left: menuPos.left }}
+          className="w-56 bg-white rounded-xl shadow-lift border border-green-900/10 py-1.5 z-50 text-sm"
+        >
           {!user.is_admin && (
             <>
               <p className="px-3 pt-1 pb-1 text-[10px] uppercase tracking-widest text-green-900/40 font-mono">
