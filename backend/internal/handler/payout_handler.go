@@ -185,10 +185,6 @@ func (h *PayoutHandler) Create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invalid_amount"}`, http.StatusBadRequest)
 		return
 	}
-	if input.AmountCFA < model.MinPayoutAmountCFA {
-		http.Error(w, `{"error":"amount_below_minimum"}`, http.StatusBadRequest)
-		return
-	}
 
 	// Le compte destinataire est celui enregistré au préalable (voir SetPayoutMethod),
 	// pas resaisi à chaque demande de versement.

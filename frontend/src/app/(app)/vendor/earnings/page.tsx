@@ -14,7 +14,7 @@ import { PageHeader } from '@/components/page-header';
 import { PageLoader } from '@/components/page-loader';
 import { PayoutMethodForm } from '@/components/payout-method-form';
 import { ArrowLeftIcon, CheckIcon, DownloadIcon, WalletIcon, ChevronDownIcon } from '@/components/icons';
-import { formatPrice, PAYOUT_STATUS_BADGE, PAYOUT_STATUS_LABELS, MIN_PAYOUT_AMOUNT_CFA } from '@/lib/constants';
+import { formatPrice, PAYOUT_STATUS_BADGE, PAYOUT_STATUS_LABELS } from '@/lib/constants';
 import { friendlyError } from '@/lib/error-messages';
 import { PAYOUT_COUNTRIES, findPayoutOperator, maskPhone } from '@/lib/operators';
 import { openPayoutReceipt, payoutReference } from '@/lib/payout-receipt';
@@ -133,15 +133,13 @@ export default function VendorEarningsPage() {
 
   const blockReason = !hasPayoutMethod
     ? "Ajoutez d'abord un moyen de versement pour demander un retrait."
-    : available < MIN_PAYOUT_AMOUNT_CFA
-      ? `Solde disponible insuffisant (minimum ${formatPrice(MIN_PAYOUT_AMOUNT_CFA)}).`
+    : available <= 0
+      ? 'Aucun solde disponible pour le moment.'
       : hasValidAmount && amountNum > available
         ? 'Le montant dépasse votre solde disponible.'
-        : hasValidAmount && amountNum < MIN_PAYOUT_AMOUNT_CFA
-          ? `Montant minimum : ${formatPrice(MIN_PAYOUT_AMOUNT_CFA)}.`
-          : '';
+        : '';
 
-  const canSubmit = hasPayoutMethod && hasValidAmount && amountNum >= MIN_PAYOUT_AMOUNT_CFA && amountNum <= available;
+  const canSubmit = hasPayoutMethod && hasValidAmount && amountNum <= available;
 
   const handlePayout = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -193,7 +191,7 @@ export default function VendorEarningsPage() {
 
             <Button
               onClick={() => setSheetOpen(true)}
-              disabled={!hasPayoutMethod || available < MIN_PAYOUT_AMOUNT_CFA}
+              disabled={!hasPayoutMethod || available <= 0}
               className="mt-5 w-full sm:w-auto h-12 px-8 rounded-full bg-lime text-green-950 font-semibold hover:bg-green-300 text-base"
             >
               💸 Retirer mes fonds
@@ -434,9 +432,9 @@ export default function VendorEarningsPage() {
                   autoFocus
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
-                  placeholder={`Montant en FCFA (min. ${MIN_PAYOUT_AMOUNT_CFA.toLocaleString('fr-FR')})`}
+                  placeholder="Montant en FCFA"
                   className="flex-1 h-12 text-lg"
-                  min={MIN_PAYOUT_AMOUNT_CFA}
+                  min={1}
                   max={available}
                   disabled={!hasPayoutMethod}
                 />
@@ -444,7 +442,7 @@ export default function VendorEarningsPage() {
                   type="button"
                   variant="outline"
                   className="h-12"
-                  disabled={!hasPayoutMethod || available < MIN_PAYOUT_AMOUNT_CFA}
+                  disabled={!hasPayoutMethod || available <= 0}
                   onClick={() => setAmount(String(available))}
                 >
                   Max

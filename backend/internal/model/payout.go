@@ -2,9 +2,6 @@ package model
 
 import "time"
 
-// MinPayoutAmountCFA — montant minimum qu'un vendeur peut demander en versement.
-const MinPayoutAmountCFA = 1000
-
 type Payout struct {
 	ID              string     `json:"id"`
 	UserID          string     `json:"user_id"`

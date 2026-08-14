@@ -79,6 +79,3 @@ export const ROLE_LABELS: Record<string, string> = {
 export function formatPrice(price: number): string {
   return `${price.toLocaleString('fr-FR')} FCFA`;
 }
-
-/** Montant minimum qu'un vendeur peut demander en versement (miroir de model.MinPayoutAmountCFA côté backend). */
-export const MIN_PAYOUT_AMOUNT_CFA = 1000;
