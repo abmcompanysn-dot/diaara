@@ -223,6 +223,17 @@ export const api = {
 
   getVendorSales: () => fetchApi<{ sales: any[] }>('/api/vendor/sales'),
 
+  // Notifications in-app
+  getNotifications: () => fetchApi<{ notifications: any[] }>('/api/notifications'),
+
+  getUnreadNotificationCount: () => fetchApi<{ count: number }>('/api/notifications/unread-count'),
+
+  markNotificationRead: (id: string) =>
+    fetchApi<{ status: string }>(`/api/notifications/${id}/read`, { method: 'PUT' }),
+
+  markAllNotificationsRead: () =>
+    fetchApi<{ status: string }>('/api/notifications/read-all', { method: 'PUT' }),
+
   uploadFile: (formData: FormData) =>
     fetchApi<{ file_key: string; size: string }>('/api/vendor/products/upload', {
       method: 'POST',

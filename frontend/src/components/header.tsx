@@ -8,6 +8,7 @@ import { useMobileMenu } from '@/lib/mobile-menu-context';
 import { Button } from '@/components/ui/button';
 import { CartIcon, HomeIcon, StoreIcon, WalletIcon, ShieldIcon, HeadsetIcon, ZapIcon, MegaphoneIcon, UserIcon } from '@/components/icons';
 import { MenuIcon, XIcon, ChevronRightIcon } from '@/components/icons';
+import { NotificationBell } from '@/components/notification-bell';
 import { cn } from '@/lib/utils';
 
 interface DrawerLink {
@@ -153,6 +154,7 @@ export function Header() {
 
         {/* E-mail + déconnexion : uniquement desktop, le mobile les retrouve dans le tiroir */}
         <div className="flex items-center gap-3">
+          {user && <NotificationBell />}
           {user ? (
             <>
               <span className="hidden md:inline text-xs text-white/50 truncate max-w-40">

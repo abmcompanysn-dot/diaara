@@ -6,6 +6,7 @@ import (
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"io"
 	"mime"
 	"net/http"
@@ -21,15 +22,16 @@ import (
 )
 
 type WebhookHandler struct {
-	saleRepo      *repository.SaleRepo
-	userRepo      *repository.UserRepo
-	productRepo   *repository.ProductRepo
-	payoutRepo    *repository.PayoutRepo
-	pawapay       *payment.PawaPayClient
-	commissionSvc *service.CommissionService
-	notifications *email.NotificationService
-	storage       *storage.S3Storage
-	allowedIPs    map[string]bool
+	saleRepo         *repository.SaleRepo
+	userRepo         *repository.UserRepo
+	productRepo      *repository.ProductRepo
+	payoutRepo       *repository.PayoutRepo
+	pawapay          *payment.PawaPayClient
+	commissionSvc    *service.CommissionService
+	notifications    *email.NotificationService
+	notificationRepo *repository.NotificationRepo
+	storage          *storage.S3Storage
+	allowedIPs       map[string]bool
 }
 
 func NewWebhookHandler(
@@ -39,6 +41,7 @@ func NewWebhookHandler(
 	payoutRepo *repository.PayoutRepo,
 	pawapay *payment.PawaPayClient,
 	notifications *email.NotificationService,
+	notificationRepo *repository.NotificationRepo,
 	storage *storage.S3Storage,
 	allowedIPs []string,
 ) *WebhookHandler {
@@ -47,16 +50,26 @@ func NewWebhookHandler(
 		ips[strings.TrimSpace(ip)] = true
 	}
 	return &WebhookHandler{
-		saleRepo:      saleRepo,
-		userRepo:      userRepo,
-		productRepo:   productRepo,
-		payoutRepo:    payoutRepo,
-		pawapay:       pawapay,
-		commissionSvc: service.NewCommissionService(),
-		notifications: notifications,
-		storage:       storage,
-		allowedIPs:    ips,
+		saleRepo:         saleRepo,
+		userRepo:         userRepo,
+		productRepo:      productRepo,
+		payoutRepo:       payoutRepo,
+		pawapay:          pawapay,
+		commissionSvc:    service.NewCommissionService(),
+		notifications:    notifications,
+		notificationRepo: notificationRepo,
+		storage:          storage,
+		allowedIPs:       ips,
 	}
+}
+
+// notify insère une notification in-app, en tâche de fond, sans jamais faire
+// échouer l'appelant (les notifications sont secondaires au flux principal).
+func (h *WebhookHandler) notify(ctx context.Context, userID, notifType, title, body, link string) {
+	if h.notificationRepo == nil || userID == "" {
+		return
+	}
+	h.notificationRepo.Create(ctx, userID, notifType, title, body, link)
 }
 
 // verifyRequest applique les mêmes vérifications (digest + IP) que le webhook
@@ -121,12 +134,16 @@ func (h *WebhookHandler) PawaPayPayoutWebhook(w http.ResponseWriter, r *http.Req
 	switch status.Data.Status {
 	case "COMPLETED":
 		h.payoutRepo.UpdateStatus(r.Context(), payout.ID, "paid", nil)
+		h.notify(r.Context(), payout.UserID, "payout_paid", "Versement effectué",
+			fmt.Sprintf("Votre versement de %d FCFA a été envoyé.", payout.AmountCFA), "/vendor/earnings")
 	case "FAILED":
 		reason := ""
 		if status.Data.FailureReason != nil {
 			reason = status.Data.FailureReason.FailureCode
 		}
 		h.payoutRepo.UpdateStatus(r.Context(), payout.ID, "failed", &reason)
+		h.notify(r.Context(), payout.UserID, "payout_failed", "Versement échoué",
+			"Votre demande de versement a été refusée, vérifiez votre moyen de versement.", "/vendor/earnings")
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -169,6 +186,8 @@ func (h *WebhookHandler) PawaPayRefundWebhook(w http.ResponseWriter, r *http.Req
 	if status.Data.Status == "COMPLETED" {
 		h.saleRepo.UpdateStatus(r.Context(), sale.ID, string(model.SaleRefunded))
 		go h.notifyRefunded(context.Background(), sale)
+		h.notify(r.Context(), sale.BuyerID, "refund", "Remboursement effectué",
+			fmt.Sprintf("Votre remboursement de %d FCFA a été traité.", sale.AmountCFA), "/orders")
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -264,6 +283,12 @@ func (h *WebhookHandler) PawaPayWebhook(w http.ResponseWriter, r *http.Request) 
 		if h.notifications != nil {
 			go h.notifyPaid(context.Background(), sale)
 		}
+		h.notify(r.Context(), sale.BuyerID, "order_paid", "Commande confirmée",
+			fmt.Sprintf("Votre paiement de %d FCFA a été confirmé.", sale.AmountCFA), "/orders")
+		if product, err := h.productRepo.FindByID(r.Context(), sale.ProductID); err == nil {
+			h.notify(r.Context(), product.VendorID, "sale", "Nouvelle vente",
+				fmt.Sprintf("%s vient d'acheter « %s » pour %d FCFA.", sale.BuyerName, product.Title, sale.VendorAmountCFA), "/vendor/sales")
+		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "paid"})
 		return
@@ -277,6 +302,8 @@ func (h *WebhookHandler) PawaPayWebhook(w http.ResponseWriter, r *http.Request) 
 		if h.notifications != nil {
 			go h.notifyFailed(context.Background(), sale)
 		}
+		h.notify(r.Context(), sale.BuyerID, "order_failed", "Paiement échoué",
+			"Votre paiement n'a pas pu être traité, réessayez.", "/orders")
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": status.Data.Status})

@@ -180,6 +180,10 @@ func main() {
 		allowedIPs = strings.Split(ips, ",")
 	}
 
+	// Notifications in-app
+	notificationRepo := repository.NewNotificationRepo(pool)
+	notificationHandler := handler.NewNotificationHandler(notificationRepo)
+
 	// Handlers
 	healthHandler := handler.NewHealthHandler(pool)
 	authHandler := handler.NewAuthHandler(authService, firebaseVerifier)
@@ -187,7 +191,7 @@ func main() {
 	saleHandler := handler.NewSaleHandler(saleRepo, productRepo, referralRepo, userRepo, settingsRepo, pawapay, notifications, os.Getenv("FRONTEND_URL"))
 	closerHandler := handler.NewCloserHandler(referralRepo, productRepo, os.Getenv("FRONTEND_URL"))
 	bundleHandler := handler.NewBundleHandler(bundleRepo, productRepo)
-	webhookHandler := handler.NewWebhookHandler(saleRepo, userRepo, productRepo, payoutRepo, pawapay, notifications, s3, allowedIPs)
+	webhookHandler := handler.NewWebhookHandler(saleRepo, userRepo, productRepo, payoutRepo, pawapay, notifications, notificationRepo, s3, allowedIPs)
 
 	// Temps réel (LISTEN/NOTIFY + WebSocket)
 	hub := realtime.NewHub(pool)
@@ -307,6 +311,15 @@ func main() {
 			r.Get("/", saleHandler.List)
 			r.Get("/{id}", saleHandler.Get)
 		})
+	})
+
+	// Notifications in-app
+	r.Route("/api/notifications", func(r chi.Router) {
+		r.Use(middleware.RequireAuth(jwtManager))
+		r.Get("/", notificationHandler.List)
+		r.Get("/unread-count", notificationHandler.UnreadCount)
+		r.Put("/read-all", notificationHandler.MarkAllRead)
+		r.Put("/{id}/read", notificationHandler.MarkRead)
 	})
 
 	// Closer (affiliation) — liens + stats (email vérifié requis)
