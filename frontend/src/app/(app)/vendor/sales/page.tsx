@@ -1,20 +1,28 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import Link from 'next/link';
 import { api } from '@/lib/api';
-import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/page-header';
 import { PageLoader } from '@/components/page-loader';
 import { EmptyState } from '@/components/empty-state';
-import { ArrowLeftIcon, SearchIcon } from '@/components/icons';
+import { SegmentedTabs } from '@/components/segmented-tabs';
+import { SearchIcon } from '@/components/icons';
 import { formatPrice, SALE_STATUS_BADGE, ORDER_STATUS_LABELS } from '@/lib/constants';
 import { CHECKOUT_COUNTRIES } from '@/lib/operators';
 import { friendlyError } from '@/lib/error-messages';
+
+const STATUS_FILTERS: { value: string; label: string }[] = [
+  { value: 'all', label: 'Tous' },
+  { value: 'paid', label: 'Payé' },
+  { value: 'pending', label: 'En attente' },
+  { value: 'delivered', label: 'Livré' },
+  { value: 'failed', label: 'Échec' },
+  { value: 'refund_pending', label: 'Remb. en cours' },
+  { value: 'refunded', label: 'Remboursé' },
+];
 
 interface VendorSale {
   id: string;
@@ -68,7 +76,7 @@ export default function VendorSalesPage() {
   if (loading)
     return (
       <main>
-        <PageHeader eyebrow="// espace vendeur" title="Mes clients" description="Ventes et coordonnées des acheteurs" />
+        <PageHeader back="/vendor" eyebrow="// espace vendeur" title="Mes clients" description="Ventes et coordonnées des acheteurs" />
         <PageLoader />
       </main>
     );
@@ -76,18 +84,13 @@ export default function VendorSalesPage() {
   return (
     <main>
       <PageHeader
+        back="/vendor"
         eyebrow="// espace vendeur"
         title="Mes clients"
         description={`${sales.length} vente(s)`}
-        actions={
-          <Button variant="outline" size="sm" render={<Link href="/vendor/products" />}>
-            <ArrowLeftIcon size={16} className="mr-2" />
-            Mes produits
-          </Button>
-        }
       />
 
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 py-10">
+      <section className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
         {error && (
           <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded text-sm" role="alert">
             {error}
@@ -95,8 +98,8 @@ export default function VendorSalesPage() {
         )}
 
         {sales.length > 0 && (
-          <div className="flex flex-wrap gap-3 mb-5">
-            <div className="relative flex-1 min-w-55">
+          <div className="space-y-3 mb-5">
+            <div className="relative">
               <SearchIcon size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-green-900/40" />
               <Input
                 placeholder="Rechercher par produit ou client..."
@@ -105,20 +108,7 @@ export default function VendorSalesPage() {
                 className="pl-9 bg-white"
               />
             </div>
-            <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v || 'all')}>
-              <SelectTrigger className="w-44 bg-white">
-                <SelectValue placeholder="Statut" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Tous les statuts</SelectItem>
-                <SelectItem value="pending">En attente</SelectItem>
-                <SelectItem value="paid">Payé</SelectItem>
-                <SelectItem value="delivered">Livré</SelectItem>
-                <SelectItem value="failed">Échec</SelectItem>
-                <SelectItem value="refund_pending">Remboursement en cours</SelectItem>
-                <SelectItem value="refunded">Remboursé</SelectItem>
-              </SelectContent>
-            </Select>
+            <SegmentedTabs options={STATUS_FILTERS} value={statusFilter} onChange={setStatusFilter} />
           </div>
         )}
 

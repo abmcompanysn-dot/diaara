@@ -17,14 +17,17 @@
   --color-green-50: #ebfbf2;
   --color-lime: #c9f22e;
   --color-lime-dark: #a8cf18;
-  /* Palette officielle DIARRA_Charte_Graphique v1.0 — tokens exacts pour tout
+  /* Palette officielle DIARRA_Charte_Graphique v2.0 — tokens exacts pour tout
      nouveau composant qui doit coller précisément à la charte (green-400 et
      lime ci-dessus correspondent déjà à Émeraude vif et Vert Citron). */
-  --color-forest: #122b24; /* Vert Forêt — fond principal, header */
-  --color-emerald-charte: #0f714a; /* Vert Émeraude — dégradés, sections */
+  --color-forest: #0e6b46; /* Vert Forêt — fond principal, header */
+  --color-forest-2: #0a4f35; /* Vert Forêt foncé — bas de dégradé */
+  --color-emerald-charte: #12a06b; /* Vert Émeraude — dégradés, sections */
   --color-mint: #40d68c; /* Menthe — tags, labels, liens */
-  --color-night: #0a1f17; /* Vert Nuit — texte sur clair, footer */
-  --color-mist: #f4fbf6; /* Vert Brume — fonds clairs, cartes */
+  --color-night: #071f17; /* Vert Nuit — texte sur clair, footer */
+  --color-mist: #edf8f2; /* Vert Brume — fonds clairs, cartes */
+  --color-mist-2: #e1f2e8; /* Vert Brume — fond secondaire (QR, vignettes) */
+  --color-line: #dceae2; /* bordures fines sur fond clair */
   --color-paper: #f2f7f4;
   --color-paper-cream: #fafdfb;
   --color-money-orange: #ff7a3d;
@@ -32,9 +35,9 @@
   --color-money-om: #ff6a00;
   --color-money-mtn: #ffc602;
 
-  --font-display: 'Bricolage Grotesque', sans-serif;
-  --font-body: 'Work Sans', sans-serif;
-  --font-mono: 'Space Mono', monospace;
+  --font-display: 'Manrope', sans-serif;
+  --font-body: 'Manrope', sans-serif;
+  --font-mono: 'JetBrains Mono', monospace;
 
   --shadow-card: 0 1px 2px rgba(5, 32, 24, 0.06), 0 8px 24px rgba(5, 32, 24, 0.08);
   --shadow-lift: 0 2px 4px rgba(5, 32, 24, 0.08), 0 16px 40px rgba(5, 32, 24, 0.16);
@@ -164,7 +167,7 @@ body {
 
 /* Dégradés verts signature */
 .gradient-green {
-  background: linear-gradient(135deg, #0e4431 0%, #0f7a50 55%, #10a05f 100%);
+  background: linear-gradient(160deg, #12a06b 0%, #0e6b46 45%, #0a4f35 100%);
 }
 
 .gradient-green-soft {

@@ -46,7 +46,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/dashboard', label: 'Mon espace', Icon: HomeIcon, section: 'principal', always: true },
   { href: '/catalog', label: 'Catalogue', Icon: CartIcon, section: 'principal', always: true },
   { href: '/orders', label: 'Mes commandes', Icon: PackageIcon, section: 'principal', always: true },
-  { href: '/vendor/products', label: 'Espace vendeur', Icon: StoreIcon, section: 'vendeur', roles: ['vendeur'] },
+  { href: '/vendor', label: 'Espace vendeur', Icon: StoreIcon, section: 'vendeur', roles: ['vendeur'] },
   { href: '/vendor/earnings', label: 'Mes revenus', Icon: WalletIcon, section: 'vendeur', roles: ['vendeur'] },
   { href: '/closer/dashboard', label: 'Affiliation', Icon: MegaphoneIcon, section: 'closer', roles: ['closer'] },
   { href: '/admin', label: 'Administration', Icon: ShieldIcon, section: 'admin', admin: true },

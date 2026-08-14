@@ -189,7 +189,7 @@ export default function VendorEarningsPage() {
   if (loading)
     return (
       <main>
-        <PageHeader eyebrow="// espace vendeur" title="Mes revenus & Versements" description="Vos gains de vente et versements" />
+        <PageHeader back="/vendor" eyebrow="// espace vendeur" title="Mes revenus & Versements" description="Vos gains de vente et versements" />
         <PageLoader />
       </main>
     );
@@ -197,6 +197,7 @@ export default function VendorEarningsPage() {
   return (
     <main>
       <PageHeader
+        back="/vendor"
         eyebrow="// espace vendeur"
         title="Mes revenus & Versements"
         description="Suivez vos gains, votre moyen de versement et l'historique de vos retraits"

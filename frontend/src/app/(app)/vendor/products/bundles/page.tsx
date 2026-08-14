@@ -8,7 +8,8 @@ import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/page-header';
 import { PageLoader } from '@/components/page-loader';
 import { EmptyState } from '@/components/empty-state';
-import { ArrowLeftIcon, TrashIcon } from '@/components/icons';
+import { ConfirmDialog } from '@/components/confirm-dialog';
+import { TrashIcon } from '@/components/icons';
 import { formatPrice } from '@/lib/constants';
 import { friendlyError } from '@/lib/error-messages';
 
@@ -24,6 +25,7 @@ export default function VendorBundlesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [toDelete, setToDelete] = useState<Bundle | null>(null);
 
   const load = () => {
     setLoading(true);
@@ -38,47 +40,43 @@ export default function VendorBundlesPage() {
     load();
   }, []);
 
-  const handleDelete = async (id: string) => {
-    if (!confirm('Supprimer ce pack ?')) return;
-    setDeletingId(id);
+  const handleDelete = async () => {
+    if (!toDelete) return;
+    setDeletingId(toDelete.id);
     try {
-      await api.deleteBundle(id);
+      await api.deleteBundle(toDelete.id);
       load();
     } catch (err: any) {
       setError(friendlyError(err));
     } finally {
       setDeletingId(null);
+      setToDelete(null);
     }
   };
 
   if (loading)
     return (
       <main>
-        <PageHeader eyebrow="// espace vendeur" title="Mes packs" />
+        <PageHeader back="/vendor" eyebrow="// espace vendeur" title="Mes packs" />
         <PageLoader />
       </main>
     );
 
   return (
-    <main>
+    <main className="relative min-h-screen pb-20">
       <PageHeader
+        back="/vendor"
         eyebrow="// espace vendeur"
         title="Mes packs"
-        description={`${bundles.length} pack(s)`}
+        description="Regroupez vos produits déjà publiés"
         actions={
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" render={<Link href="/vendor/products" />}>
-              <ArrowLeftIcon size={16} className="mr-2" />
-              Mes produits
-            </Button>
-            <Button size="sm" render={<Link href="/vendor/products/bundles/new" />}>
-              Créer un pack
-            </Button>
-          </div>
+          <Button size="sm" render={<Link href="/vendor/products/bundles/new" />}>
+            Créer un pack
+          </Button>
         }
       />
 
-      <section className="max-w-4xl mx-auto px-4 sm:px-6 py-10 space-y-3">
+      <section className="max-w-4xl mx-auto px-4 sm:px-6 py-6 space-y-3">
         {error && (
           <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded text-sm" role="alert">
             {error}
@@ -93,17 +91,17 @@ export default function VendorBundlesPage() {
           />
         ) : (
           bundles.map((bundle) => (
-            <Card key={bundle.id} className="border-green-900/5">
+            <Card key={bundle.id} className="border-green-900/10 rounded-2xl">
               <CardContent className="p-4 flex items-center justify-between gap-4">
                 <div className="min-w-0">
-                  <p className="font-medium text-green-950 truncate">{bundle.title}</p>
-                  <p className="text-xs font-mono text-green-900/50 mt-0.5">{formatPrice(bundle.price_cfa)}</p>
+                  <p className="font-bold text-green-950 truncate">{bundle.title}</p>
+                  <p className="text-xs font-mono text-green-900/50 mt-1">{formatPrice(bundle.price_cfa)}</p>
                 </div>
                 <Button
                   variant="ghost"
                   size="sm"
                   disabled={deletingId === bundle.id}
-                  onClick={() => handleDelete(bundle.id)}
+                  onClick={() => setToDelete(bundle)}
                   className="text-destructive hover:text-destructive gap-1.5"
                 >
                   <TrashIcon size={14} />
@@ -114,6 +112,28 @@ export default function VendorBundlesPage() {
           ))
         )}
       </section>
+
+      <ConfirmDialog
+        open={!!toDelete}
+        title="Supprimer ce pack ?"
+        description={`« ${toDelete?.title} » sera retiré de la boutique. Cette action est définitive.`}
+        confirmLabel="Supprimer"
+        cancelLabel="Annuler"
+        danger
+        onConfirm={handleDelete}
+        onCancel={() => setToDelete(null)}
+      />
+
+      <Link
+        href="/vendor/products/bundles/new"
+        aria-label="Nouveau pack"
+        className="sm:hidden fixed right-5 bottom-6 z-40 rounded-2xl bg-lime shadow-lg flex items-center justify-center"
+        style={{ width: 52, height: 52, boxShadow: '0 10px 22px -6px rgba(201,242,46,.55)' }}
+      >
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+          <path d="M12 5v14M5 12h14" stroke="#071F17" strokeWidth="2.4" strokeLinecap="round" />
+        </svg>
+      </Link>
     </main>
   );
 }

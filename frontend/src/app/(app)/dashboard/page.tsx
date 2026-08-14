@@ -20,7 +20,7 @@ export default function DashboardPage() {
   const descriptions: Record<string, string> = {
     '/catalog': 'Parcourir et acheter des produits',
     '/orders': 'Suivre mes achats et téléchargements',
-    '/vendor/products': 'Gérer mes produits et mes ventes',
+    '/vendor': 'Gérer ma boutique, mes produits et mes ventes',
     '/vendor/earnings': 'Solde et demandes de versement',
     '/closer/dashboard': 'Mes liens et mes commissions',
     '/admin': 'Modération et gestion de la plateforme',

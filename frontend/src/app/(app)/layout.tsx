@@ -19,6 +19,11 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   const links = visibleNavItems(user);
   const roles = userRoleLabels(user);
 
+  // L'espace vendeur a sa propre navigation (flèches retour + grille de
+  // raccourcis sur l'Accueil vendeur) : la barre mobile fixe du reste du
+  // site n'y a plus sa place et masquerait le bas de certains écrans.
+  const inVendorSpace = pathname.startsWith('/vendor');
+
   const isActive = (href: string) =>
     href === '/dashboard' ? pathname === href : pathname === href || pathname.startsWith(href + '/');
 
@@ -26,7 +31,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
   // le plus pertinent + le menu (qui ouvre le tiroir complet du header, toutes les sections).
   // Limité à 5 icônes pour éviter la troncature de texte sur petit écran (voir header.tsx).
   const contextualItem = user?.roles?.includes('vendeur')
-    ? { href: '/vendor/products', label: 'Vendre', Icon: StoreIcon }
+    ? { href: '/vendor', label: 'Vendre', Icon: StoreIcon }
     : user?.is_admin
       ? { href: '/admin', label: 'Admin', Icon: ShieldIcon }
       : null;
@@ -116,7 +121,7 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
 
           {/* Contenu : pb-24 (96px) pour ne jamais laisser la barre du bas fixe recouvrir le
               contenu en fin de défilement (voir espace vendeur / admin, ergonomie mobile). */}
-          <main className="flex-1 min-w-0 pb-24 md:pb-0">
+          <main className={cn('flex-1 min-w-0', !inVendorSpace && 'pb-24 md:pb-0')}>
 
             {/* Bannière de vérification en attente */}
             {user && !user.email_verified_at && (
@@ -138,40 +143,42 @@ export default function ClientLayout({ children }: { children: React.ReactNode }
           universels maximum + "Menu" qui ouvre le tiroir complet (header.tsx) pour les
           liens spécialisés (Administration, Support, Affiliation...). Évite la troncature
           de texte et le débordement horizontal observés avec les 7 liens précédents. */}
-      <nav
-        className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-white border-t border-green-900/10 pb-[env(safe-area-inset-bottom)]"
-        aria-label="Navigation mobile"
-      >
-        <div className="flex">
-          {mobileNavItems.map((l) => {
-            const active = isActive(l.href);
-            return (
-              <Link
-                key={l.href}
-                href={l.href}
-                aria-current={active ? 'page' : undefined}
-                className={cn(
-                  'flex-1 flex flex-col items-center justify-center gap-1 py-2.5 transition-colors',
-                  active ? 'text-green-700' : 'text-green-900/45'
-                )}
-              >
-                <l.Icon size={21} className={active ? 'text-green-700' : 'text-green-900/45'} />
-                <span className="text-[10.5px] font-medium leading-none truncate max-w-16 px-1">
-                  {l.label}
-                </span>
-              </Link>
-            );
-          })}
-          <button
-            type="button"
-            onClick={() => setMenuOpen(true)}
-            className="flex-1 flex flex-col items-center justify-center gap-1 py-2.5 text-green-900/45 transition-colors"
-          >
-            <MenuIcon size={21} />
-            <span className="text-[10.5px] font-medium leading-none truncate max-w-16 px-1">Menu</span>
-          </button>
-        </div>
-      </nav>
+      {!inVendorSpace && (
+        <nav
+          className="md:hidden fixed bottom-0 inset-x-0 z-50 bg-white border-t border-green-900/10 pb-[env(safe-area-inset-bottom)]"
+          aria-label="Navigation mobile"
+        >
+          <div className="flex">
+            {mobileNavItems.map((l) => {
+              const active = isActive(l.href);
+              return (
+                <Link
+                  key={l.href}
+                  href={l.href}
+                  aria-current={active ? 'page' : undefined}
+                  className={cn(
+                    'flex-1 flex flex-col items-center justify-center gap-1 py-2.5 transition-colors',
+                    active ? 'text-green-700' : 'text-green-900/45'
+                  )}
+                >
+                  <l.Icon size={21} className={active ? 'text-green-700' : 'text-green-900/45'} />
+                  <span className="text-[10.5px] font-medium leading-none truncate max-w-16 px-1">
+                    {l.label}
+                  </span>
+                </Link>
+              );
+            })}
+            <button
+              type="button"
+              onClick={() => setMenuOpen(true)}
+              className="flex-1 flex flex-col items-center justify-center gap-1 py-2.5 text-green-900/45 transition-colors"
+            >
+              <MenuIcon size={21} />
+              <span className="text-[10.5px] font-medium leading-none truncate max-w-16 px-1">Menu</span>
+            </button>
+          </div>
+        </nav>
+      )}
     </RequireAuth>
   );
 }

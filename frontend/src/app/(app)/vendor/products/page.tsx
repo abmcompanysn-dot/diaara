@@ -11,9 +11,19 @@ import { PageLoader } from '@/components/page-loader';
 import { EmptyState } from '@/components/empty-state';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { ProductImage } from '@/components/product-image';
+import { SegmentedTabs } from '@/components/segmented-tabs';
 import { StoreIcon, TrashIcon, EditIcon } from '@/components/icons';
 import { formatPrice, PRODUCT_STATUS_BADGE, PRODUCT_STATUS_LABELS, CATEGORY_LABELS } from '@/lib/constants';
 import { friendlyError } from '@/lib/error-messages';
+
+type StatusFilter = 'all' | 'approved' | 'pending' | 'rejected';
+
+const FILTERS: { value: StatusFilter; label: string }[] = [
+  { value: 'all', label: 'Tous' },
+  { value: 'approved', label: 'Approuvés' },
+  { value: 'pending', label: 'En attente' },
+  { value: 'rejected', label: 'Refusés' },
+];
 
 interface Product {
   id: string;
@@ -33,6 +43,7 @@ export default function VendorProductsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [toDelete, setToDelete] = useState<Product | null>(null);
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
 
   useEffect(() => {
     loadProducts();
@@ -62,10 +73,14 @@ export default function VendorProductsPage() {
     }
   };
 
+  const pendingCount = products.filter((p) => p.moderation_status === 'pending').length;
+  const filteredProducts = statusFilter === 'all' ? products : products.filter((p) => p.moderation_status === statusFilter);
+
   if (loading)
     return (
       <main>
         <PageHeader
+          back="/vendor"
           eyebrow="// espace vendeur"
           title="Mes produits"
           description="Gérez votre boutique"
@@ -75,11 +90,12 @@ export default function VendorProductsPage() {
     );
 
   return (
-    <main>
+    <main className="relative min-h-screen pb-20">
       <PageHeader
+        back="/vendor"
         eyebrow="// espace vendeur"
         title="Mes produits"
-        description={`${products.length} produit(s) en boutique`}
+        description={`${products.length} produit(s)${pendingCount > 0 ? ` · ${pendingCount} en attente de modération` : ''}`}
         actions={
           <>
             <Button variant="outline" size="sm" render={<Link href="/vendor/earnings" />}>
@@ -101,10 +117,16 @@ export default function VendorProductsPage() {
         }
       />
 
-      <section className="max-w-6xl mx-auto px-4 sm:px-6 py-10">
+      <section className="max-w-6xl mx-auto px-4 sm:px-6 py-6">
         {error && (
           <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded text-sm" role="alert">
             {error}
+          </div>
+        )}
+
+        {products.length > 0 && (
+          <div className="mb-5">
+            <SegmentedTabs options={FILTERS} value={statusFilter} onChange={setStatusFilter} />
           </div>
         )}
 
@@ -117,11 +139,13 @@ export default function VendorProductsPage() {
               <Button render={<Link href="/vendor/products/new" />}>Déposer mon premier produit</Button>
             }
           />
+        ) : filteredProducts.length === 0 ? (
+          <p className="text-sm text-green-900/50 text-center py-10">Aucun produit dans ce filtre.</p>
         ) : (
           <>
             {/* Vue mobile : cartes empilées, pas de scroll horizontal */}
             <div className="sm:hidden space-y-2">
-              {products.map((product) => (
+              {filteredProducts.map((product) => (
                 <div key={product.id} className="bg-white rounded-xl border border-green-900/10 shadow-card p-3.5">
                   <Link href={`/product?id=${product.id}`} className="flex items-center gap-3 group min-w-0">
                     <div className="w-12 h-12 rounded-lg overflow-hidden shrink-0 border border-green-900/10">
@@ -189,7 +213,7 @@ export default function VendorProductsPage() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {products.map((product) => (
+                  {filteredProducts.map((product) => (
                     <TableRow key={product.id}>
                       <TableCell>
                         <Link href={`/product?id=${product.id}`} className="flex items-center gap-3 group min-w-0">
@@ -262,6 +286,17 @@ export default function VendorProductsPage() {
         onConfirm={handleDelete}
         onCancel={() => setToDelete(null)}
       />
+
+      <Link
+        href="/vendor/products/new"
+        aria-label="Nouveau produit"
+        className="sm:hidden fixed right-5 bottom-6 z-40 w-13 h-13 rounded-2xl bg-lime shadow-lg flex items-center justify-center"
+        style={{ width: 52, height: 52, boxShadow: '0 10px 22px -6px rgba(201,242,46,.55)' }}
+      >
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+          <path d="M12 5v14M5 12h14" stroke="#071F17" strokeWidth="2.4" strokeLinecap="round" />
+        </svg>
+      </Link>
     </main>
   );
 }

@@ -1,16 +1,30 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import Link from 'next/link';
 import { useAuth } from '@/lib/auth';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { PageHeader } from '@/components/page-header';
 import { EmptyState } from '@/components/empty-state';
-import { ArrowLeftIcon } from '@/components/icons';
 import { firebaseEnabled } from '@/lib/firebase';
 import { listenToVendorInbox, type ConversationSummary } from '@/lib/chat';
 import { VendorChat } from '@/components/vendor-chat';
+
+const AVATAR_COLORS = ['#0E6B46', '#B8860B', '#5A3FBF', '#1F5FBF', '#B23B72', '#0E9E6D'];
+
+function initials(name: string): string {
+  return name
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((p) => p[0]?.toUpperCase())
+    .join('');
+}
+
+function avatarColor(id: string): string {
+  let hash = 0;
+  for (const ch of id) hash = (hash * 31 + ch.charCodeAt(0)) % AVATAR_COLORS.length;
+  return AVATAR_COLORS[hash];
+}
 
 export default function VendorMessagesPage() {
   const { user } = useAuth();
@@ -27,7 +41,7 @@ export default function VendorMessagesPage() {
   if (!firebaseEnabled || unavailable) {
     return (
       <main>
-        <PageHeader eyebrow="// espace vendeur" title="Messages" />
+        <PageHeader back="/vendor" eyebrow="// espace vendeur" title="Messages" />
         <section className="max-w-4xl mx-auto px-4 sm:px-6 py-10">
           <EmptyState title="Messagerie non configurée" description="La messagerie en direct n'est pas encore activée sur cette plateforme." />
         </section>
@@ -40,18 +54,13 @@ export default function VendorMessagesPage() {
   return (
     <main>
       <PageHeader
+        back="/vendor"
         eyebrow="// espace vendeur"
         title="Messages"
-        description={`${conversations.length} conversation(s)`}
-        actions={
-          <Button variant="outline" size="sm" render={<Link href="/vendor/products" />}>
-            <ArrowLeftIcon size={16} className="mr-2" />
-            Mes produits
-          </Button>
-        }
+        description="Discutez directement avec vos acheteurs"
       />
 
-      <section className="max-w-4xl mx-auto px-4 sm:px-6 py-10">
+      <section className="max-w-4xl mx-auto px-4 sm:px-6 py-6">
         {conversations.length === 0 ? (
           <EmptyState title="Aucune conversation" description="Les messages de vos clients apparaîtront ici en direct." />
         ) : (
@@ -62,12 +71,20 @@ export default function VendorMessagesPage() {
                   key={c.id}
                   type="button"
                   onClick={() => setActiveBuyerId(c.buyerId)}
-                  className={`w-full text-left p-3 rounded-lg border ${
+                  className={`w-full text-left p-3 rounded-2xl border flex items-center gap-3 ${
                     activeBuyerId === c.buyerId ? 'border-green-600 bg-green-50/60' : 'border-green-900/10 bg-white hover:bg-green-900/2'
                   }`}
                 >
-                  <p className="text-sm font-medium text-green-950 truncate">{c.buyerName}</p>
-                  <p className="text-xs text-green-900/50 truncate mt-0.5">{c.lastMessage}</p>
+                  <span
+                    className="w-10 h-10 rounded-xl flex items-center justify-center text-white text-xs font-extrabold shrink-0"
+                    style={{ background: avatarColor(c.buyerId) }}
+                  >
+                    {initials(c.buyerName)}
+                  </span>
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-green-950 truncate">{c.buyerName}</p>
+                    <p className="text-xs text-green-900/50 truncate mt-0.5">{c.lastMessage}</p>
+                  </div>
                 </button>
               ))}
             </div>
