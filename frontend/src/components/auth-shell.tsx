@@ -19,9 +19,8 @@ export function AuthShell({ children }: { children: React.ReactNode }) {
         <div className="wax-pattern absolute inset-0" aria-hidden />
         <div className="absolute bottom-0 right-0 w-96 h-96 bg-lime/15 rounded-full blur-3xl" aria-hidden />
 
-        <div className="relative flex items-center gap-2">
-          <span className="font-display text-2xl font-bold tracking-tight">DIARRA</span>
-          <span className="w-2 h-2 rounded-full bg-green-400 inline-block" aria-hidden />
+        <div className="relative flex items-center">
+          <img src="/brand/diarra-logo-white-text.svg" alt="DIARRA" className="h-8 w-auto" />
         </div>
 
         <div className="relative max-w-md">
