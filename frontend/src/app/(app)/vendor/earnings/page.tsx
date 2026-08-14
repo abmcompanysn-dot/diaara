@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -67,8 +68,10 @@ export default function VendorEarningsPage() {
   const [methodError, setMethodError] = useState('');
 
   const { toasts, toast, dismiss } = useToast();
+  const { user } = useAuth();
 
   const hasPayoutMethod = Boolean(payoutMethod?.operator);
+  const phoneVerified = Boolean(user?.phone_verified_at);
 
   useEffect(() => {
     loadEarnings();
@@ -133,13 +136,15 @@ export default function VendorEarningsPage() {
 
   const blockReason = !hasPayoutMethod
     ? "Ajoutez d'abord un moyen de versement pour demander un retrait."
-    : available <= 0
-      ? 'Aucun solde disponible pour le moment.'
-      : hasValidAmount && amountNum > available
-        ? 'Le montant dépasse votre solde disponible.'
-        : '';
+    : !phoneVerified
+      ? "Votre numéro de téléphone doit être vérifié avant de pouvoir retirer des fonds."
+      : available <= 0
+        ? 'Aucun solde disponible pour le moment.'
+        : hasValidAmount && amountNum > available
+          ? 'Le montant dépasse votre solde disponible.'
+          : '';
 
-  const canSubmit = hasPayoutMethod && hasValidAmount && amountNum <= available;
+  const canSubmit = hasPayoutMethod && phoneVerified && hasValidAmount && amountNum <= available;
 
   const handlePayout = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -191,13 +196,26 @@ export default function VendorEarningsPage() {
 
             <Button
               onClick={() => setSheetOpen(true)}
-              disabled={!hasPayoutMethod || available <= 0}
+              disabled={!hasPayoutMethod || !phoneVerified || available <= 0}
               className="mt-5 w-full sm:w-auto h-12 px-8 rounded-full bg-lime text-green-950 font-semibold hover:bg-green-300 text-base"
             >
               💸 Retirer mes fonds
             </Button>
             {!hasPayoutMethod && (
               <p className="mt-2 text-xs text-white/60">Ajoutez un moyen de versement ci-dessous pour activer les retraits.</p>
+            )}
+            {hasPayoutMethod && !phoneVerified && (
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-white/80 bg-white/10 rounded-lg px-3 py-2.5">
+                <span>Numéro de téléphone non vérifié — requis pour les retraits.</span>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="h-7 px-3 text-xs bg-transparent border-white/30 text-white hover:bg-white/10 hover:text-white"
+                  render={<Link href={user?.phone ? '/auth/verify-phone' : '/account'} />}
+                >
+                  Vérifier maintenant
+                </Button>
+              </div>
             )}
 
             <div className="mt-6 flex flex-wrap gap-x-8 gap-y-2 text-sm border-t border-white/15 pt-4">
