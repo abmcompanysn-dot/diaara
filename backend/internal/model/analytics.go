@@ -47,6 +47,7 @@ type AnalyticsOverview struct {
 type SystemHealth struct {
 	Database        string `json:"database"`         // "ok" | "error"
 	Storage         string `json:"storage"`          // "ok" | "error" | "disabled"
+	Email           string `json:"email"`            // "ok" | "disabled" (aucun fournisseur configuré)
 	UptimeSeconds   int64  `json:"uptime_seconds"`
 	GoroutineCount  int    `json:"goroutine_count"`
 	MemAllocMB      float64 `json:"mem_alloc_mb"`

@@ -262,7 +262,7 @@ func (h *WebhookHandler) PawaPayWebhook(w http.ResponseWriter, r *http.Request) 
 			return
 		}
 		if h.notifications != nil {
-			go h.notifyPaid(r.Context(), sale)
+			go h.notifyPaid(context.Background(), sale)
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "paid"})

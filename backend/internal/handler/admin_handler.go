@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/diarra/backend/internal/email"
 	"github.com/diarra/backend/internal/middleware"
 	"github.com/diarra/backend/internal/model"
 	"github.com/diarra/backend/internal/payment"
@@ -35,6 +36,7 @@ type AdminHandler struct {
 	storage       s3Pinger // nil si stockage objet non configuré
 	startTime     time.Time
 	pawapay       *payment.PawaPayClient
+	notifications *email.NotificationService // nil si aucun fournisseur email configuré
 }
 
 func NewAdminHandler(
@@ -50,6 +52,7 @@ func NewAdminHandler(
 	storage s3Pinger,
 	startTime time.Time,
 	pawapay *payment.PawaPayClient,
+	notifications *email.NotificationService,
 ) *AdminHandler {
 	return &AdminHandler{
 		productRepo:   productRepo,
@@ -64,6 +67,7 @@ func NewAdminHandler(
 		storage:       storage,
 		startTime:     startTime,
 		pawapay:       pawapay,
+		notifications: notifications,
 	}
 }
 
@@ -601,6 +605,12 @@ func (h *AdminHandler) SystemHealth(w http.ResponseWriter, r *http.Request) {
 		health.Storage = "error"
 	default:
 		health.Storage = "ok"
+	}
+
+	if h.notifications == nil {
+		health.Email = "disabled"
+	} else {
+		health.Email = "ok"
 	}
 
 	var mem runtime.MemStats

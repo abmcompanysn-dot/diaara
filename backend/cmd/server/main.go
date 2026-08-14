@@ -210,7 +210,7 @@ func main() {
 	ticketHandler := handler.NewTicketHandler(ticketRepo, adminPermRepo)
 
 	// Administration
-	adminHandler := handler.NewAdminHandler(productRepo, saleRepo, userRepo, referralRepo, adminPermRepo, payoutRepo, settingsRepo, ticketRepo, pool, storageHealthPinger, startTime, pawapay)
+	adminHandler := handler.NewAdminHandler(productRepo, saleRepo, userRepo, referralRepo, adminPermRepo, payoutRepo, settingsRepo, ticketRepo, pool, storageHealthPinger, startTime, pawapay, notifications)
 
 	r := chi.NewRouter()
 
