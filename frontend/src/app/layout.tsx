@@ -62,7 +62,14 @@ function Footer() {
           </div>
         </div>
         <div className="mt-10 pt-6 border-t border-white/10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 text-xs">
-          <p>© {new Date().getFullYear()} DIARRA. Tous droits réservés.</p>
+          <div className="flex flex-col sm:flex-row gap-1 sm:gap-4">
+            <p>© {new Date().getFullYear()} DIARRA. Tous droits réservés.</p>
+            <div className="flex gap-3">
+              <Link href="/mentions-legales" className="hover:text-lime">Mentions légales</Link>
+              <Link href="/confidentialite" className="hover:text-lime">Confidentialité</Link>
+              <Link href="/cgu" className="hover:text-lime">CGU</Link>
+            </div>
+          </div>
           <div className="flex items-center gap-4">
             {process.env.NEXT_PUBLIC_TIKTOK_URL && (
               <a
