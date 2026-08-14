@@ -45,6 +45,7 @@ function Footer() {
                 { logo: 'orange-money.png', label: 'Orange Money' },
                 { logo: 'mtn-momo.png', label: 'MTN MoMo' },
                 { logo: 'moov-money.png', label: 'Moov Money' },
+                { logo: 'wave.png', label: 'Wave' },
                 { logo: 'safaricom-mpesa.png', label: 'M-Pesa' },
                 { logo: 'vodacom.png', label: 'Vodacom' },
                 { logo: 'at-money.png', label: 'Airtel Money' },
@@ -57,7 +58,6 @@ function Footer() {
                   <img src={`/payments/${op.logo}`} alt={op.label} className="h-4 max-w-[56px] object-contain" />
                 </span>
               ))}
-              <span className="px-2 py-1 rounded bg-green-800 text-white/80 text-xs">Wave</span>
             </div>
           </div>
         </div>

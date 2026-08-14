@@ -278,9 +278,7 @@ export default function CheckoutView() {
                 <img src="/payments/orange-money.png" alt="Orange Money" className="h-6 object-contain" />
                 <img src="/payments/mtn-momo.png" alt="MTN MoMo" className="h-6 object-contain" />
                 <img src="/payments/moov-money.png" alt="Moov Money" className="h-6 object-contain" />
-                <span className="h-6 px-2.5 inline-flex items-center rounded bg-green-400 text-green-950 text-xs font-bold">
-                  Wave
-                </span>
+                <img src="/payments/wave.png" alt="Wave" className="h-6 object-contain" />
               </div>
             </div>
           </div>

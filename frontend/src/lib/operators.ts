@@ -66,7 +66,7 @@ export const PAYOUT_COUNTRIES: PayoutCountry[] = [
     phoneLength: 9,
     operators: [
       { label: 'Orange Money', provider: 'ORANGE_SEN', logo: 'orange-money.png' },
-      { label: 'Wave', provider: 'WAVE_SEN', badgeColor: 'bg-green-400', badgeText: 'text-green-950' },
+      { label: 'Wave', provider: 'WAVE_SEN', logo: 'wave.png' },
       { label: 'Free Money', provider: 'FREE_SEN', badgeColor: 'bg-white border border-green-900/15', badgeText: 'text-green-950' },
     ],
   },
@@ -78,7 +78,7 @@ export const PAYOUT_COUNTRIES: PayoutCountry[] = [
     operators: [
       { label: 'MTN MoMo', provider: 'MTN_MOMO_CIV', logo: 'mtn-momo.png' },
       { label: 'Orange Money', provider: 'ORANGE_CIV', logo: 'orange-money.png' },
-      { label: 'Wave', provider: 'WAVE_CIV', badgeColor: 'bg-green-400', badgeText: 'text-green-950' },
+      { label: 'Wave', provider: 'WAVE_CIV', logo: 'wave.png' },
     ],
   },
   {
