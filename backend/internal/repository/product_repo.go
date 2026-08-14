@@ -80,6 +80,28 @@ func (r *ProductRepo) FindByVendor(ctx context.Context, vendorID string) ([]*mod
 	return products, rows.Err()
 }
 
+// ListApprovedByVendor — produits publiés d'un vendeur, pour sa boutique
+// publique (page partageable via QR code).
+func (r *ProductRepo) ListApprovedByVendor(ctx context.Context, vendorID string) ([]*model.Product, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+productColumns+` FROM products WHERE vendor_id = $1 AND moderation_status = 'approved' ORDER BY created_at DESC`,
+		vendorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	products := []*model.Product{}
+	for rows.Next() {
+		p, err := scanProduct(rows)
+		if err != nil {
+			return nil, err
+		}
+		products = append(products, p)
+	}
+	return products, rows.Err()
+}
+
 func (r *ProductRepo) ListApproved(ctx context.Context, category, search string, limit, offset int) ([]*model.Product, error) {
 	query := `SELECT ` + productColumns + ` FROM products WHERE moderation_status = 'approved'`
 	args := []interface{}{}

@@ -14,6 +14,7 @@ import { Toaster } from '@/components/ui/toast';
 import { PageHeader } from '@/components/page-header';
 import { PageLoader } from '@/components/page-loader';
 import { PayoutMethodForm } from '@/components/payout-method-form';
+import { ShopShareCard } from '@/components/shop-share-card';
 import { ArrowLeftIcon, CheckIcon, DownloadIcon, WalletIcon, ChevronDownIcon } from '@/components/icons';
 import { formatPrice, PAYOUT_STATUS_BADGE, PAYOUT_STATUS_LABELS } from '@/lib/constants';
 import { friendlyError } from '@/lib/error-messages';
@@ -252,6 +253,9 @@ export default function VendorEarningsPage() {
             </div>
           </div>
         </div>
+
+        {/* Boutique partageable : QR code + lien */}
+        {user && <ShopShareCard vendorId={user.id} shopTitle={user.shop_name || user.display_name || 'Ma boutique'} />}
 
         {/* Moyen de versement */}
         <Card className="border-green-900/5">

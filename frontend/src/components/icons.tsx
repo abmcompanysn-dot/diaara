@@ -202,6 +202,16 @@ export const CopyIcon = (props: IconProps) => (
   </svg>
 );
 
+export const ShareIcon = (props: IconProps) => (
+  <svg {...base(props)}>
+    <circle cx="18" cy="5" r="3" />
+    <circle cx="6" cy="12" r="3" />
+    <circle cx="18" cy="19" r="3" />
+    <path d="M8.6 10.6 15.4 6.4" />
+    <path d="M8.6 13.4 15.4 17.6" />
+  </svg>
+);
+
 export const AlertTriangleIcon = (props: IconProps) => (
   <svg {...base(props)}>
     <path d="M12 3 2 20h20z" />

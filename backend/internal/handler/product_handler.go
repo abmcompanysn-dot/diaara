@@ -23,6 +23,7 @@ import (
 
 type ProductHandler struct {
 	productRepo *repository.ProductRepo
+	userRepo    *repository.UserRepo
 	storage     StorageService
 	frontendURL string
 }
@@ -34,8 +35,37 @@ type StorageService interface {
 	GenerateSignedURL(ctx context.Context, key string, expiry time.Duration) (string, error)
 }
 
-func NewProductHandler(productRepo *repository.ProductRepo, storage StorageService, frontendURL string) *ProductHandler {
-	return &ProductHandler{productRepo: productRepo, storage: storage, frontendURL: frontendURL}
+func NewProductHandler(productRepo *repository.ProductRepo, userRepo *repository.UserRepo, storage StorageService, frontendURL string) *ProductHandler {
+	return &ProductHandler{productRepo: productRepo, userRepo: userRepo, storage: storage, frontendURL: frontendURL}
+}
+
+// Shop — GET /api/vendors/{id}/shop (public). Boutique publique d'un
+// vendeur : son nom de boutique + ses produits approuvés, pour la page
+// partageable via QR code depuis son espace vendeur.
+func (h *ProductHandler) Shop(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	vendor, err := h.userRepo.FindByID(r.Context(), id)
+	if err != nil {
+		http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
+		return
+	}
+
+	products, err := h.productRepo.ListApprovedByVendor(r.Context(), id)
+	if err != nil {
+		http.Error(w, `{"error":"list_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"vendor": map[string]interface{}{
+			"id":           vendor.ID,
+			"display_name": vendor.DisplayName,
+			"shop_name":    vendor.ShopName,
+		},
+		"products": products,
+	})
 }
 
 // List — public, produits approuvés

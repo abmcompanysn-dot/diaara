@@ -187,7 +187,7 @@ func main() {
 	// Handlers
 	healthHandler := handler.NewHealthHandler(pool)
 	authHandler := handler.NewAuthHandler(authService, firebaseVerifier)
-	productHandler := handler.NewProductHandler(productRepo, storageService, os.Getenv("FRONTEND_URL"))
+	productHandler := handler.NewProductHandler(productRepo, userRepo, storageService, os.Getenv("FRONTEND_URL"))
 	saleHandler := handler.NewSaleHandler(saleRepo, productRepo, referralRepo, userRepo, settingsRepo, pawapay, notifications, os.Getenv("FRONTEND_URL"))
 	closerHandler := handler.NewCloserHandler(referralRepo, productRepo, os.Getenv("FRONTEND_URL"))
 	bundleHandler := handler.NewBundleHandler(bundleRepo, productRepo)
@@ -285,6 +285,9 @@ func main() {
 		r.Get("/{id}/cover", productHandler.Cover)
 		r.Get("/{id}/preview/{index}", productHandler.Preview)
 	})
+
+	// Boutique publique d'un vendeur (partageable via QR code)
+	r.Get("/api/vendors/{id}/shop", productHandler.Shop)
 
 	// Vendor product routes (vendeur authentifié + email vérifié)
 	r.Route("/api/vendor/products", func(r chi.Router) {

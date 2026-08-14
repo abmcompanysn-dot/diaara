@@ -124,6 +124,13 @@ export const api = {
 
   getProduct: (id: string) => fetchApi<{ product: any }>(`/api/products/${id}`),
 
+  // Boutique publique d'un vendeur (partageable via QR code)
+  getVendorShop: (vendorId: string) =>
+    fetchApi<{ vendor: { id: string; display_name: string | null; shop_name: string | null }; products: any[] }>(
+      `/api/vendors/${vendorId}/shop`,
+      { skipAuth: true }
+    ),
+
   createProduct: (data: {
     title: string;
     description: string;
