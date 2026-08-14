@@ -10,6 +10,7 @@ import { PageHeader } from '@/components/page-header';
 import { PageLoader } from '@/components/page-loader';
 import { EmptyState } from '@/components/empty-state';
 import { ConfirmDialog } from '@/components/confirm-dialog';
+import { ProductImage } from '@/components/product-image';
 import { StoreIcon, TrashIcon, EditIcon } from '@/components/icons';
 import { formatPrice, PRODUCT_STATUS_BADGE, PRODUCT_STATUS_LABELS, CATEGORY_LABELS } from '@/lib/constants';
 import { friendlyError } from '@/lib/error-messages';
@@ -18,8 +19,12 @@ interface Product {
   id: string;
   title: string;
   price_cfa: number;
+  price_mode?: string;
+  min_price_cfa?: number | null;
   category: string;
+  cover_image_key?: string;
   moderation_status: string;
+  preview_status?: string;
 }
 
 export default function VendorProductsPage() {
@@ -127,16 +132,33 @@ export default function VendorProductsPage() {
                 {products.map((product) => (
                   <TableRow key={product.id}>
                     <TableCell>
-                      <Link href={`/product?id=${product.id}`} className="font-medium text-primary">
-                        {product.title}
+                      <Link href={`/product?id=${product.id}`} className="flex items-center gap-3 group min-w-0">
+                        <div className="w-12 h-12 rounded-lg overflow-hidden shrink-0 border border-green-900/10">
+                          <ProductImage product={product} className="h-12" />
+                        </div>
+                        <span className="font-medium text-primary group-hover:underline line-clamp-2 min-w-0">
+                          {product.title}
+                        </span>
                       </Link>
                     </TableCell>
-                    <TableCell className="font-mono">{formatPrice(product.price_cfa)}</TableCell>
+                    <TableCell className="font-mono whitespace-nowrap">
+                      {product.price_mode === 'flexible' ? (
+                        <div>
+                          <Badge className="bg-lime/20 text-green-800 hover:bg-lime/20 mb-1">Prix libre</Badge>
+                          <p className="text-xs text-green-900/50">dès {formatPrice(product.min_price_cfa || 0)}</p>
+                        </div>
+                      ) : (
+                        formatPrice(product.price_cfa)
+                      )}
+                    </TableCell>
                     <TableCell>{CATEGORY_LABELS[product.category] || product.category}</TableCell>
                     <TableCell>
                       <Badge className={PRODUCT_STATUS_BADGE[product.moderation_status]}>
                         {PRODUCT_STATUS_LABELS[product.moderation_status] || product.moderation_status}
                       </Badge>
+                      {product.preview_status === 'pending' && (
+                        <p className="text-[11px] text-green-900/40 mt-1">Aperçu en cours…</p>
+                      )}
                     </TableCell>
                     <TableCell className="text-right space-x-1">
                       <Button

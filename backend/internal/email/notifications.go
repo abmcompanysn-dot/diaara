@@ -38,8 +38,8 @@ const emailLayout = `<!DOCTYPE html>
 
 <tr>
 <td style="background:linear-gradient(135deg,#0e4431 0%,#0f7a50 55%,#10a05f 100%);border-radius:16px 16px 0 0;padding:28px 32px;">
-<span style="font-family:Arial,Helvetica,sans-serif;font-size:26px;font-weight:800;color:#ffffff;letter-spacing:3px;">DIARRA</span>
-<span style="display:block;font-family:Consolas,'Courier New',monospace;font-size:12px;color:#c9f22e;margin-top:4px;letter-spacing:1px;">// produits numériques en FCFA</span>
+<img src="{{LOGO_URL}}" alt="DIARRA" height="28" style="height:28px;width:auto;display:block;border:0;">
+<span style="display:block;font-family:Consolas,'Courier New',monospace;font-size:12px;color:#c9f22e;margin-top:8px;letter-spacing:1px;">// produits numériques en FCFA</span>
 </td>
 </tr>
 
@@ -77,9 +77,13 @@ const ctaBlock = `<table role="presentation" cellpadding="0" cellspacing="0" sty
 <a href="{{URL}}" style="color:#0f7a50;text-decoration:underline;">Si le bouton ne s&rsquo;affiche pas, cliquez ici.</a>
 </p>`
 
-// renderEmail enveloppe le contenu dans le gabarit commun.
-func renderEmail(inner string) string {
-	return strings.Replace(emailLayout, "{{INNER}}", inner, 1)
+// renderEmail enveloppe le contenu dans le gabarit commun, logo DIARRA inclus
+// (URL absolue — obligatoire en email, les clients ne chargent pas de
+// fichiers locaux).
+func (n *NotificationService) renderEmail(inner string) string {
+	out := strings.Replace(emailLayout, "{{INNER}}", inner, 1)
+	logoURL := strings.TrimSuffix(n.frontendURL, "/") + "/brand/diarra-logo-white-text.png"
+	return strings.Replace(out, "{{LOGO_URL}}", logoURL, 1)
 }
 
 // contentHTML assemble titre + corps + (optionnel) bouton d'action.
@@ -114,7 +118,7 @@ func (n *NotificationService) SendWelcome(ctx context.Context, to string) error 
 		"Parcourir le catalogue",
 		n.frontendURL+"/catalog",
 	)
-	return n.client.Send(ctx, to, "Bienvenue sur DIARRA", renderEmail(inner))
+	return n.client.Send(ctx, to, "Bienvenue sur DIARRA", n.renderEmail(inner))
 }
 
 func (n *NotificationService) SendEmailVerification(ctx context.Context, to, token string) error {
@@ -125,7 +129,7 @@ func (n *NotificationService) SendEmailVerification(ctx context.Context, to, tok
 		"Vérifier mon email",
 		link,
 	)
-	return n.client.Send(ctx, to, "Vérifiez votre email", renderEmail(inner))
+	return n.client.Send(ctx, to, "Vérifiez votre email", n.renderEmail(inner))
 }
 
 func (n *NotificationService) SendPasswordReset(ctx context.Context, to, token string) error {
@@ -137,7 +141,7 @@ func (n *NotificationService) SendPasswordReset(ctx context.Context, to, token s
 		"Choisir un nouveau mot de passe",
 		link,
 	)
-	return n.client.Send(ctx, to, "Réinitialisation de votre mot de passe", renderEmail(inner))
+	return n.client.Send(ctx, to, "Réinitialisation de votre mot de passe", n.renderEmail(inner))
 }
 
 // SendOrderConfirmed — le lien pointe vers la page de suivi publique (par
@@ -148,7 +152,7 @@ func (n *NotificationService) SendOrderConfirmed(ctx context.Context, to, orderI
 	body := fmt.Sprintf(`<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Votre commande a été payée avec succès. Téléchargez votre fichier depuis le bouton ci-dessous.</p>
 <div style="margin:16px 0 0;padding:16px 18px;background-color:#f2f7f4;border-left:4px solid #0f7a50;border-radius:8px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#0a3225;">Commande <strong>%s</strong> &mdash; paiement confirmé.</div>`, orderID)
 	inner := contentHTML("Paiement confirmé !", body, "Télécharger mon fichier", link)
-	return n.client.Send(ctx, to, "Commande confirmée", renderEmail(inner))
+	return n.client.Send(ctx, to, "Commande confirmée", n.renderEmail(inner))
 }
 
 func (n *NotificationService) SendDeliveryReady(ctx context.Context, to, orderID string) error {
@@ -159,20 +163,20 @@ func (n *NotificationService) SendDeliveryReady(ctx context.Context, to, orderID
 		"Télécharger mon fichier",
 		link,
 	)
-	return n.client.Send(ctx, to, "Votre fichier est disponible", renderEmail(inner))
+	return n.client.Send(ctx, to, "Votre fichier est disponible", n.renderEmail(inner))
 }
 
 func (n *NotificationService) SendVendorSale(ctx context.Context, to, productTitle string, amount int) error {
 	body := fmt.Sprintf(`<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Le produit <strong>%s</strong> vient d&rsquo;être vendu.</p>
 <p style="margin:16px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Montant après commission plateforme de 15&nbsp;%% : <strong style="color:#0f7a50;">%s FCFA</strong></p>`, productTitle, formatCFA(amount))
 	inner := contentHTML("Nouvelle vente sur votre boutique !", body, "Voir mes revenus", n.frontendURL+"/vendor/earnings")
-	return n.client.Send(ctx, to, "Nouvelle vente !", renderEmail(inner))
+	return n.client.Send(ctx, to, "Nouvelle vente !", n.renderEmail(inner))
 }
 
 func (n *NotificationService) SendPayoutConfirmed(ctx context.Context, to string, amount int) error {
 	body := fmt.Sprintf(`<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Votre versement de <strong style="color:#0f7a50;">%s FCFA</strong> a été traité avec succès.</p>`, formatCFA(amount))
 	inner := contentHTML("Versement effectué", body, "Voir mes revenus", n.frontendURL+"/vendor/earnings")
-	return n.client.Send(ctx, to, "Versement confirmé", renderEmail(inner))
+	return n.client.Send(ctx, to, "Versement confirmé", n.renderEmail(inner))
 }
 
 func (n *NotificationService) SendOTP(ctx context.Context, to, code, purpose string) error {
@@ -180,5 +184,5 @@ func (n *NotificationService) SendOTP(ctx context.Context, to, code, purpose str
 	body := fmt.Sprintf(`<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Votre code de vérification pour %s est : <strong style="font-size:20px;color:#0f7a50;">%s</strong></p>
 <p style="margin:16px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.6;color:#6b7c74;">Ce code expire dans 10 minutes. Ne le partagez avec personne.</p>`, purpose, code)
 	inner := contentHTML("Vérification du compte", body, "", "")
-	return n.client.Send(ctx, to, subject, renderEmail(inner))
+	return n.client.Send(ctx, to, subject, n.renderEmail(inner))
 }

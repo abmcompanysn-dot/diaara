@@ -36,6 +36,7 @@ export function openSaleReceipt(sale: ReceiptSale, product?: ReceiptProduct | nu
 <style>
   * { box-sizing: border-box; }
   body { font-family: -apple-system, Segoe UI, Arial, sans-serif; color: #0a1f16; padding: 32px; max-width: 420px; margin: 0 auto; }
+  .logo { height: 28px; margin-bottom: 16px; }
   h1 { font-size: 18px; margin: 0 0 2px; }
   .sub { color: #4b6358; font-size: 12px; margin-bottom: 24px; }
   .row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #e3ece7; font-size: 13px; }
@@ -47,7 +48,8 @@ export function openSaleReceipt(sale: ReceiptSale, product?: ReceiptProduct | nu
 </style>
 </head>
 <body>
-  <h1>DIARRA — Reçu d'achat</h1>
+  <img class="logo" src="${window.location.origin}/brand/diarra-logo-dark-text.png" alt="DIARRA" />
+  <h1>Reçu d'achat</h1>
   <p class="sub">Référence ${reference}</p>
 
   <div class="row"><span>Client</span><span>${escapeHtml(sale.buyer_name) || '—'}</span></div>
