@@ -158,6 +158,17 @@ Montant payé : <strong>%s FCFA</strong>
 	return n.client.Send(ctx, to, "Commande confirmée", n.renderEmail(inner))
 }
 
+// SendPaymentFailed — envoyé quand PawaPay confirme l'échec d'un paiement
+// (fonds insuffisants, opération annulée par le client, etc.). Le lien
+// renvoie vers la fiche produit pour retenter l'achat facilement.
+func (n *NotificationService) SendPaymentFailed(ctx context.Context, to, buyerName, productTitle, productID string) error {
+	link := fmt.Sprintf("%s/product?id=%s", n.frontendURL, productID)
+	body := fmt.Sprintf(`<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Bonjour %s, votre paiement pour <strong>%s</strong> n&rsquo;a pas abouti.</p>
+<p style="margin:16px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#6b7c74;">Ça arrive quand le solde mobile money est insuffisant, ou si l&rsquo;opération a été annulée pendant la validation. Aucun montant n&rsquo;a été débité pour cette tentative. Vous pouvez réessayer directement depuis le bouton ci-dessous.</p>`, buyerName, productTitle)
+	inner := contentHTML("Le paiement n'a pas abouti", body, "Réessayer le paiement", link)
+	return n.client.Send(ctx, to, "Votre paiement n'a pas abouti", n.renderEmail(inner))
+}
+
 func (n *NotificationService) SendDeliveryReady(ctx context.Context, to, orderID string) error {
 	link := fmt.Sprintf("%s/orders/%s", n.frontendURL, orderID)
 	inner := contentHTML(

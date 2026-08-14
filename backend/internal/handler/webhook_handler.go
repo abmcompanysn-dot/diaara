@@ -268,9 +268,25 @@ func (h *WebhookHandler) PawaPayWebhook(w http.ResponseWriter, r *http.Request) 
 			http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
 			return
 		}
+		if h.notifications != nil {
+			go h.notifyFailed(context.Background(), sale)
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": status.Data.Status})
+}
+
+// notifyFailed envoie l'email d'échec de paiement à l'acheteur.
+func (h *WebhookHandler) notifyFailed(ctx context.Context, sale *model.Sale) {
+	buyer, err := h.userRepo.FindByID(ctx, sale.BuyerID)
+	if err != nil || buyer.Email == "" {
+		return
+	}
+	product, err := h.productRepo.FindByID(ctx, sale.ProductID)
+	if err != nil {
+		return
+	}
+	h.notifications.SendPaymentFailed(ctx, buyer.Email, sale.BuyerName, product.Title, product.ID)
 }
 
 // verifyContentDigest vérifie le header Content-Digest (RFC 9530) : "sha-256=:base64:".
