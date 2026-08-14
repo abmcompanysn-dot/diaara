@@ -45,6 +45,12 @@ interface PayoutMethod {
   country: string | null;
 }
 
+interface VendorSale {
+  vendor_amount_cfa: number;
+  status: string;
+  created_at: string;
+}
+
 const STATUS_DOT: Record<string, string> = {
   paid: 'bg-green-500',
   processing: 'bg-blue-500',
@@ -55,6 +61,7 @@ const STATUS_DOT: Record<string, string> = {
 export default function VendorEarningsPage() {
   const [totalEarned, setTotalEarned] = useState(0);
   const [available, setAvailable] = useState(0);
+  const [last7Days, setLast7Days] = useState(0);
   const [history, setHistory] = useState<Payout[]>([]);
   const [amount, setAmount] = useState('');
   const [loading, setLoading] = useState(true);
@@ -79,6 +86,7 @@ export default function VendorEarningsPage() {
     loadEarnings();
     loadPayoutMethod();
     loadPayoutLimits();
+    loadLast7Days();
   }, []);
 
   const loadEarnings = async () => {
@@ -92,6 +100,21 @@ export default function VendorEarningsPage() {
       toast({ variant: 'error', title: 'Chargement impossible', description: friendlyError(err) });
     } finally {
       setLoading(false);
+    }
+  };
+
+  // Revenu net (part vendeur) des 7 derniers jours — même règle que le total
+  // gagné côté backend : seules les ventes "paid"/"delivered" comptent.
+  const loadLast7Days = async () => {
+    try {
+      const result = await api.getVendorSales();
+      const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+      const sum = (result.sales as VendorSale[])
+        .filter((s) => (s.status === 'paid' || s.status === 'delivered') && new Date(s.created_at).getTime() >= sevenDaysAgo)
+        .reduce((acc, s) => acc + (s.vendor_amount_cfa || 0), 0);
+      setLast7Days(sum);
+    } catch {
+      // Pas grave : le reste de la page (solde, historique) reste utilisable.
     }
   };
 
@@ -241,6 +264,9 @@ export default function VendorEarningsPage() {
             )}
 
             <div className="mt-6 flex flex-wrap gap-x-8 gap-y-2 text-sm border-t border-white/15 pt-4">
+              <p className="text-white/70">
+                7 derniers jours <span className="block sm:inline font-mono font-semibold text-lime">{formatPrice(last7Days)}</span>
+              </p>
               <p className="text-white/70">
                 En attente <span className="block sm:inline font-mono font-semibold text-white">{formatPrice(inProgress)}</span>
               </p>
