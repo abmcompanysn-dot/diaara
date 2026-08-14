@@ -164,10 +164,19 @@ export default function EditProduct() {
         eyebrow="// espace vendeur"
         title="Modifier le produit"
         actions={
-          <Button variant="outline" size="sm" render={<Link href="/vendor/products" />}>
-            <ArrowLeftIcon size={16} className="mr-2" />
-            Mes produits
-          </Button>
+          <>
+            <Button
+              variant="outline"
+              size="sm"
+              render={<Link href={`/product?id=${id}`} target="_blank" />}
+            >
+              Voir la fiche client
+            </Button>
+            <Button variant="outline" size="sm" render={<Link href="/vendor/products" />}>
+              <ArrowLeftIcon size={16} className="mr-2" />
+              Mes produits
+            </Button>
+          </>
         }
       />
 

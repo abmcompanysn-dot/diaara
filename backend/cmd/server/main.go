@@ -466,6 +466,10 @@ func main() {
 		r.Post("/{id}/messages", ticketHandler.AddMessage)
 	})
 
+	// Relance les aperçus filigranés restés bloqués "pending" suite à un
+	// redémarrage précédent survenu pendant leur génération.
+	go productHandler.RecoverStuckPreviews(context.Background())
+
 	port := os.Getenv("PORT")
 	if port == "" {
 		port = "8080"

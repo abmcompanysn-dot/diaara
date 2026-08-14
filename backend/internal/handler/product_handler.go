@@ -214,6 +214,11 @@ func (h *ProductHandler) Cover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Sans ça, le navigateur retélécharge l'image à chaque affichage (une
+	// URL signée différente est générée à chaque appel, donc rien n'est
+	// jamais reconnu comme "déjà en cache") — 1h ici, aligné sur la durée
+	// de validité de l'URL signée elle-même.
+	w.Header().Set("Cache-Control", "public, max-age=3600")
 	http.Redirect(w, r, url, http.StatusFound)
 }
 
@@ -258,6 +263,7 @@ func (h *ProductHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	w.Header().Set("Cache-Control", "public, max-age=3600")
 	http.Redirect(w, r, url, http.StatusFound)
 }
 
@@ -567,6 +573,28 @@ func (h *ProductHandler) AttachFile(w http.ResponseWriter, r *http.Request) {
 // generatePreview construit les aperçus filigranés en tâche de fond (peut
 // prendre de quelques secondes à ~1 min selon le fichier) puis enregistre
 // le résultat. Appelé après la réponse HTTP, sans bloquer le vendeur.
+// RecoverStuckPreviews relance la génération d'aperçu pour les produits
+// restés bloqués en "pending" (interrompus par un redéploiement pendant la
+// génération — voir ListPendingPreviews). Appelé une fois au démarrage du
+// serveur.
+func (h *ProductHandler) RecoverStuckPreviews(ctx context.Context) {
+	if h.storage == nil {
+		return
+	}
+	products, err := h.productRepo.ListPendingPreviews(ctx)
+	if err != nil {
+		log.Printf("preview: échec de la liste des aperçus bloqués: %v", err)
+		return
+	}
+	if len(products) == 0 {
+		return
+	}
+	log.Printf("preview: relance de %d aperçu(s) bloqué(s)", len(products))
+	for _, p := range products {
+		go h.generatePreview(p.VendorID, p.ID, p.FileKey)
+	}
+}
+
 func (h *ProductHandler) generatePreview(vendorID, productID, fileKey string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()

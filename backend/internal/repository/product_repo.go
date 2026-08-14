@@ -160,6 +160,31 @@ func (r *ProductRepo) ListPending(ctx context.Context) ([]*model.Product, error)
 	return products, rows.Err()
 }
 
+// ListPendingPreviews — produits dont l'aperçu filigrané n'a jamais abouti
+// (preview_status="pending" avec un fichier déjà présent). La génération
+// tourne en goroutine détachée (voir ProductHandler.generatePreview) : un
+// redéploiement pendant qu'elle tourne la tue sans jamais mettre à jour le
+// statut, laissant le produit bloqué "pending" indéfiniment. Utilisé au
+// démarrage pour relancer ces générations interrompues.
+func (r *ProductRepo) ListPendingPreviews(ctx context.Context) ([]*model.Product, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+productColumns+` FROM products WHERE preview_status = 'pending' AND file_key != '' ORDER BY created_at`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	products := []*model.Product{}
+	for rows.Next() {
+		p, err := scanProduct(rows)
+		if err != nil {
+			return nil, err
+		}
+		products = append(products, p)
+	}
+	return products, rows.Err()
+}
+
 // ListForAdmin — tous les produits (ou filtrés par statut) avec l'email du
 // vendeur joint, pour l'écran de modération admin. status vide = tous statuts.
 func (r *ProductRepo) ListForAdmin(ctx context.Context, status string) ([]*model.AdminProduct, error) {
