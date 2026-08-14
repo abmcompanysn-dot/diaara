@@ -9,6 +9,7 @@ import { PageHeader } from '@/components/page-header';
 import { PageLoader } from '@/components/page-loader';
 import { EmptyState } from '@/components/empty-state';
 import { ConfirmDialog } from '@/components/confirm-dialog';
+import { Textarea } from '@/components/ui/textarea';
 import { PRODUCT_STATUS_BADGE, PRODUCT_STATUS_LABELS, CATEGORY_LABELS } from '@/lib/constants';
 import { friendlyError } from '@/lib/error-messages';
 
@@ -28,6 +29,7 @@ export default function AdminProductsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [toModerate, setToModerate] = useState<{id: string, status: string} | null>(null);
+  const [rejectNote, setRejectNote] = useState('');
 
   useEffect(() => {
     loadProducts();
@@ -48,12 +50,16 @@ export default function AdminProductsPage() {
   const handleModerate = async () => {
     if (!toModerate) return;
     try {
-      await api.moderateProduct(toModerate.id, { status: toModerate.status });
+      await api.moderateProduct(toModerate.id, {
+        status: toModerate.status,
+        ...(toModerate.status === 'rejected' && rejectNote.trim() ? { note: rejectNote.trim() } : {}),
+      });
       setProducts(products.filter((p) => p.id !== toModerate.id));
     } catch (err: any) {
       setError(friendlyError(err));
     } finally {
       setToModerate(null);
+      setRejectNote('');
     }
   };
 
@@ -146,8 +152,26 @@ export default function AdminProductsPage() {
         cancelLabel="Annuler"
         danger={toModerate?.status === 'rejected'}
         onConfirm={handleModerate}
-        onCancel={() => setToModerate(null)}
-      />
+        onCancel={() => {
+          setToModerate(null);
+          setRejectNote('');
+        }}
+      >
+        {toModerate?.status === 'rejected' && (
+          <div className="space-y-1.5">
+            <label htmlFor="reject-note" className="text-xs font-medium text-green-900/70">
+              Raison du refus (envoyée au vendeur)
+            </label>
+            <Textarea
+              id="reject-note"
+              value={rejectNote}
+              onChange={(e) => setRejectNote(e.target.value)}
+              placeholder="Ex : image de couverture floue, description incomplète..."
+              className="min-h-20 text-sm"
+            />
+          </div>
+        )}
+      </ConfirmDialog>
     </main>
   );
 }

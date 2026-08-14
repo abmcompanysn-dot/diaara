@@ -9,6 +9,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { PageHeader } from '@/components/page-header';
 import { PageLoader } from '@/components/page-loader';
 import { EmptyState } from '@/components/empty-state';
+import { ConfirmDialog } from '@/components/confirm-dialog';
 import { formatPrice, SALE_STATUS_BADGE, ORDER_STATUS_LABELS } from '@/lib/constants';
 import { friendlyError } from '@/lib/error-messages';
 import { openSaleReceipt } from '@/lib/sale-receipt';
@@ -34,6 +35,7 @@ export default function AdminSalesPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [refundingId, setRefundingId] = useState<string | null>(null);
+  const [refundTarget, setRefundTarget] = useState<Sale | null>(null);
 
   useEffect(() => {
     loadSales();
@@ -52,13 +54,7 @@ export default function AdminSalesPage() {
   };
 
   const handleRefund = async (sale: Sale) => {
-    if (
-      !confirm(
-        `Rembourser ${formatPrice(sale.amount_cfa)} à l'acheteur ? Cette action envoie réellement l'argent via PawaPay et ne peut pas être annulée.`
-      )
-    ) {
-      return;
-    }
+    setRefundTarget(null);
     setRefundingId(sale.id);
     setError('');
     try {
@@ -148,7 +144,7 @@ export default function AdminSalesPage() {
                             variant="outline"
                             size="sm"
                             disabled={refundingId === sale.id}
-                            onClick={() => handleRefund(sale)}
+                            onClick={() => setRefundTarget(sale)}
                           >
                             {refundingId === sale.id ? 'Remboursement…' : 'Rembourser'}
                           </Button>
@@ -171,6 +167,21 @@ export default function AdminSalesPage() {
           </div>
         )}
       </section>
+
+      <ConfirmDialog
+        open={!!refundTarget}
+        title="Rembourser cette vente ?"
+        description={
+          refundTarget
+            ? `${formatPrice(refundTarget.amount_cfa)} seront renvoyés à l'acheteur via PawaPay. Cette action envoie réellement l'argent et ne peut pas être annulée.`
+            : undefined
+        }
+        confirmLabel="Rembourser"
+        cancelLabel="Annuler"
+        danger
+        onConfirm={() => refundTarget && handleRefund(refundTarget)}
+        onCancel={() => setRefundTarget(null)}
+      />
     </main>
   );
 }

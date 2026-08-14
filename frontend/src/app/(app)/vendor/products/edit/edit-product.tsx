@@ -39,6 +39,7 @@ export default function EditProduct() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [status, setStatus] = useState('');
+  const [moderationNote, setModerationNote] = useState('');
 
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
@@ -66,6 +67,7 @@ export default function EditProduct() {
         setAffiliateEnabled(product.affiliate_enabled);
         setMaxCommission(String(product.max_closer_commission_pct || 10));
         setStatus(product.moderation_status);
+        setModerationNote(product.moderation_note || '');
       })
       .catch((err: any) => setError(friendlyError(err)))
       .finally(() => setLoading(false));
@@ -159,6 +161,15 @@ export default function EditProduct() {
             et visible dans le catalogue. Enregistrer une modification le repassera en{' '}
             <Badge className={PRODUCT_STATUS_BADGE.pending}>{PRODUCT_STATUS_LABELS.pending}</Badge>{' '}
             le temps qu&apos;un administrateur le revalide.
+          </div>
+        )}
+
+        {status === 'rejected' && (
+          <div className="mb-4 p-3 bg-destructive/10 border border-destructive/20 text-destructive rounded-lg text-sm">
+            <span className="font-semibold">Produit refusé —</span>{' '}
+            {moderationNote
+              ? moderationNote
+              : "aucune raison n'a été précisée. Corrigez ce qui vous semble nécessaire puis enregistrez pour soumettre à nouveau."}
           </div>
         )}
 

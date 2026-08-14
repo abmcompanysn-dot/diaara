@@ -5,6 +5,7 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { friendlyError } from '@/lib/error-messages';
 
 interface OtpFormProps {
   channel: 'email' | 'sms';
@@ -52,7 +53,7 @@ export function OtpForm({ channel, title, description, onVerified, onSkip, skipL
       await refresh();
       onVerified();
     } catch (err: any) {
-      setError(err.message || 'Code invalide ou expiré');
+      setError(friendlyError(err));
     } finally {
       setVerifying(false);
     }
@@ -67,7 +68,7 @@ export function OtpForm({ channel, title, description, onVerified, onSkip, skipL
       else setInfo('Code renvoyé. Vérifiez vos messages.');
       startCooldown();
     } catch (err: any) {
-      setError(err.message || "Impossible de renvoyer le code");
+      setError(friendlyError(err));
     } finally {
       setSending(false);
     }

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { Button } from '@/components/ui/button';
 import { AlertTriangleIcon } from '@/components/icons';
 
@@ -13,6 +13,7 @@ interface ConfirmDialogProps {
   danger?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
+  children?: ReactNode;
 }
 
 /**
@@ -28,6 +29,7 @@ export function ConfirmDialog({
   danger = false,
   onConfirm,
   onCancel,
+  children,
 }: ConfirmDialogProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const cancelRef = useRef<HTMLButtonElement>(null);
@@ -105,6 +107,7 @@ export function ConfirmDialog({
             )}
           </div>
         </div>
+        {children && <div className="mt-4">{children}</div>}
         <div className="mt-6 flex justify-end gap-3">
           <Button ref={cancelRef} variant="outline" onClick={onCancel}>
             {cancelLabel}

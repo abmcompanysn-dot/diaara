@@ -9,6 +9,7 @@ import { PageHeader } from '@/components/page-header';
 import { PageLoader } from '@/components/page-loader';
 import { SalesChart } from '@/components/sales-chart';
 import { AdminNotificationBell } from '@/components/admin-notification-bell';
+import { ConfirmDialog } from '@/components/confirm-dialog';
 import { friendlyError } from '@/lib/error-messages';
 import { PAYOUT_STATUS_BADGE, PAYOUT_STATUS_LABELS } from '@/lib/constants';
 
@@ -62,6 +63,7 @@ export default function AdminDashboardPage() {
   const [activity, setActivity] = useState<{ kind: string; id: string; at: string; data: any }[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [retryTarget, setRetryTarget] = useState<string | null>(null);
 
   useEffect(() => {
     loadAll();
@@ -93,6 +95,7 @@ export default function AdminDashboardPage() {
   };
 
   const handleRetry = async (id: string) => {
+    setRetryTarget(null);
     try {
       await api.retryPayout(id);
       loadAll();
@@ -229,7 +232,7 @@ export default function AdminDashboardPage() {
                         {PAYOUT_STATUS_LABELS[p.status] || p.status}
                       </Badge>
                       {p.status === 'failed' && (
-                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => handleRetry(p.id)}>
+                        <Button size="sm" variant="ghost" className="h-7 px-2 text-xs" onClick={() => setRetryTarget(p.id)}>
                           Relancer
                         </Button>
                       )}
@@ -338,6 +341,19 @@ export default function AdminDashboardPage() {
           </div>
         </div>
       </section>
+
+      <ConfirmDialog
+        open={!!retryTarget}
+        title="Relancer ce versement ?"
+        description={(() => {
+          const p = payouts.find((x) => x.id === retryTarget);
+          return p ? `Un nouveau versement de ${money(p.amount_cfa)} vers ${p.user_email} sera envoyé via PawaPay.` : undefined;
+        })()}
+        confirmLabel="Relancer"
+        cancelLabel="Annuler"
+        onConfirm={() => retryTarget && handleRetry(retryTarget)}
+        onCancel={() => setRetryTarget(null)}
+      />
     </main>
   );
 }

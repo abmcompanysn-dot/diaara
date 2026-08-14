@@ -15,6 +15,7 @@ export const ORDER_STATUS_LABELS: Record<string, string> = {
   paid: 'Payé',
   delivered: 'Livré',
   failed: 'Échec',
+  refund_pending: 'Remboursement en cours',
   refunded: 'Remboursé',
 };
 
@@ -24,6 +25,7 @@ export const SALE_STATUS_BADGE: Record<string, string> = {
   paid: 'bg-green-100 text-green-700 hover:bg-green-100',
   delivered: 'bg-green-100 text-green-700 hover:bg-green-100',
   failed: 'bg-red-100 text-red-700 hover:bg-red-100',
+  refund_pending: 'bg-blue-100 text-blue-700 hover:bg-blue-100',
   refunded: 'bg-gray-100 text-gray-600 hover:bg-gray-100',
 };
 

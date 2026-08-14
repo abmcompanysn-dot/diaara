@@ -14,6 +14,16 @@ const ERROR_MESSAGES: Record<string, string> = {
   email_required: "L'email est requis.",
   password_too_short: 'Le mot de passe doit contenir au moins 8 caractères.',
 
+  // Vérification par code (OTP)
+  channel_and_code_required: 'Merci de saisir le code reçu.',
+  channel_required: 'Canal de vérification manquant.',
+  invalid_channel: 'Canal de vérification invalide.',
+  invalid_or_expired_code: 'Ce code est invalide ou a expiré, réessayez ou demandez-en un nouveau.',
+  too_many_attempts: 'Trop de tentatives, merci de demander un nouveau code.',
+  verification_failed: 'La vérification a échoué, réessayez.',
+  resend_too_soon: "Merci de patienter avant de redemander un code.",
+  send_failed: "Impossible d'envoyer le code, réessayez.",
+
   // Checkout / commandes
   name_required: 'Merci d\'indiquer votre nom complet.',
   country_required: 'Merci de choisir votre pays.',

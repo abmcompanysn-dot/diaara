@@ -24,6 +24,7 @@ interface Product {
   category: string;
   cover_image_key?: string;
   moderation_status: string;
+  moderation_note?: string | null;
   preview_status?: string;
 }
 
@@ -148,6 +149,9 @@ export default function VendorProductsPage() {
                       {product.preview_status === 'pending' && (
                         <p className="text-[11px] text-green-900/40 mt-1">Aperçu en cours…</p>
                       )}
+                      {product.moderation_status === 'rejected' && product.moderation_note && (
+                        <p className="text-[11px] text-red-600 mt-1 max-w-[200px]">{product.moderation_note}</p>
+                      )}
                     </div>
                     <div className="flex gap-1 shrink-0">
                       <Button
@@ -214,6 +218,9 @@ export default function VendorProductsPage() {
                         </Badge>
                         {product.preview_status === 'pending' && (
                           <p className="text-[11px] text-green-900/40 mt-1">Aperçu en cours…</p>
+                        )}
+                        {product.moderation_status === 'rejected' && product.moderation_note && (
+                          <p className="text-[11px] text-red-600 mt-1 max-w-[200px]">{product.moderation_note}</p>
                         )}
                       </TableCell>
                       <TableCell className="text-right space-x-1">
