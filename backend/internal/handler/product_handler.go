@@ -395,6 +395,102 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"product": product})
 }
 
+// AutoCreate — POST /api/admin/products/auto (admin authentifié uniquement).
+// Endpoint pensé pour une automatisation externe (script / IA) : un seul
+// appel multipart combine l'upload du fichier et la création du produit
+// (au lieu des deux étapes upload → create utilisées par le formulaire
+// vendeur normal). Le fichier envoyé sert à la fois de couverture et de
+// fichier livré à l'acheteur — adapté à la vente de visuels/templates où
+// l'image EST le produit. Le produit créé passe par la modération
+// normale (moderation_status = "pending"), comme n'importe quel produit.
+//
+// Champs multipart attendus :
+//   - file          : le fichier (image/template)
+//   - vendor_id     : optionnel, compte vendeur cible (défaut : l'admin appelant)
+//   - title         : requis
+//   - description   : optionnel
+//   - price_cfa     : requis, entier
+//   - category      : requis (voir CATEGORY_LABELS côté frontend pour les valeurs valides)
+func (h *ProductHandler) AutoCreate(w http.ResponseWriter, r *http.Request) {
+	adminID := middleware.GetUserID(r.Context())
+	if adminID == "" {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	if h.storage == nil {
+		http.Error(w, `{"error":"storage_not_configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	if err := r.ParseMultipartForm(50 << 20); err != nil { // 50MB max
+		http.Error(w, `{"error":"file_too_large"}`, http.StatusBadRequest)
+		return
+	}
+
+	title := r.FormValue("title")
+	description := r.FormValue("description")
+	category := r.FormValue("category")
+	priceStr := r.FormValue("price_cfa")
+	vendorID := r.FormValue("vendor_id")
+	if vendorID == "" {
+		vendorID = adminID
+	}
+
+	priceCFA, err := strconv.Atoi(priceStr)
+	if title == "" || category == "" || err != nil || priceCFA < 0 {
+		http.Error(w, `{"error":"title_price_category_file_required"}`, http.StatusBadRequest)
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, `{"error":"file_required"}`, http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(file)
+	if err != nil {
+		http.Error(w, `{"error":"read_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	key := storage.NewFileKey(vendorID, header.Filename)
+	if err := h.storage.Upload(r.Context(), key, data); err != nil {
+		http.Error(w, `{"error":"upload_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	coverKey := "covers/" + key
+	if err := h.storage.Upload(r.Context(), coverKey, data); err != nil {
+		http.Error(w, `{"error":"upload_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	input := model.CreateProductInput{
+		Title:         title,
+		Category:      category,
+		FileKey:       key,
+		CoverImageKey: coverKey,
+		PriceCFA:      priceCFA,
+	}
+	if description != "" {
+		input.Description = &description
+	}
+
+	product, err := h.productRepo.Create(r.Context(), input, vendorID)
+	if err != nil {
+		http.Error(w, `{"error":"creation_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	go h.generatePreview(vendorID, product.ID, product.FileKey)
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]interface{}{"product": product})
+}
+
 // generatePreview construit les aperçus filigranés en tâche de fond (peut
 // prendre de quelques secondes à ~1 min selon le fichier) puis enregistre
 // le résultat. Appelé après la réponse HTTP, sans bloquer le vendeur.

@@ -395,6 +395,9 @@ func main() {
 			r.Get("/products/pending", adminHandler.PendingProducts)
 			r.Get("/products", adminHandler.ListProducts)
 			r.Put("/products/{id}/moderate", adminHandler.Moderate)
+			// Création de produit automatisée (script/IA) — un seul appel
+			// combine upload + création, voir ProductHandler.AutoCreate.
+			r.Post("/products/auto", productHandler.AutoCreate)
 		})
 
 		r.Group(func(r chi.Router) {
