@@ -304,6 +304,9 @@ export const api = {
   // Admin
   getPendingProducts: () => fetchApi<{ products: any[] }>('/api/admin/products/pending'),
 
+  getAdminProducts: (status?: string) =>
+    fetchApi<{ products: any[] }>(`/api/admin/products${status ? `?status=${status}` : ''}`),
+
   moderateProduct: (id: string, data: { status: string; note?: string }) =>
     fetchApi<void>(`/api/admin/products/${id}/moderate`, {
       method: 'PUT',
@@ -323,6 +326,21 @@ export const api = {
 
   reactivateUser: (id: string) =>
     fetchApi<void>(`/api/admin/users/${id}/reactivate`, { method: 'PUT' }),
+
+  // Gestion des droits admin (réservé aux admins à accès complet)
+  getAdmins: () => fetchApi<{ admins: any[] }>('/api/admin/admins'),
+
+  setAdminStatus: (id: string, action: 'grant' | 'revoke') =>
+    fetchApi<void>(`/api/admin/users/${id}/admin`, {
+      method: 'PUT',
+      body: JSON.stringify({ action }),
+    }),
+
+  setAdminPermission: (id: string, permission: string, action: 'grant' | 'revoke') =>
+    fetchApi<void>(`/api/admin/admins/${id}/permission`, {
+      method: 'PUT',
+      body: JSON.stringify({ permission, action }),
+    }),
 
   getSales: () => fetchApi<{ sales: any[] }>('/api/admin/sales'),
 

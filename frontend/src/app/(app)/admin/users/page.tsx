@@ -51,11 +51,13 @@ function RowMenu({
   onRole,
   onSuspend,
   onReactivate,
+  onPromote,
 }: {
   user: User;
   onRole: (role: string, action: 'grant' | 'revoke') => void;
   onSuspend: () => void;
   onReactivate: () => void;
+  onPromote: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -121,6 +123,16 @@ function RowMenu({
                   Suspendre le compte
                 </button>
               )}
+              <div className="my-1 border-t border-green-900/10" />
+              <button
+                onClick={() => {
+                  onPromote();
+                  setOpen(false);
+                }}
+                className="w-full text-left px-3 py-2 hover:bg-green-900/5 text-green-950"
+              >
+                Promouvoir en admin
+              </button>
             </>
           )}
           {user.is_admin && (
@@ -137,6 +149,8 @@ export default function AdminUsersPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [toSuspend, setToSuspend] = useState<User | null>(null);
+  const [toRole, setToRole] = useState<{ user: User; role: string; action: 'grant' | 'revoke' } | null>(null);
+  const [toPromote, setToPromote] = useState<User | null>(null);
 
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
@@ -186,12 +200,27 @@ export default function AdminUsersPage() {
     }
   };
 
-  const handleSetRole = async (id: string, role: string, action: 'grant' | 'revoke') => {
+  const handleSetRole = async () => {
+    if (!toRole) return;
     try {
-      await api.setRole(id, role, action);
+      await api.setRole(toRole.user.id, toRole.role, toRole.action);
       loadUsers();
     } catch (err: any) {
       setError(friendlyError(err));
+    } finally {
+      setToRole(null);
+    }
+  };
+
+  const handlePromote = async () => {
+    if (!toPromote) return;
+    try {
+      await api.setAdminStatus(toPromote.id, 'grant');
+      loadUsers();
+    } catch (err: any) {
+      setError(friendlyError(err));
+    } finally {
+      setToPromote(null);
     }
   };
 
@@ -370,9 +399,10 @@ export default function AdminUsersPage() {
                         <TableCell className="text-right">
                           <RowMenu
                             user={user}
-                            onRole={(role, action) => handleSetRole(user.id, role, action)}
+                            onRole={(role, action) => setToRole({ user, role, action })}
                             onSuspend={() => setToSuspend(user)}
                             onReactivate={() => handleReactivate(user.id)}
+                            onPromote={() => setToPromote(user)}
                           />
                         </TableCell>
                       </TableRow>
@@ -441,6 +471,36 @@ export default function AdminUsersPage() {
         danger
         onConfirm={handleSuspend}
         onCancel={() => setToSuspend(null)}
+      />
+
+      <ConfirmDialog
+        open={!!toRole}
+        title={toRole?.action === 'grant' ? 'Accorder ce rôle ?' : 'Retirer ce rôle ?'}
+        description={
+          toRole
+            ? `${toRole.action === 'grant' ? 'Accorder' : 'Retirer'} le rôle ${ROLE_LABELS[toRole.role] || toRole.role} à ${toRole.user.email}. L'utilisateur sera déconnecté de ses sessions actuelles et devra se reconnecter.`
+            : undefined
+        }
+        confirmLabel={toRole?.action === 'grant' ? 'Accorder' : 'Retirer'}
+        cancelLabel="Annuler"
+        danger={toRole?.action === 'revoke'}
+        onConfirm={handleSetRole}
+        onCancel={() => setToRole(null)}
+      />
+
+      <ConfirmDialog
+        open={!!toPromote}
+        title="Promouvoir en administrateur ?"
+        description={
+          toPromote
+            ? `${toPromote.email} aura accès complet à l'administration DIARRA (modération, utilisateurs, finance, remboursements). Cette action est réservée aux admins à accès complet.`
+            : undefined
+        }
+        confirmLabel="Promouvoir"
+        cancelLabel="Annuler"
+        danger
+        onConfirm={handlePromote}
+        onCancel={() => setToPromote(null)}
       />
     </main>
   );

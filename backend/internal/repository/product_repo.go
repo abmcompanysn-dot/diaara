@@ -138,6 +138,40 @@ func (r *ProductRepo) ListPending(ctx context.Context) ([]*model.Product, error)
 	return products, rows.Err()
 }
 
+// ListForAdmin — tous les produits (ou filtrés par statut) avec l'email du
+// vendeur joint, pour l'écran de modération admin. status vide = tous statuts.
+func (r *ProductRepo) ListForAdmin(ctx context.Context, status string) ([]*model.AdminProduct, error) {
+	query := `SELECT p.id, p.vendor_id, p.title, p.description, p.price_cfa, p.price_mode, p.min_price_cfa,
+		p.category, p.file_key, p.cover_image_key, p.moderation_status, p.moderation_note, p.affiliate_enabled,
+		p.max_closer_commission_pct, p.preview_keys, p.preview_status, p.created_at, p.updated_at, u.email
+		FROM products p JOIN users u ON u.id = p.vendor_id`
+	args := []interface{}{}
+	if status != "" {
+		query += ` WHERE p.moderation_status = $1`
+		args = append(args, status)
+	}
+	query += ` ORDER BY p.created_at DESC`
+
+	rows, err := r.pool.Query(ctx, query, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	products := []*model.AdminProduct{}
+	for rows.Next() {
+		p := &model.AdminProduct{}
+		err := rows.Scan(&p.ID, &p.VendorID, &p.Title, &p.Description, &p.PriceCFA, &p.PriceMode, &p.MinPriceCFA, &p.Category,
+			&p.FileKey, &p.CoverImageKey, &p.ModerationStatus, &p.ModerationNote, &p.AffiliateEnabled,
+			&p.MaxCloserCommissionPct, &p.PreviewKeys, &p.PreviewStatus, &p.CreatedAt, &p.UpdatedAt, &p.VendorEmail)
+		if err != nil {
+			return nil, err
+		}
+		products = append(products, p)
+	}
+	return products, rows.Err()
+}
+
 func (r *ProductRepo) Update(ctx context.Context, id string, input model.UpdateProductInput) (*model.Product, error) {
 	query := `UPDATE products SET `
 	args := []interface{}{}

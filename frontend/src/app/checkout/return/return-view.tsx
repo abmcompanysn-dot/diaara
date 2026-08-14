@@ -10,6 +10,9 @@ import { CheckIcon, AlertTriangleIcon, DownloadIcon } from '@/components/icons';
 
 type Step = 'pending' | 'done' | 'error';
 
+const POLL_INTERVAL_MS = 3000;
+const MAX_AUTO_POLLS = 20; // ~60s avant de proposer une vérification manuelle
+
 export default function CheckoutReturnView() {
   const searchParams = useSearchParams();
   const token = searchParams.get('token') || '';
@@ -18,7 +21,11 @@ export default function CheckoutReturnView() {
   const [error, setError] = useState('');
   const [deliveryUrl, setDeliveryUrl] = useState('');
   const [delivering, setDelivering] = useState(false);
+  const [productId, setProductId] = useState('');
+  const [timedOut, setTimedOut] = useState(false);
+  const [checkingNow, setCheckingNow] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const pollCountRef = useRef(0);
 
   const handleDownload = async () => {
     setDelivering(true);
@@ -39,10 +46,11 @@ export default function CheckoutReturnView() {
       return;
     }
 
-    const check = async () => {
+    const check = async (manual?: boolean) => {
       try {
         const res = await api.getCheckoutStatus(token);
         const status = res.order?.status;
+        if (res.order?.product_id) setProductId(res.order.product_id);
         if (status === 'paid') {
           stopPolling();
           setStep('done');
@@ -50,12 +58,18 @@ export default function CheckoutReturnView() {
           stopPolling();
           setError('Le paiement a échoué. Vérifiez votre solde et réessayez.');
           setStep('error');
+        } else if (!manual) {
+          pollCountRef.current += 1;
+          if (pollCountRef.current >= MAX_AUTO_POLLS) {
+            stopPolling();
+            setTimedOut(true);
+          }
         }
       } catch {
         // Le polling continue tant que la commande n'a pas de statut final.
       }
     };
-    pollRef.current = setInterval(check, 3000);
+    pollRef.current = setInterval(check, POLL_INTERVAL_MS);
     check();
 
     return () => stopPolling();
@@ -66,6 +80,25 @@ export default function CheckoutReturnView() {
     if (pollRef.current) {
       clearInterval(pollRef.current);
       pollRef.current = null;
+    }
+  };
+
+  const handleManualCheck = async () => {
+    setCheckingNow(true);
+    try {
+      const res = await api.getCheckoutStatus(token);
+      const status = res.order?.status;
+      if (res.order?.product_id) setProductId(res.order.product_id);
+      if (status === 'paid') {
+        setStep('done');
+      } else if (status === 'failed') {
+        setError('Le paiement a échoué. Vérifiez votre solde et réessayez.');
+        setStep('error');
+      }
+    } catch {
+      // Rien de nouveau, l'utilisateur reste sur l'écran d'attente.
+    } finally {
+      setCheckingNow(false);
     }
   };
 
@@ -85,6 +118,28 @@ export default function CheckoutReturnView() {
             <p className="mt-4 font-mono text-xs text-green-900/40">
               en attente de confirmation...
             </p>
+
+            {timedOut && (
+              <div className="mt-6 pt-6 border-t border-green-900/10">
+                <p className="text-sm text-green-900/70">
+                  Ça prend plus de temps que prévu. Votre paiement peut quand même
+                  se confirmer — vous recevrez un email dès que ce sera fait.
+                </p>
+                <div className="mt-4 flex flex-col gap-2">
+                  <Button variant="outline" onClick={handleManualCheck} disabled={checkingNow}>
+                    {checkingNow ? 'Vérification...' : 'Vérifier maintenant'}
+                  </Button>
+                  <div className="flex justify-center gap-4 text-sm">
+                    <Link href="/orders" className="text-green-700 underline">
+                      Mes commandes
+                    </Link>
+                    <Link href="/support" className="text-green-700 underline">
+                      Contacter le support
+                    </Link>
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -150,12 +205,22 @@ export default function CheckoutReturnView() {
               Paiement non abouti
             </h1>
             <p className="mt-2 text-sm text-green-900/60 max-w-xs mx-auto">{error}</p>
-            <Button
-              className="mt-6 bg-lime text-green-950 font-semibold hover:bg-green-300"
-              render={<Link href="/catalog" />}
-            >
-              Retour au catalogue
-            </Button>
+            <div className="mt-6 flex flex-col items-center gap-2">
+              {productId && (
+                <Button
+                  className="w-full max-w-[220px] bg-lime text-green-950 font-semibold hover:bg-green-300"
+                  render={<Link href={`/product?id=${productId}`} />}
+                >
+                  Réessayer le paiement
+                </Button>
+              )}
+              <Button variant="outline" className="w-full max-w-[220px]" render={<Link href="/catalog" />}>
+                Retour au catalogue
+              </Button>
+              <Link href="/support" className="text-sm text-green-700 underline mt-1">
+                Contacter le support
+              </Link>
+            </div>
           </div>
         )}
       </div>

@@ -1,10 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/page-header';
 import { PageLoader } from '@/components/page-loader';
@@ -13,7 +15,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog';
 import { formatPrice, SALE_STATUS_BADGE, ORDER_STATUS_LABELS } from '@/lib/constants';
 import { friendlyError } from '@/lib/error-messages';
 import { openSaleReceipt } from '@/lib/sale-receipt';
-import { FileIcon } from '@/components/icons';
+import { FileIcon, SearchIcon } from '@/components/icons';
 
 interface Sale {
   id: string;
@@ -36,6 +38,8 @@ export default function AdminSalesPage() {
   const [error, setError] = useState('');
   const [refundingId, setRefundingId] = useState<string | null>(null);
   const [refundTarget, setRefundTarget] = useState<Sale | null>(null);
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   useEffect(() => {
     loadSales();
@@ -67,6 +71,20 @@ export default function AdminSalesPage() {
     }
   };
 
+  const filtered = useMemo(() => {
+    let list = sales;
+    if (statusFilter !== 'all') {
+      list = list.filter((s) => s.status === statusFilter);
+    }
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter(
+        (s) => (s.buyer_name || '').toLowerCase().includes(q) || s.payment_reference.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [sales, search, statusFilter]);
+
   if (loading)
     return (
       <main>
@@ -95,11 +113,41 @@ export default function AdminSalesPage() {
           </div>
         )}
 
+        {sales.length > 0 && (
+          <div className="flex flex-wrap gap-3 mb-5">
+            <div className="relative flex-1 min-w-55">
+              <SearchIcon size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-green-900/40" />
+              <Input
+                placeholder="Rechercher par acheteur ou référence..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9 bg-white"
+              />
+            </div>
+            <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v || 'all')}>
+              <SelectTrigger className="w-44 bg-white">
+                <SelectValue placeholder="Statut" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tous les statuts</SelectItem>
+                <SelectItem value="pending">En attente</SelectItem>
+                <SelectItem value="paid">Payé</SelectItem>
+                <SelectItem value="delivered">Livré</SelectItem>
+                <SelectItem value="failed">Échec</SelectItem>
+                <SelectItem value="refund_pending">Remboursement en cours</SelectItem>
+                <SelectItem value="refunded">Remboursé</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
         {sales.length === 0 ? (
           <EmptyState
             title="Aucune vente pour le moment"
             description="Les ventes apparaîtront ici dès qu'un acheteur finalisera un paiement."
           />
+        ) : filtered.length === 0 ? (
+          <EmptyState title="Aucun résultat" description="Aucune vente ne correspond à cette recherche." />
         ) : (
           <div className="rounded-xl border border-green-900/10 bg-white shadow-card overflow-hidden">
             <Table>
@@ -115,7 +163,7 @@ export default function AdminSalesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sales.map((sale) => (
+                {filtered.map((sale) => (
                   <TableRow key={sale.id}>
                     <TableCell className="text-sm">
                       {new Date(sale.created_at).toLocaleString('fr-FR')}

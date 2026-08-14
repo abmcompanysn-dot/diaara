@@ -390,6 +390,7 @@ func main() {
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAdminScope(model.AdminPermModeration))
 			r.Get("/products/pending", adminHandler.PendingProducts)
+			r.Get("/products", adminHandler.ListProducts)
 			r.Put("/products/{id}/moderate", adminHandler.Moderate)
 		})
 

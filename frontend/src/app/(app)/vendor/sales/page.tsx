@@ -1,15 +1,17 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/page-header';
 import { PageLoader } from '@/components/page-loader';
 import { EmptyState } from '@/components/empty-state';
-import { ArrowLeftIcon } from '@/components/icons';
+import { ArrowLeftIcon, SearchIcon } from '@/components/icons';
 import { formatPrice, SALE_STATUS_BADGE, ORDER_STATUS_LABELS } from '@/lib/constants';
 import { CHECKOUT_COUNTRIES } from '@/lib/operators';
 import { friendlyError } from '@/lib/error-messages';
@@ -35,6 +37,8 @@ export default function VendorSalesPage() {
   const [sales, setSales] = useState<VendorSale[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all');
 
   useEffect(() => {
     api
@@ -43,6 +47,23 @@ export default function VendorSalesPage() {
       .catch((err: any) => setError(friendlyError(err)))
       .finally(() => setLoading(false));
   }, []);
+
+  const filtered = useMemo(() => {
+    let list = sales;
+    if (statusFilter !== 'all') {
+      list = list.filter((s) => s.status === statusFilter);
+    }
+    if (search.trim()) {
+      const q = search.trim().toLowerCase();
+      list = list.filter(
+        (s) =>
+          s.product_title.toLowerCase().includes(q) ||
+          s.buyer_name.toLowerCase().includes(q) ||
+          s.buyer_email.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [sales, search, statusFilter]);
 
   if (loading)
     return (
@@ -73,8 +94,38 @@ export default function VendorSalesPage() {
           </div>
         )}
 
+        {sales.length > 0 && (
+          <div className="flex flex-wrap gap-3 mb-5">
+            <div className="relative flex-1 min-w-55">
+              <SearchIcon size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-green-900/40" />
+              <Input
+                placeholder="Rechercher par produit ou client..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9 bg-white"
+              />
+            </div>
+            <Select value={statusFilter} onValueChange={(v) => setStatusFilter(v || 'all')}>
+              <SelectTrigger className="w-44 bg-white">
+                <SelectValue placeholder="Statut" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Tous les statuts</SelectItem>
+                <SelectItem value="pending">En attente</SelectItem>
+                <SelectItem value="paid">Payé</SelectItem>
+                <SelectItem value="delivered">Livré</SelectItem>
+                <SelectItem value="failed">Échec</SelectItem>
+                <SelectItem value="refund_pending">Remboursement en cours</SelectItem>
+                <SelectItem value="refunded">Remboursé</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        )}
+
         {sales.length === 0 ? (
           <EmptyState title="Aucune vente pour le moment" description="Les ventes de vos produits apparaîtront ici avec les coordonnées de vos clients." />
+        ) : filtered.length === 0 ? (
+          <EmptyState title="Aucun résultat" description="Aucune vente ne correspond à cette recherche." />
         ) : (
           <div className="rounded-xl border border-green-900/10 bg-white shadow-card overflow-hidden overflow-x-auto">
             <Table>
@@ -90,7 +141,7 @@ export default function VendorSalesPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {sales.map((sale) => (
+                {filtered.map((sale) => (
                   <TableRow key={sale.id}>
                     <TableCell className="text-sm whitespace-nowrap">
                       {new Date(sale.created_at).toLocaleString('fr-FR')}

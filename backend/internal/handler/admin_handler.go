@@ -83,6 +83,22 @@ func (h *AdminHandler) PendingProducts(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"products": products})
 }
 
+// ListProducts — GET /api/admin/products?status=pending|approved|rejected
+// (status omis = tous). Inclut l'email du vendeur, pour revoir/reverser une
+// décision de modération passée (contrairement à PendingProducts qui ne
+// montre que la file d'attente).
+func (h *AdminHandler) ListProducts(w http.ResponseWriter, r *http.Request) {
+	status := r.URL.Query().Get("status")
+	products, err := h.productRepo.ListForAdmin(r.Context(), status)
+	if err != nil {
+		http.Error(w, `{"error":"list_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"products": products})
+}
+
 // Moderate — PUT /api/admin/products/{id}/moderate
 func (h *AdminHandler) Moderate(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
@@ -241,19 +257,19 @@ func (h *AdminHandler) Stats(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"total_sales":         totalSales,
-		"total_products":      totalProducts,
-		"pending_moderation":  pendingCount,
-		"active_products":     totalProducts - pendingCount,
-		"total_users":         roleCounts.Total,
-		"total_vendors":       roleCounts.Vendors,
-		"total_closers":       roleCounts.Closers,
-		"total_admins":        roleCounts.Admins,
-		"total_revenue":       totalRevenue,
-		"gmv":                 gmv,
-		"revenue_this_month":  revenueThisMonth,
-		"revenue_last_month":  revenueLastMonth,
-		"revenue_growth_pct":  growthPct,
+		"total_sales":        totalSales,
+		"total_products":     totalProducts,
+		"pending_moderation": pendingCount,
+		"active_products":    totalProducts - pendingCount,
+		"total_users":        roleCounts.Total,
+		"total_vendors":      roleCounts.Vendors,
+		"total_closers":      roleCounts.Closers,
+		"total_admins":       roleCounts.Admins,
+		"total_revenue":      totalRevenue,
+		"gmv":                gmv,
+		"revenue_this_month": revenueThisMonth,
+		"revenue_last_month": revenueLastMonth,
+		"revenue_growth_pct": growthPct,
 	})
 }
 
