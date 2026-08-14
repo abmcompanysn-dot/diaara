@@ -113,6 +113,12 @@ export function Header() {
   const isActive = (href: string) =>
     href === '/' ? pathname === '/' : pathname === href || pathname.startsWith(href + '/');
 
+  // L'espace vendeur a son propre en-tête (dégradé + flèche retour, voir
+  // page-header.tsx) et sa propre navigation : le header du site ferait
+  // doublon et casserait l'effet "application" recherché. Placé après tous
+  // les hooks pour respecter les règles des hooks React.
+  if (pathname.startsWith('/vendor')) return null;
+
   return (
     <header className="sticky top-0 z-50 bg-green-950/95 backdrop-blur border-b border-green-400/20">
       <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
