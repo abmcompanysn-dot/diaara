@@ -162,10 +162,24 @@ func (h *WebhookHandler) PawaPayRefundWebhook(w http.ResponseWriter, r *http.Req
 
 	if status.Data.Status == "COMPLETED" {
 		h.saleRepo.UpdateStatus(r.Context(), sale.ID, string(model.SaleRefunded))
+		go h.notifyRefunded(context.Background(), sale)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": status.Data.Status})
+}
+
+// notifyRefunded envoie l'email de confirmation de remboursement à l'acheteur.
+func (h *WebhookHandler) notifyRefunded(ctx context.Context, sale *model.Sale) {
+	buyer, err := h.userRepo.FindByID(ctx, sale.BuyerID)
+	if err != nil || buyer.Email == "" {
+		return
+	}
+	product, err := h.productRepo.FindByID(ctx, sale.ProductID)
+	if err != nil {
+		return
+	}
+	h.notifications.SendRefundConfirmed(ctx, buyer.Email, sale.BuyerName, product.Title, sale.AmountCFA)
 }
 
 // PawaPayDepositCallback est le corps du callback PawaPay (statut final d'un dépôt).
@@ -298,18 +312,16 @@ func clientIP(r *http.Request) string {
 
 // notifyPaid envoie les emails de confirmation (acheteur + vendeur) en arrière-plan.
 func (h *WebhookHandler) notifyPaid(ctx context.Context, sale *model.Sale) {
-	buyer, err := h.userRepo.FindByID(ctx, sale.BuyerID)
-	if err != nil {
-		return
-	}
-	if buyer.Email != "" && sale.CheckoutToken != nil {
-		h.notifications.SendOrderConfirmed(ctx, buyer.Email, sale.ID, *sale.CheckoutToken)
-	}
-
 	product, err := h.productRepo.FindByID(ctx, sale.ProductID)
 	if err != nil {
 		return
 	}
+
+	buyer, err := h.userRepo.FindByID(ctx, sale.BuyerID)
+	if err == nil && buyer.Email != "" && sale.CheckoutToken != nil {
+		h.notifications.SendOrderConfirmed(ctx, buyer.Email, sale.BuyerName, product.Title, sale.AmountCFA, *sale.CheckoutToken)
+	}
+
 	vendor, err := h.userRepo.FindByID(ctx, product.VendorID)
 	if err != nil {
 		return

@@ -147,10 +147,13 @@ func (n *NotificationService) SendPasswordReset(ctx context.Context, to, token s
 // SendOrderConfirmed — le lien pointe vers la page de suivi publique (par
 // checkout_token) plutôt que /orders/{id}, car un acheteur invité n'a pas de
 // session pour accéder à son espace connecté.
-func (n *NotificationService) SendOrderConfirmed(ctx context.Context, to, orderID, checkoutToken string) error {
+func (n *NotificationService) SendOrderConfirmed(ctx context.Context, to, buyerName, productTitle string, amountCFA int, checkoutToken string) error {
 	link := fmt.Sprintf("%s/checkout/return?token=%s", n.frontendURL, checkoutToken)
-	body := fmt.Sprintf(`<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Votre commande a été payée avec succès. Téléchargez votre fichier depuis le bouton ci-dessous.</p>
-<div style="margin:16px 0 0;padding:16px 18px;background-color:#f2f7f4;border-left:4px solid #0f7a50;border-radius:8px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#0a3225;">Commande <strong>%s</strong> &mdash; paiement confirmé.</div>`, orderID)
+	body := fmt.Sprintf(`<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Bonjour %s, votre commande a été payée avec succès. Téléchargez votre fichier depuis le bouton ci-dessous.</p>
+<div style="margin:16px 0 0;padding:16px 18px;background-color:#f2f7f4;border-left:4px solid #0f7a50;border-radius:8px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#0a3225;">
+<strong>%s</strong><br>
+Montant payé : <strong>%s FCFA</strong>
+</div>`, buyerName, productTitle, formatCFA(amountCFA))
 	inner := contentHTML("Paiement confirmé !", body, "Télécharger mon fichier", link)
 	return n.client.Send(ctx, to, "Commande confirmée", n.renderEmail(inner))
 }
@@ -164,6 +167,17 @@ func (n *NotificationService) SendDeliveryReady(ctx context.Context, to, orderID
 		link,
 	)
 	return n.client.Send(ctx, to, "Votre fichier est disponible", n.renderEmail(inner))
+}
+
+func (n *NotificationService) SendRefundConfirmed(ctx context.Context, to, buyerName, productTitle string, amountCFA int) error {
+	body := fmt.Sprintf(`<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Bonjour %s, votre remboursement a été traité avec succès.</p>
+<div style="margin:16px 0 0;padding:16px 18px;background-color:#f2f7f4;border-left:4px solid #0f7a50;border-radius:8px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#0a3225;">
+<strong>%s</strong><br>
+Montant remboursé : <strong>%s FCFA</strong>
+</div>
+<p style="margin:16px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.6;color:#6b7c74;">Le délai de réception dépend de votre opérateur mobile money.</p>`, buyerName, productTitle, formatCFA(amountCFA))
+	inner := contentHTML("Remboursement confirmé", body, "", "")
+	return n.client.Send(ctx, to, "Votre remboursement a été traité", n.renderEmail(inner))
 }
 
 func (n *NotificationService) SendVendorSale(ctx context.Context, to, productTitle string, amount int) error {
