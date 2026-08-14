@@ -66,16 +66,19 @@ export default function VendorEarningsPage() {
   const [editingMethod, setEditingMethod] = useState(false);
   const [methodSubmitting, setMethodSubmitting] = useState(false);
   const [methodError, setMethodError] = useState('');
+  const [payoutLimits, setPayoutLimits] = useState<Record<string, { min: number; max: number }>>({});
 
   const { toasts, toast, dismiss } = useToast();
   const { user } = useAuth();
 
   const hasPayoutMethod = Boolean(payoutMethod?.operator);
   const phoneVerified = Boolean(user?.phone_verified_at);
+  const operatorLimit = payoutMethod?.operator ? payoutLimits[payoutMethod.operator] : undefined;
 
   useEffect(() => {
     loadEarnings();
     loadPayoutMethod();
+    loadPayoutLimits();
   }, []);
 
   const loadEarnings = async () => {
@@ -98,6 +101,15 @@ export default function VendorEarningsPage() {
       setPayoutMethod(result.payout_method);
     } catch {
       // Pas grave si l'appel échoue au chargement initial : le formulaire sera vide.
+    }
+  };
+
+  const loadPayoutLimits = async () => {
+    try {
+      const result = await api.getPayoutLimits();
+      setPayoutLimits(result.limits);
+    } catch {
+      // Pas grave : sans les limites, on retombe sur la validation solde/téléphone uniquement.
     }
   };
 
@@ -140,11 +152,20 @@ export default function VendorEarningsPage() {
       ? "Votre numéro de téléphone doit être vérifié avant de pouvoir retirer des fonds."
       : available <= 0
         ? 'Aucun solde disponible pour le moment.'
-        : hasValidAmount && amountNum > available
-          ? 'Le montant dépasse votre solde disponible.'
-          : '';
+        : operatorLimit && available < operatorLimit.min
+          ? `Solde insuffisant : ${payoutMethod?.operator_label} accepte un minimum de ${formatPrice(operatorLimit.min)}.`
+          : hasValidAmount && amountNum > available
+            ? 'Le montant dépasse votre solde disponible.'
+            : hasValidAmount && operatorLimit && amountNum < operatorLimit.min
+              ? `Montant minimum pour ${payoutMethod?.operator_label} : ${formatPrice(operatorLimit.min)}.`
+              : '';
 
-  const canSubmit = hasPayoutMethod && phoneVerified && hasValidAmount && amountNum <= available;
+  const canSubmit =
+    hasPayoutMethod &&
+    phoneVerified &&
+    hasValidAmount &&
+    amountNum <= available &&
+    (!operatorLimit || amountNum >= operatorLimit.min);
 
   const handlePayout = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -267,6 +288,11 @@ export default function VendorEarningsPage() {
                     <CheckIcon size={11} />
                     Vérifié
                   </Badge>
+                  {operatorLimit && (
+                    <span className="text-xs text-green-900/50">
+                      Retrait minimum : {formatPrice(operatorLimit.min)}
+                    </span>
+                  )}
                 </div>
               ) : (
                 <div className="flex flex-col items-start gap-3 py-2">
@@ -450,9 +476,9 @@ export default function VendorEarningsPage() {
                   autoFocus
                   value={amount}
                   onChange={(e) => setAmount(e.target.value)}
-                  placeholder="Montant en FCFA"
+                  placeholder={operatorLimit ? `Montant en FCFA (min. ${operatorLimit.min.toLocaleString('fr-FR')})` : 'Montant en FCFA'}
                   className="flex-1 h-12 text-lg"
-                  min={1}
+                  min={operatorLimit?.min || 1}
                   max={available}
                   disabled={!hasPayoutMethod}
                 />

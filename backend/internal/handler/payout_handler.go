@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sync"
+	"time"
 
 	"github.com/diarra/backend/internal/middleware"
 	"github.com/diarra/backend/internal/model"
@@ -19,6 +21,13 @@ type PayoutHandler struct {
 	userRepo     *repository.UserRepo
 	settingsRepo *repository.SettingsRepo
 	pawapay      *payment.PawaPayClient
+
+	// Cache en mémoire des limites de versement par opérateur (PawaPay
+	// Active Configuration) : ces valeurs changent rarement, on évite un
+	// appel PawaPay à chaque chargement de la page vendeur.
+	limitsMu      sync.Mutex
+	limitsCache   map[string]struct{ Min, Max int }
+	limitsFetched time.Time
 }
 
 func NewPayoutHandler(
@@ -66,10 +75,10 @@ func (h *PayoutHandler) GetPayoutMethod(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"payout_method": map[string]interface{}{
-			"phone":         phone,
-			"operator":      operator,
+			"phone":          phone,
+			"operator":       operator,
 			"operator_label": label,
-			"country":       country,
+			"country":        country,
 		},
 	})
 }
@@ -165,6 +174,45 @@ func (h *PayoutHandler) Earnings(w http.ResponseWriter, r *http.Request) {
 		"pending":      requested,
 		"history":      payouts,
 	})
+}
+
+// Limits — GET /api/vendor/payout-limits
+// Renvoie, pour chaque opérateur PawaPay, le montant minimum/maximum réel
+// accepté pour un versement — pour que le vendeur voie ces limites avant de
+// tenter un retrait qui serait sinon refusé par PawaPay (payout_rejected).
+// Mise en cache 6h en mémoire (les limites changent rarement).
+func (h *PayoutHandler) Limits(w http.ResponseWriter, r *http.Request) {
+	if h.pawapay == nil {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"limits": map[string]interface{}{}})
+		return
+	}
+
+	h.limitsMu.Lock()
+	defer h.limitsMu.Unlock()
+
+	if h.limitsCache == nil || time.Since(h.limitsFetched) > 6*time.Hour {
+		config, err := h.pawapay.GetActiveConfig(r.Context(), "PAYOUT")
+		if err != nil {
+			// En cas d'échec, on sert le cache existant s'il y en a un (même
+			// périmé) plutôt que de bloquer l'affichage de la page vendeur.
+			if h.limitsCache == nil {
+				http.Error(w, `{"error":"limits_unavailable"}`, http.StatusBadGateway)
+				return
+			}
+		} else {
+			h.limitsCache = config.PayoutLimits()
+			h.limitsFetched = time.Now()
+		}
+	}
+
+	limits := make(map[string]map[string]int, len(h.limitsCache))
+	for provider, l := range h.limitsCache {
+		limits[provider] = map[string]int{"min": l.Min, "max": l.Max}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"limits": limits})
 }
 
 // Create — POST /api/vendor/payouts

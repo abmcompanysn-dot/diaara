@@ -360,6 +360,7 @@ func main() {
 		r.Use(middleware.RequireAuth(jwtManager))
 		r.Use(middleware.RequireRole(model.RoleVendeur))
 		r.Get("/earnings", payoutHandler.Earnings)
+		r.Get("/payout-limits", payoutHandler.Limits)
 		r.Get("/payout-method", payoutHandler.GetPayoutMethod)
 		r.Put("/payout-method", payoutHandler.SetPayoutMethod)
 		r.With(middleware.RequireVerifiedPhone(userRepo)).Post("/payouts", payoutHandler.Create)

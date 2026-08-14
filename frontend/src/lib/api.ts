@@ -233,6 +233,11 @@ export const api = {
   getVendorEarnings: () =>
     fetchApi<{ total_earned: number; available: number; pending: number; history: any[] }>('/api/vendor/earnings'),
 
+  // Limites min/max réelles par opérateur PawaPay pour les versements
+  // (source : Active Configuration PawaPay, mis en cache côté serveur).
+  getPayoutLimits: () =>
+    fetchApi<{ limits: Record<string, { min: number; max: number }> }>('/api/vendor/payout-limits'),
+
   requestPayout: (amount: number) =>
     fetchApi<{ payout: any }>('/api/vendor/payouts', {
       method: 'POST',

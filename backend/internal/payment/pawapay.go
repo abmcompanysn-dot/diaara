@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"regexp"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -58,7 +59,7 @@ type DepositRequest struct {
 }
 
 type Payer struct {
-	Type          string        `json:"type"` // "MMO"
+	Type           string         `json:"type"` // "MMO"
 	AccountDetails AccountDetails `json:"accountDetails"`
 }
 
@@ -94,13 +95,13 @@ type DepositStatusResponse struct {
 }
 
 type DepositData struct {
-	DepositId            string         `json:"depositId"`
-	Status               string         `json:"status"` // ACCEPTED | PROCESSING | IN_RECONCILIATION | COMPLETED | FAILED
-	Amount               string         `json:"amount"`
-	Currency             string         `json:"currency"`
-	Country              string         `json:"country"`
-	ProviderTransactionId string        `json:"providerTransactionId"`
-	FailureReason        *FailureReason `json:"failureReason,omitempty"`
+	DepositId             string         `json:"depositId"`
+	Status                string         `json:"status"` // ACCEPTED | PROCESSING | IN_RECONCILIATION | COMPLETED | FAILED
+	Amount                string         `json:"amount"`
+	Currency              string         `json:"currency"`
+	Country               string         `json:"country"`
+	ProviderTransactionId string         `json:"providerTransactionId"`
+	FailureReason         *FailureReason `json:"failureReason,omitempty"`
 }
 
 // InitiateDeposit — POST /v2/deposits
@@ -277,10 +278,10 @@ type PayoutData struct {
 	PayoutId              string         `json:"payoutId"`
 	Status                string         `json:"status"` // ACCEPTED | ENQUEUED | PROCESSING | IN_RECONCILIATION | COMPLETED | FAILED
 	Amount                string         `json:"amount"`
-	Currency               string        `json:"currency"`
-	Country                string        `json:"country"`
+	Currency              string         `json:"currency"`
+	Country               string         `json:"country"`
 	ProviderTransactionId string         `json:"providerTransactionId"`
-	FailureReason          *FailureReason `json:"failureReason,omitempty"`
+	FailureReason         *FailureReason `json:"failureReason,omitempty"`
 }
 
 // InitiatePayout — POST /v2/payouts
@@ -347,6 +348,108 @@ func (c *PawaPayClient) GetPayoutStatus(ctx context.Context, payoutId string) (*
 	return &result, nil
 }
 
+// --- Configuration active (limites min/max par opérateur) -------------------
+
+type ActiveConfigResponse struct {
+	Countries []ActiveConfigCountry `json:"countries"`
+}
+
+type ActiveConfigCountry struct {
+	Country   string                 `json:"country"`
+	Providers []ActiveConfigProvider `json:"providers"`
+}
+
+type ActiveConfigProvider struct {
+	Provider   string                 `json:"provider"`
+	Currencies []ActiveConfigCurrency `json:"currencies"`
+}
+
+type ActiveConfigCurrency struct {
+	Currency       string                                 `json:"currency"`
+	OperationTypes map[string]ActiveConfigOperationLimits `json:"operationTypes"`
+}
+
+// MinAmount/MaxAmount couvrent le format générique documenté pour PAYOUT ;
+// MinTransactionLimit/MaxTransactionLimit sont l'ancien format (DEPOSIT).
+// On lit les deux, au cas où PawaPay renvoie encore l'un ou l'autre.
+type ActiveConfigOperationLimits struct {
+	MinAmount           string `json:"minAmount"`
+	MaxAmount           string `json:"maxAmount"`
+	MinTransactionLimit string `json:"minTransactionLimit"`
+	MaxTransactionLimit string `json:"maxTransactionLimit"`
+	Status              string `json:"status"`
+}
+
+// GetActiveConfig — GET /v2/active-conf?operationType=PAYOUT. Renvoie les
+// opérateurs actifs avec leurs limites de montant réelles côté PawaPay
+// (indépendantes de nos propres règles internes), pour affichage côté
+// vendeur avant une demande de versement.
+func (c *PawaPayClient) GetActiveConfig(ctx context.Context, operationType string) (*ActiveConfigResponse, error) {
+	url := c.cfg.BaseURL + "/v2/active-conf"
+	if operationType != "" {
+		url += "?operationType=" + operationType
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	c.setHeaders(httpReq)
+
+	resp, err := c.client.Do(httpReq)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%w: status %d: %s", ErrPaymentFailed, resp.StatusCode, string(respBody))
+	}
+
+	var result ActiveConfigResponse
+	if err := json.Unmarshal(respBody, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
+}
+
+// PayoutLimits extrait, pour chaque provider, la limite min/max (en unités
+// entières de la devise locale) déclarée par PawaPay pour les versements.
+func (r *ActiveConfigResponse) PayoutLimits() map[string]struct{ Min, Max int } {
+	limits := map[string]struct{ Min, Max int }{}
+	for _, country := range r.Countries {
+		for _, provider := range country.Providers {
+			for _, currency := range provider.Currencies {
+				op, ok := currency.OperationTypes["PAYOUT"]
+				if !ok {
+					continue
+				}
+				min := op.MinAmount
+				if min == "" {
+					min = op.MinTransactionLimit
+				}
+				max := op.MaxAmount
+				if max == "" {
+					max = op.MaxTransactionLimit
+				}
+				if min == "" {
+					continue
+				}
+				minInt, err := strconv.Atoi(min)
+				if err != nil {
+					continue
+				}
+				maxInt, _ := strconv.Atoi(max)
+				limits[provider.Provider] = struct{ Min, Max int }{Min: minInt, Max: maxInt}
+			}
+		}
+	}
+	return limits
+}
+
 // --- Remboursements (refunds) -----------------------------------------------
 
 type RefundRequest struct {
@@ -371,13 +474,13 @@ type RefundStatusResponse struct {
 }
 
 type RefundData struct {
-	RefundId               string         `json:"refundId"`
-	Status                 string         `json:"status"` // ACCEPTED | ENQUEUED | PROCESSING | IN_RECONCILIATION | COMPLETED | FAILED
-	Amount                 string         `json:"amount"`
-	Currency               string         `json:"currency"`
-	Country                string         `json:"country"`
-	ProviderTransactionId  string         `json:"providerTransactionId"`
-	FailureReason          *FailureReason `json:"failureReason,omitempty"`
+	RefundId              string         `json:"refundId"`
+	Status                string         `json:"status"` // ACCEPTED | ENQUEUED | PROCESSING | IN_RECONCILIATION | COMPLETED | FAILED
+	Amount                string         `json:"amount"`
+	Currency              string         `json:"currency"`
+	Country               string         `json:"country"`
+	ProviderTransactionId string         `json:"providerTransactionId"`
+	FailureReason         *FailureReason `json:"failureReason,omitempty"`
 }
 
 // InitiateRefund — POST /v2/refunds
@@ -448,10 +551,10 @@ func (c *PawaPayClient) GetRefundStatus(ctx context.Context, refundId string) (*
 
 // Operator définit un opérateur mobile money supporté par PawaPay.
 type Operator struct {
-	Label      string // affiché à l'acheteur
-	Provider   string // code PawaPay
-	Country    string // ISO 3166-1 alpha-3
-	DialCode   string // indicatif téléphonique du pays
+	Label    string // affiché à l'acheteur
+	Provider string // code PawaPay
+	Country  string // ISO 3166-1 alpha-3
+	DialCode string // indicatif téléphonique du pays
 }
 
 // Couvre les 20 pays PawaPay (mêmes pays que CountryCurrency ci-dessous),
