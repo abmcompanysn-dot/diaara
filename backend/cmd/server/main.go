@@ -395,12 +395,6 @@ func main() {
 			r.Get("/products/pending", adminHandler.PendingProducts)
 			r.Get("/products", adminHandler.ListProducts)
 			r.Put("/products/{id}/moderate", adminHandler.Moderate)
-			// Création de produit automatisée (script/IA) — un seul appel
-			// combine upload + création, voir ProductHandler.AutoCreate.
-			r.Post("/products/auto", productHandler.AutoCreate)
-			// Attache un fichier à un produit créé sans fichier (avec un
-			// image_prompt), avant approbation.
-			r.Put("/products/{id}/file", productHandler.AttachFile)
 		})
 
 		r.Group(func(r chi.Router) {
@@ -422,6 +416,9 @@ func main() {
 			r.Get("/payouts", adminHandler.Payouts)
 			r.Post("/payouts/{id}/retry", adminHandler.RetryPayout)
 			r.Get("/activity", adminHandler.ActivityFeed)
+			// Clé pour la création de produit automatisée (voir /api/automation/products ci-dessous).
+			r.Get("/automation/key", adminHandler.GetAutomationKey)
+			r.Post("/automation/key/regenerate", adminHandler.RegenerateAutomationKey)
 		})
 
 		// Notifications : accessible à tout admin (même restreint), pour que
@@ -447,6 +444,17 @@ func main() {
 			r.Put("/users/{id}/admin", adminHandler.SetAdminStatus)
 			r.Put("/admins/{id}/permission", adminHandler.SetAdminPermission)
 		})
+	})
+
+	// Création de produit automatisée (script/IA externe) — accepte soit une
+	// session admin classique, soit la clé d'automatisation dédiée (voir
+	// GET/POST /api/admin/automation/key et middleware.RequireAutomation).
+	r.Route("/api/automation/products", func(r chi.Router) {
+		r.Use(middleware.RequireAutomation(jwtManager, func(ctx context.Context) string {
+			return settingsRepo.Get(ctx, model.SettingAutomationAPIKey, "")
+		}))
+		r.Post("/", productHandler.AutoCreate)
+		r.Put("/{id}/file", productHandler.AttachFile)
 	})
 
 	// Support tickets (utilisateur connecté, admin pour tous)

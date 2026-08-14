@@ -416,11 +416,10 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
 //   - price_cfa     : requis, entier
 //   - category      : requis (voir CATEGORY_LABELS côté frontend pour les valeurs valides)
 func (h *ProductHandler) AutoCreate(w http.ResponseWriter, r *http.Request) {
+	// adminID est vide quand l'appel est authentifié par clé d'automatisation
+	// (voir middleware.RequireAutomation) plutôt que par session admin — dans
+	// ce cas vendor_id doit être fourni explicitement dans la requête.
 	adminID := middleware.GetUserID(r.Context())
-	if adminID == "" {
-		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
-		return
-	}
 
 	if err := r.ParseMultipartForm(50 << 20); err != nil { // 50MB max
 		http.Error(w, `{"error":"file_too_large"}`, http.StatusBadRequest)
@@ -435,6 +434,10 @@ func (h *ProductHandler) AutoCreate(w http.ResponseWriter, r *http.Request) {
 	vendorID := r.FormValue("vendor_id")
 	if vendorID == "" {
 		vendorID = adminID
+	}
+	if vendorID == "" {
+		http.Error(w, `{"error":"vendor_id_required"}`, http.StatusBadRequest)
+		return
 	}
 
 	priceCFA, err := strconv.Atoi(priceStr)

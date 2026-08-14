@@ -285,6 +285,12 @@ export default function AdminDashboardPage() {
                 <span className="text-sm font-medium text-green-950">Droits admin</span>
               </Link>
               <Link
+                href="/admin/automation"
+                className="flex items-center justify-between p-3 rounded-lg hover:bg-green-900/5 transition-colors"
+              >
+                <span className="text-sm font-medium text-green-950">Automatisation</span>
+              </Link>
+              <Link
                 href="/admin/support"
                 className="flex items-center justify-between p-3 rounded-lg hover:bg-green-900/5 transition-colors"
               >

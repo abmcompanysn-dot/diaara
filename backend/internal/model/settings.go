@@ -9,6 +9,9 @@ const (
 	SettingGatewayMTN        = "gateway_mtn_momo"
 	SettingGatewayFree       = "gateway_free_money"
 	SettingGatewayMoov       = "gateway_moov_money"
+	// SettingAutomationAPIKey : clé secrète pour l'endpoint de création de
+	// produit automatisée (voir middleware.RequireAutomation).
+	SettingAutomationAPIKey = "automation_api_key"
 )
 
 // UpdateSettingsInput — mise à jour partielle (seules les clés présentes sont modifiées).

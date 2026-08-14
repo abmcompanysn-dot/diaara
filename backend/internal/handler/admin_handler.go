@@ -8,6 +8,7 @@ import (
 	"runtime"
 	"time"
 
+	"github.com/diarra/backend/internal/auth"
 	"github.com/diarra/backend/internal/email"
 	"github.com/diarra/backend/internal/middleware"
 	"github.com/diarra/backend/internal/model"
@@ -308,6 +309,33 @@ func (h *AdminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"settings": settings})
+}
+
+// GetAutomationKey — GET /api/admin/automation/key (scope "finance").
+// Renvoie la clé actuelle sans la régénérer ; vide si aucune n'a encore été
+// générée.
+func (h *AdminHandler) GetAutomationKey(w http.ResponseWriter, r *http.Request) {
+	key := h.settingsRepo.Get(r.Context(), model.SettingAutomationAPIKey, "")
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"key": key})
+}
+
+// RegenerateAutomationKey — POST /api/admin/automation/key/regenerate
+// (scope "finance"). Génère une nouvelle clé et invalide l'ancienne
+// immédiatement (un seul appel de script/IA en cours l'utilisant échouera
+// après régénération — comportement voulu pour pouvoir révoquer un accès).
+func (h *AdminHandler) RegenerateAutomationKey(w http.ResponseWriter, r *http.Request) {
+	key, err := auth.GenerateToken()
+	if err != nil {
+		http.Error(w, `{"error":"key_generation_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	if err := h.settingsRepo.Set(r.Context(), model.SettingAutomationAPIKey, key); err != nil {
+		http.Error(w, `{"error":"settings_update_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"key": key})
 }
 
 func parseRate(s string) (float64, error) {

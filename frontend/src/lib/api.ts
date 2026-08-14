@@ -359,6 +359,12 @@ export const api = {
       body: JSON.stringify({ permission, action }),
     }),
 
+  // Clé d'automatisation (création de produit via IA/script)
+  getAutomationKey: () => fetchApi<{ key: string }>('/api/admin/automation/key'),
+
+  regenerateAutomationKey: () =>
+    fetchApi<{ key: string }>('/api/admin/automation/key/regenerate', { method: 'POST' }),
+
   getSales: () => fetchApi<{ sales: any[] }>('/api/admin/sales'),
 
   refundSale: (id: string) =>

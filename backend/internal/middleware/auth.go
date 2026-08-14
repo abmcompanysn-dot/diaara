@@ -125,6 +125,29 @@ func RequireAdmin(next http.Handler) http.Handler {
 	})
 }
 
+// RequireAutomation autorise soit un admin authentifié (JWT classique), soit
+// une clé d'automatisation valide envoyée dans le header X-Automation-Key —
+// pour que les endpoints de création automatisée de produit (IA/script)
+// n'exigent pas forcément une session de connexion complète. getKey lit la
+// clé actuellement stockée (vide = aucune clé générée, header refusé).
+func RequireAutomation(jwtManager *auth.JWTManager, getKey func(ctx context.Context) string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if key := r.Header.Get("X-Automation-Key"); key != "" {
+				stored := getKey(r.Context())
+				if stored == "" || key != stored {
+					http.Error(w, `{"error":"invalid_automation_key"}`, http.StatusUnauthorized)
+					return
+				}
+				next.ServeHTTP(w, r)
+				return
+			}
+			// Repli sur l'authentification admin classique.
+			RequireAuth(jwtManager)(RequireAdmin(next)).ServeHTTP(w, r)
+		})
+	}
+}
+
 func GetAdminPermissions(ctx context.Context) []string {
 	if v, ok := ctx.Value(AdminPermissionsKey).([]string); ok {
 		return v

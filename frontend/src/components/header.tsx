@@ -77,6 +77,7 @@ export function Header() {
             { href: '/admin/products', label: 'Modération produits', Icon: CartIcon },
             { href: '/admin/sales', label: 'Audit des ventes', Icon: WalletIcon },
             { href: '/admin/permissions', label: 'Droits admin', Icon: ShieldIcon },
+            { href: '/admin/automation', label: 'Automatisation', Icon: ZapIcon },
           ]
         : [],
     },
