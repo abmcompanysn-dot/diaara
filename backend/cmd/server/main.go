@@ -256,9 +256,11 @@ func main() {
 		r.Put("/profile", authHandler.UpdateProfile)
 		// Moyen de versement/retrait — ouvert à tout utilisateur connecté (pas
 		// seulement les vendeurs), ex: un client enregistre un numéro pour
-		// recevoir un remboursement.
+		// recevoir un remboursement. Pas de vérification téléphone requise ici
+		// (juste enregistrer/modifier le numéro) — seul le déclenchement d'un
+		// vrai versement (POST /payouts) l'exige encore.
 		r.Get("/payout-method", payoutHandler.GetPayoutMethod)
-		r.With(middleware.RequireVerifiedPhone(userRepo)).Put("/payout-method", payoutHandler.SetPayoutMethod)
+		r.Put("/payout-method", payoutHandler.SetPayoutMethod)
 	})
 
 	// Packs de produits — lecture publique, gestion vendeur.
@@ -359,7 +361,7 @@ func main() {
 		r.Use(middleware.RequireRole(model.RoleVendeur))
 		r.Get("/earnings", payoutHandler.Earnings)
 		r.Get("/payout-method", payoutHandler.GetPayoutMethod)
-		r.With(middleware.RequireVerifiedPhone(userRepo)).Put("/payout-method", payoutHandler.SetPayoutMethod)
+		r.Put("/payout-method", payoutHandler.SetPayoutMethod)
 		r.With(middleware.RequireVerifiedPhone(userRepo)).Post("/payouts", payoutHandler.Create)
 		r.Get("/payouts", payoutHandler.Earnings)
 		r.Get("/sales", saleHandler.ListVendor)
