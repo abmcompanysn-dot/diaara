@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { api } from '@/lib/api';
+import { api, apiOrigin } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -53,6 +53,10 @@ export default function EditProduct() {
   const [newFile, setNewFile] = useState<File | null>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
 
+  const [coverKey, setCoverKey] = useState('');
+  const [coverPreview, setCoverPreview] = useState('');
+  const [uploadingCover, setUploadingCover] = useState(false);
+
   useEffect(() => {
     if (!id) return;
     api
@@ -68,6 +72,9 @@ export default function EditProduct() {
         setMaxCommission(String(product.max_closer_commission_pct || 10));
         setStatus(product.moderation_status);
         setModerationNote(product.moderation_note || '');
+        if (product.cover_image_key) {
+          setCoverPreview(`${apiOrigin}/api/products/${id}/cover`);
+        }
       })
       .catch((err: any) => setError(friendlyError(err)))
       .finally(() => setLoading(false));
@@ -75,6 +82,24 @@ export default function EditProduct() {
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     setNewFile(e.target.files?.[0] || null);
+  };
+
+  const handleCoverSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0] || null;
+    if (!f) return;
+    setCoverPreview(URL.createObjectURL(f));
+    setUploadingCover(true);
+    try {
+      const form = new FormData();
+      form.append('file', f);
+      form.append('type', 'cover');
+      const res = await api.uploadFile(form);
+      setCoverKey(res.file_key);
+    } catch (err: any) {
+      setError(friendlyError(err));
+    } finally {
+      setUploadingCover(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -112,6 +137,7 @@ export default function EditProduct() {
         min_price_cfa: flexiblePrice ? minPriceNum : undefined,
         category,
         ...(fileKey ? { file_key: fileKey } : {}),
+        ...(coverKey ? { cover_image_key: coverKey } : {}),
         affiliate_enabled: affiliateEnabled,
         max_closer_commission_pct: affiliateEnabled ? parseInt(maxCommission, 10) || 0 : 0,
       });
@@ -269,6 +295,29 @@ export default function EditProduct() {
                 )}
               </div>
 
+              <div className="space-y-2">
+                <Label htmlFor="cover">Image de couverture</Label>
+                {coverPreview && (
+                  <img
+                    src={coverPreview}
+                    alt="Aperçu de la couverture"
+                    className="w-full h-40 object-cover rounded-lg border border-border"
+                  />
+                )}
+                <Input
+                  id="cover"
+                  type="file"
+                  accept="image/*"
+                  onChange={handleCoverSelect}
+                  disabled={uploadingCover}
+                />
+                <p className="text-xs text-muted-foreground">
+                  {uploadingCover
+                    ? 'Envoi en cours...'
+                    : 'PNG, JPG ou WebP. Affichée sur le catalogue et la fiche produit.'}
+                </p>
+              </div>
+
               <div className="p-4 border border-border rounded-lg bg-secondary/60 space-y-3">
                 <label className="flex items-start gap-3 cursor-pointer">
                   <Checkbox
@@ -303,7 +352,7 @@ export default function EditProduct() {
                 )}
               </div>
 
-              <Button type="submit" disabled={saving} className="w-full font-semibold">
+              <Button type="submit" disabled={saving || uploadingCover} className="w-full font-semibold">
                 {uploadingFile ? 'Envoi du fichier...' : saving ? 'Enregistrement...' : 'Enregistrer les modifications'}
               </Button>
             </form>
