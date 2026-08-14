@@ -240,6 +240,11 @@ frontend** sur un VPS. Deux options :
      aléatoirement) + `S3_ENDPOINT=https://<sous-domaine-stockage>`,
      `S3_ACCESS_KEY_ID=$MINIO_ROOT_USER`, `S3_SECRET_ACCESS_KEY=$MINIO_ROOT_PASSWORD`,
      `S3_BUCKET=diarra-files`, `S3_REGION=us-east-1`.
+   - `FIREBASE_PROJECT_ID` (backend, connexion Google) + `NEXT_PUBLIC_FIREBASE_API_KEY`,
+     `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN`, `NEXT_PUBLIC_FIREBASE_PROJECT_ID`,
+     `NEXT_PUBLIC_FIREBASE_APP_ID` (frontend, build-time — voir Firebase Console >
+     Paramètres du projet) — sans ça le bouton "Continuer avec Google" reste masqué.
+     `NEXT_PUBLIC_TIKTOK_URL` optionnel (lien affiché dans le footer).
 2. `docker compose build backend frontend && docker compose up -d` → lance
    Postgres (réseau interne uniquement), MinIO, backend et frontend, tous bindés
    sur `127.0.0.1` (jamais exposés directement — la convention sur un VPS partagé
