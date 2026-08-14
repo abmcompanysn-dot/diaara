@@ -294,7 +294,11 @@ func main() {
 
 	// Orders
 	r.Route("/api/orders", func(r chi.Router) {
-		r.Post("/", saleHandler.Create)              // Public (Guest Checkout)
+		// OptionalAuth : accessible sans compte (guest checkout), mais si un
+		// token valide est envoyé, l'acheteur est bien identifié comme
+		// connecté (sinon SaleHandler.Create le traite toujours comme un
+		// invité et exige un email, même déjà connecté).
+		r.With(middleware.OptionalAuth(jwtManager)).Post("/", saleHandler.Create)
 		r.Get("/status", saleHandler.CheckoutStatus) // Public (suivi par token, ex: /api/orders/status?token=...)
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAuth(jwtManager))

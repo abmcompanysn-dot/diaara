@@ -174,10 +174,12 @@ export const api = {
     // (price_mode "flexible") — ignoré côté serveur pour un produit à prix fixe.
     amount_cfa?: number;
   }) =>
+    // Pas de skipAuth ici : la route accepte les invités (guest checkout)
+    // mais doit recevoir le token si l'acheteur est connecté, sinon le
+    // backend le traite toujours comme un invité et exige un email.
     fetchApi<{ order: any; checkout: { deposit_id: string; redirect_url: string } }>('/api/orders', {
       method: 'POST',
       body: JSON.stringify(data),
-      skipAuth: true,
     }),
 
   // Suivi public d'une commande (acheteur invité) par checkout_token
