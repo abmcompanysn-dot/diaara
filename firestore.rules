@@ -1,0 +1,33 @@
+rules_version = '2';
+
+// Règles Firestore pour la messagerie client-vendeur (DIARRA).
+// À déployer via la console Firebase (Firestore Database > Règles) ou
+// `firebase deploy --only firestore:rules` (Firebase CLI).
+//
+// ⚠️ CHAT TEMPORAIREMENT DÉSACTIVÉ (deny-all) — audit de sécurité du
+// 2026-08-14 : la version précédente de ce fichier autorisait
+// `if request.auth != null`, et comme le frontend connecte automatiquement
+// tout visiteur en anonyme (ensureFirestoreIdentity), ça revenait à un accès
+// public total en lecture/écriture à TOUTES les conversations de tous les
+// binômes client-vendeur (confirmé exploitable, pas théorique).
+//
+// Une vraie restriction par participant (request.auth.uid == buyerId /
+// vendorId) est IMPOSSIBLE tant que le backend n'émet pas de Firebase custom
+// tokens portant l'ID utilisateur DIARRA (l'UID Firebase anonyme/Google ne
+// correspond à rien côté DIARRA sans ça) — ça demande un compte de service
+// Firebase (Project Settings > Service Accounts > Generate new private key)
+// que je n'ai pas encore, plus le SDK Admin Firebase côté backend Go.
+// En attendant ce compte de service, deny-all est le seul état sûr : le
+// widget de chat reste en place côté UI mais tout read/write échoue
+// proprement (voir frontend/src/components/vendor-chat.tsx).
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /conversations/{conversationId} {
+      allow read, write: if false;
+
+      match /messages/{messageId} {
+        allow read, write: if false;
+      }
+    }
+  }
+}

@@ -17,6 +17,14 @@
   --color-green-50: #ebfbf2;
   --color-lime: #c9f22e;
   --color-lime-dark: #a8cf18;
+  /* Palette officielle DIARRA_Charte_Graphique v1.0 — tokens exacts pour tout
+     nouveau composant qui doit coller précisément à la charte (green-400 et
+     lime ci-dessus correspondent déjà à Émeraude vif et Vert Citron). */
+  --color-forest: #122b24; /* Vert Forêt — fond principal, header */
+  --color-emerald-charte: #0f714a; /* Vert Émeraude — dégradés, sections */
+  --color-mint: #40d68c; /* Menthe — tags, labels, liens */
+  --color-night: #0a1f17; /* Vert Nuit — texte sur clair, footer */
+  --color-mist: #f4fbf6; /* Vert Brume — fonds clairs, cartes */
   --color-paper: #f2f7f4;
   --color-paper-cream: #fafdfb;
   --color-money-orange: #ff7a3d;

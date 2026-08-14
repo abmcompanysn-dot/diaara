@@ -17,6 +17,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { AuthShell } from '@/components/auth-shell';
+import { GoogleLoginButton } from '@/components/google-login-button';
 import { friendlyError } from '@/lib/error-messages';
 
 export default function LoginPage() {
@@ -101,6 +102,8 @@ export default function LoginPage() {
               {loading ? 'Connexion...' : 'Se connecter'}
             </Button>
           </form>
+
+          <GoogleLoginButton onError={setError} />
         </CardContent>
 
         <CardFooter className="justify-center text-sm text-green-900/70">

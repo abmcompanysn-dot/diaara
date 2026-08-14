@@ -101,6 +101,166 @@ export const PAYOUT_COUNTRIES: PayoutCountry[] = [
       { label: 'Orange Money', provider: 'ORANGE_BFA', logo: 'orange-money.png' },
     ],
   },
+  {
+    code: 'CMR',
+    name: 'Cameroun',
+    dialCode: '237',
+    phoneLength: 9,
+    operators: [
+      { label: 'MTN MoMo', provider: 'MTN_MOMO_CMR', logo: 'mtn-momo.png' },
+      { label: 'Orange Money', provider: 'ORANGE_CMR', logo: 'orange-money.png' },
+    ],
+  },
+  {
+    code: 'GAB',
+    name: 'Gabon',
+    dialCode: '241',
+    phoneLength: 8,
+    operators: [
+      { label: 'Airtel Money', provider: 'AIRTEL_GAB', logo: 'at-money.png' },
+    ],
+  },
+  {
+    code: 'COG',
+    name: 'Congo-Brazzaville',
+    dialCode: '242',
+    phoneLength: 9,
+    operators: [
+      { label: 'Airtel Money', provider: 'AIRTEL_COG', logo: 'at-money.png' },
+      { label: 'MTN MoMo', provider: 'MTN_MOMO_COG', logo: 'mtn-momo.png' },
+    ],
+  },
+  {
+    code: 'COD',
+    name: 'RD Congo',
+    dialCode: '243',
+    phoneLength: 9,
+    operators: [
+      { label: 'Vodacom M-Pesa', provider: 'VODACOM_MPESA_COD', logo: 'vodacom.png' },
+      { label: 'Airtel Money', provider: 'AIRTEL_COD', logo: 'at-money.png' },
+      { label: 'Orange Money', provider: 'ORANGE_COD', logo: 'orange-money.png' },
+    ],
+  },
+  {
+    code: 'GHA',
+    name: 'Ghana',
+    dialCode: '233',
+    phoneLength: 9,
+    operators: [
+      { label: 'MTN MoMo', provider: 'MTN_MOMO_GHA', logo: 'mtn-momo.png' },
+      { label: 'AirtelTigo Money', provider: 'AIRTELTIGO_GHA', badgeColor: 'bg-blue-100', badgeText: 'text-blue-900' },
+      { label: 'Vodafone Cash', provider: 'VODAFONE_GHA', badgeColor: 'bg-red-100', badgeText: 'text-red-900' },
+    ],
+  },
+  {
+    code: 'NGA',
+    name: 'Nigeria',
+    dialCode: '234',
+    phoneLength: 10,
+    operators: [
+      { label: 'Airtel Money', provider: 'AIRTEL_NGA', logo: 'at-money.png' },
+      { label: 'MTN MoMo', provider: 'MTN_MOMO_NGA', logo: 'mtn-momo.png' },
+    ],
+  },
+  {
+    code: 'KEN',
+    name: 'Kenya',
+    dialCode: '254',
+    phoneLength: 9,
+    operators: [
+      { label: 'M-Pesa', provider: 'MPESA_KEN', logo: 'safaricom-mpesa.png' },
+    ],
+  },
+  {
+    code: 'RWA',
+    name: 'Rwanda',
+    dialCode: '250',
+    phoneLength: 9,
+    operators: [
+      { label: 'Airtel Money', provider: 'AIRTEL_RWA', logo: 'at-money.png' },
+      { label: 'MTN MoMo', provider: 'MTN_MOMO_RWA', logo: 'mtn-momo.png' },
+    ],
+  },
+  {
+    code: 'UGA',
+    name: 'Ouganda',
+    dialCode: '256',
+    phoneLength: 9,
+    operators: [
+      { label: 'Airtel Money', provider: 'AIRTEL_OAPI_UGA', logo: 'at-money.png' },
+      { label: 'MTN MoMo', provider: 'MTN_MOMO_UGA', logo: 'mtn-momo.png' },
+    ],
+  },
+  {
+    code: 'TZA',
+    name: 'Tanzanie',
+    dialCode: '255',
+    phoneLength: 9,
+    operators: [
+      { label: 'Airtel Money', provider: 'AIRTEL_TZA', logo: 'at-money.png' },
+      { label: 'Vodacom M-Pesa', provider: 'VODACOM_TZA', logo: 'vodacom.png' },
+      { label: 'Tigo Pesa', provider: 'TIGO_TZA', badgeColor: 'bg-blue-100', badgeText: 'text-blue-900' },
+      { label: 'HaloPesa', provider: 'HALOTEL_TZA', logo: 'halopesa.png' },
+    ],
+  },
+  {
+    code: 'ZMB',
+    name: 'Zambie',
+    dialCode: '260',
+    phoneLength: 9,
+    operators: [
+      { label: 'Airtel Money', provider: 'AIRTEL_OAPI_ZMB', logo: 'at-money.png' },
+      { label: 'MTN MoMo', provider: 'MTN_MOMO_ZMB', logo: 'mtn-momo.png' },
+      { label: 'Zamtel Money', provider: 'ZAMTEL_ZMB', logo: 'zamtel.png' },
+    ],
+  },
+  {
+    code: 'MWI',
+    name: 'Malawi',
+    dialCode: '265',
+    phoneLength: 9,
+    operators: [
+      { label: 'Airtel Money', provider: 'AIRTEL_MWI', logo: 'at-money.png' },
+      { label: 'TNM Mpamba', provider: 'TNM_MWI', logo: 'tnm.png' },
+    ],
+  },
+  {
+    code: 'MOZ',
+    name: 'Mozambique',
+    dialCode: '258',
+    phoneLength: 9,
+    operators: [
+      { label: 'Movitel', provider: 'MOVITEL_MOZ', logo: 'movitel.png' },
+      { label: 'Vodacom M-Pesa', provider: 'VODACOM_MOZ', logo: 'vodacom.png' },
+    ],
+  },
+  {
+    code: 'LSO',
+    name: 'Lesotho',
+    dialCode: '266',
+    phoneLength: 8,
+    operators: [
+      { label: 'M-Pesa', provider: 'MPESA_LSO', logo: 'mpesa.png' },
+    ],
+  },
+  {
+    code: 'SLE',
+    name: 'Sierra Leone',
+    dialCode: '232',
+    phoneLength: 8,
+    operators: [
+      { label: 'Orange Money', provider: 'ORANGE_SLE', logo: 'orange-money.png' },
+    ],
+  },
+  {
+    code: 'ETH',
+    name: 'Éthiopie',
+    dialCode: '251',
+    phoneLength: 9,
+    operators: [
+      { label: 'Safaricom M-Pesa', provider: 'MPESA_ETH', logo: 'safaricom-mpesa.png' },
+    ],
+  },
 ];
 
 // Retrouve un opérateur de versement à partir de son provider (ex: "WAVE_SEN"),

@@ -26,7 +26,7 @@ import {
 } from '@/components/ui/card';
 import { PageHeader } from '@/components/page-header';
 import { PageLoader } from '@/components/page-loader';
-import { ArrowLeftIcon } from '@/components/icons';
+import { ArrowLeftIcon, FileIcon } from '@/components/icons';
 import { CATEGORY_LABELS, PRODUCT_STATUS_BADGE, PRODUCT_STATUS_LABELS } from '@/lib/constants';
 import { friendlyError } from '@/lib/error-messages';
 
@@ -43,9 +43,14 @@ export default function EditProduct() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
+  const [flexiblePrice, setFlexiblePrice] = useState(false);
+  const [minPrice, setMinPrice] = useState('');
   const [category, setCategory] = useState('ebook');
   const [affiliateEnabled, setAffiliateEnabled] = useState(false);
   const [maxCommission, setMaxCommission] = useState('10');
+
+  const [newFile, setNewFile] = useState<File | null>(null);
+  const [uploadingFile, setUploadingFile] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -55,6 +60,8 @@ export default function EditProduct() {
         setTitle(product.title);
         setDescription(product.description || '');
         setPrice(String(product.price_cfa));
+        setFlexiblePrice(product.price_mode === 'flexible');
+        setMinPrice(product.min_price_cfa ? String(product.min_price_cfa) : '');
         setCategory(product.category);
         setAffiliateEnabled(product.affiliate_enabled);
         setMaxCommission(String(product.max_closer_commission_pct || 10));
@@ -63,6 +70,10 @@ export default function EditProduct() {
       .catch((err: any) => setError(friendlyError(err)))
       .finally(() => setLoading(false));
   }, [id]);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setNewFile(e.target.files?.[0] || null);
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -73,14 +84,32 @@ export default function EditProduct() {
       setError('Prix invalide');
       return;
     }
+    const minPriceNum = parseInt(minPrice, 10);
+    if (flexiblePrice && (isNaN(minPriceNum) || minPriceNum <= 0)) {
+      setError('Indiquez un prix minimum pour le prix libre');
+      return;
+    }
 
     setSaving(true);
     try {
+      let fileKey: string | undefined;
+      if (newFile) {
+        setUploadingFile(true);
+        const form = new FormData();
+        form.append('file', newFile);
+        const uploadResult = await api.uploadFile(form);
+        fileKey = uploadResult.file_key;
+        setUploadingFile(false);
+      }
+
       await api.updateProduct(id, {
         title,
         description,
         price_cfa: priceNum,
+        price_mode: flexiblePrice ? 'flexible' : 'fixed',
+        min_price_cfa: flexiblePrice ? minPriceNum : undefined,
         category,
+        ...(fileKey ? { file_key: fileKey } : {}),
         affiliate_enabled: affiliateEnabled,
         max_closer_commission_pct: affiliateEnabled ? parseInt(maxCommission, 10) || 0 : 0,
       });
@@ -89,6 +118,7 @@ export default function EditProduct() {
       setError(friendlyError(err));
     } finally {
       setSaving(false);
+      setUploadingFile(false);
     }
   };
 
@@ -136,8 +166,7 @@ export default function EditProduct() {
           <CardHeader>
             <CardTitle>Informations produit</CardTitle>
             <CardDescription>
-              Le fichier livré aux acheteurs ne change pas ici — supprimez et recréez le produit
-              pour remplacer le fichier.
+              Modifiez les informations du produit, ou remplacez le fichier livré ci-dessous.
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -174,6 +203,22 @@ export default function EditProduct() {
                     required
                     min={0}
                   />
+                  <label className="flex items-center gap-2 cursor-pointer mt-1">
+                    <Checkbox checked={flexiblePrice} onCheckedChange={(checked) => setFlexiblePrice(checked === true)} />
+                    <span className="text-xs text-muted-foreground">Prix libre (le client choisit son montant)</span>
+                  </label>
+                  {flexiblePrice && (
+                    <div className="space-y-1">
+                      <Label htmlFor="min-price" className="text-xs">Prix minimum (FCFA)</Label>
+                      <Input
+                        id="min-price"
+                        type="number"
+                        value={minPrice}
+                        onChange={(e) => setMinPrice(e.target.value)}
+                        min={1}
+                      />
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2">
@@ -191,6 +236,26 @@ export default function EditProduct() {
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label htmlFor="new-file">Remplacer le fichier livré (optionnel)</Label>
+                <Input id="new-file" type="file" onChange={handleFileSelect} />
+                {newFile ? (
+                  <div className="p-3 flex items-center gap-3 bg-secondary/60 rounded-lg border border-border">
+                    <FileIcon size={24} className="text-primary shrink-0" />
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium truncate">{newFile.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {(newFile.size / 1024 / 1024).toFixed(2)} Mo — remplacera le fichier actuel
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Laissez vide pour conserver le fichier actuel. Un nouveau fichier régénère les aperçus.
+                  </p>
+                )}
               </div>
 
               <div className="p-4 border border-border rounded-lg bg-secondary/60 space-y-3">
@@ -228,7 +293,7 @@ export default function EditProduct() {
               </div>
 
               <Button type="submit" disabled={saving} className="w-full font-semibold">
-                {saving ? 'Enregistrement...' : 'Enregistrer les modifications'}
+                {uploadingFile ? 'Envoi du fichier...' : saving ? 'Enregistrement...' : 'Enregistrer les modifications'}
               </Button>
             </form>
           </CardContent>

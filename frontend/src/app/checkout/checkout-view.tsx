@@ -24,6 +24,8 @@ interface Product {
   id: string;
   title: string;
   price_cfa: number;
+  price_mode?: string;
+  min_price_cfa?: number | null;
   category: string;
   cover_image_key?: string;
 }
@@ -42,14 +44,27 @@ export default function CheckoutView() {
   const [name, setName] = useState('');
   const [country, setCountry] = useState('SEN');
   const [email, setEmail] = useState('');
+  const [customAmount, setCustomAmount] = useState('');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
   const guest = !isLoggedIn();
   const selectedCountry = CHECKOUT_COUNTRIES.find((c) => c.code === country);
 
+  const isFlexible = product?.price_mode === 'flexible';
+  const minAmount = product?.min_price_cfa || 0;
+  const amountToPay = isFlexible ? parseInt(customAmount, 10) || 0 : product?.price_cfa || 0;
+  const amountValid = !isFlexible || amountToPay >= minAmount;
+
   useEffect(() => {
-    if (user?.email && guest === false) setEmail(user.email);
+    if (guest === false && user) {
+      if (user.email) setEmail(user.email);
+      // Le nom n'était jamais pré-rempli pour un utilisateur connecté — il
+      // devait le retaper à chaque achat, ce qui bloquait silencieusement le
+      // bouton "Payer" (désactivé tant que le nom est vide) alors que
+      // l'email, lui, apparaissait déjà rempli.
+      if (user.display_name && !name) setName(user.display_name);
+    }
   }, [user, guest]);
 
   useEffect(() => {
@@ -62,6 +77,9 @@ export default function CheckoutView() {
       .getProduct(productId)
       .then((res) => {
         setProduct(res.product);
+        if (res.product.price_mode === 'flexible') {
+          setCustomAmount(String(res.product.min_price_cfa || ''));
+        }
         setLoadingProduct(false);
       })
       .catch(() => {
@@ -80,6 +98,7 @@ export default function CheckoutView() {
         buyer_name: name,
         country,
         ...(guest ? { buyer_email: email } : {}),
+        ...(isFlexible ? { amount_cfa: amountToPay } : {}),
       });
       const redirectUrl = result.checkout?.redirect_url;
       if (!redirectUrl) throw new Error('redirect_url_missing');
@@ -141,11 +160,29 @@ export default function CheckoutView() {
             <p className="text-xs text-green-900/50 mt-0.5">
               Total à payer :{' '}
               <span className="font-mono font-semibold text-green-700">
-                {formatPrice(product.price_cfa)}
+                {isFlexible ? formatPrice(amountToPay) : formatPrice(product.price_cfa)}
               </span>
             </p>
           </div>
         </div>
+
+        {isFlexible && (
+          <div className="bg-white rounded-xl shadow-card border border-green-900/5 p-6 mb-4 space-y-2">
+            <Label htmlFor="cc-amount">Choisissez votre montant (FCFA)</Label>
+            <Input
+              id="cc-amount"
+              type="number"
+              inputMode="numeric"
+              value={customAmount}
+              onChange={(e) => setCustomAmount(e.target.value)}
+              min={minAmount}
+              className="bg-white"
+            />
+            <p className={`text-xs ${!amountValid ? 'text-red-600' : 'text-green-900/50'}`}>
+              Minimum : {formatPrice(minAmount)}
+            </p>
+          </div>
+        )}
 
         <div className="bg-white rounded-xl shadow-card border border-green-900/5 p-6 sm:p-8">
           <div className="space-y-4">
@@ -226,11 +263,11 @@ export default function CheckoutView() {
 
             <Button
               onClick={handleSubmit}
-              disabled={submitting || !name || (guest && !email)}
+              disabled={submitting || !name || (guest && !email) || !amountValid}
               className="w-full h-12 font-semibold bg-green-950 text-white hover:bg-green-900 text-base gap-2"
             >
               <LockIcon size={16} />
-              {submitting ? 'Redirection vers PawaPay...' : `Payer ${formatPrice(product.price_cfa)}`}
+              {submitting ? 'Redirection vers PawaPay...' : `Payer ${formatPrice(isFlexible ? amountToPay : product.price_cfa)}`}
             </Button>
 
             <div className="flex flex-col items-center gap-2.5 pt-1">

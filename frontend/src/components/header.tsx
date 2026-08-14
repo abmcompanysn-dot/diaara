@@ -115,16 +115,10 @@ export function Header() {
       <div className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between gap-4">
         <Link
           href="/"
-          className="flex items-center gap-2 group"
+          className="flex items-center group"
           onClick={() => setMenuOpen(false)}
         >
-          <span className="font-display text-2xl font-bold text-white tracking-tight">
-            DIARRA
-          </span>
-          <span
-            className="w-2 h-2 rounded-full bg-green-400 inline-block group-hover:scale-150 transition-transform"
-            aria-hidden
-          />
+          <img src="/brand/diarra-logo-white-text.svg" alt="DIARRA" className="h-7 w-auto" />
         </Link>
 
         <nav className="hidden md:flex items-center gap-6" aria-label="Navigation principale">
@@ -219,7 +213,7 @@ export function Header() {
             className="absolute right-0 top-0 h-full w-72 max-w-[85vw] bg-green-950 text-white shadow-lift flex flex-col animate-in slide-in-from-right duration-200"
           >
             <div className="flex items-center justify-between px-5 h-16 border-b border-white/10">
-              <span className="font-display text-xl font-bold tracking-tight">DIARRA</span>
+              <img src="/brand/diarra-logo-white-text.svg" alt="DIARRA" className="h-6 w-auto" />
               <button
                 type="button"
                 onClick={() => setMenuOpen(false)}

@@ -7,6 +7,8 @@ export interface User {
   id: string;
   email: string;
   phone?: string | null;
+  display_name?: string | null;
+  shop_name?: string | null;
   is_admin: boolean;
   roles?: string[];
   email_verified_at?: string | null;

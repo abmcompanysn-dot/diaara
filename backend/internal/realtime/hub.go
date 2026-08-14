@@ -12,8 +12,9 @@ import (
 
 // SalesChannel et ModerationChannel sont les canaux NOTIFY de PostgreSQL.
 const (
-	SalesChannel     = "sales_channel"
+	SalesChannel      = "sales_channel"
 	ModerationChannel = "moderation_channel"
+	SupportChannel    = "support_channel"
 )
 
 // Hub maintient les connexions WebSocket par canal et relaie les notifications.
@@ -94,8 +95,13 @@ func (h *Hub) listen() {
 		log.Printf("realtime: LISTEN moderation_channel échoué: %v", err)
 		return
 	}
+	_, err = conn.Exec(context.Background(), "LISTEN "+SupportChannel)
+	if err != nil {
+		log.Printf("realtime: LISTEN support_channel échoué: %v", err)
+		return
+	}
 
-	log.Println("realtime: écoute active sur sales_channel et moderation_channel")
+	log.Println("realtime: écoute active sur sales_channel, moderation_channel et support_channel")
 
 	for {
 		notification, err := conn.Conn().WaitForNotification(context.Background())
@@ -115,6 +121,8 @@ func (h *Hub) dispatch(n *pgconn.Notification) {
 		channel = "order"
 	case ModerationChannel:
 		channel = "moderation"
+	case SupportChannel:
+		channel = "support"
 	default:
 		return
 	}

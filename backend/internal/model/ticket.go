@@ -3,12 +3,14 @@ package model
 import "time"
 
 type SupportTicket struct {
-	ID        string    `json:"id"`
-	UserID    string    `json:"user_id"`
-	SaleID    *string   `json:"sale_id,omitempty"`
-	Subject   string    `json:"subject"`
-	Status    string    `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
+	ID              string     `json:"id"`
+	UserID          string     `json:"user_id"`
+	SaleID          *string    `json:"sale_id,omitempty"`
+	Subject         string     `json:"subject"`
+	Status          string     `json:"status"`
+	AssignedAdminID *string    `json:"assigned_admin_id,omitempty"`
+	ClaimedAt       *time.Time `json:"claimed_at,omitempty"`
+	CreatedAt       time.Time  `json:"created_at"`
 }
 
 type TicketMessage struct {
@@ -27,4 +29,10 @@ type CreateTicketInput struct {
 
 type CreateTicketMessageInput struct {
 	Body string `json:"body"`
+}
+
+// AssignTicketInput — PUT /api/admin/tickets/{id}/assign : redirige le
+// ticket vers un agent précis.
+type AssignTicketInput struct {
+	AdminID string `json:"admin_id"`
 }

@@ -1,5 +1,6 @@
 import { formatPrice, PAYOUT_STATUS_LABELS } from '@/lib/constants';
 import { findPayoutOperator, maskPhone } from '@/lib/operators';
+import { escapeHtml } from '@/lib/html-escape';
 
 export interface ReceiptPayout {
   id: string;
@@ -54,15 +55,15 @@ export function openPayoutReceipt(payout: ReceiptPayout) {
   <h1>DIARRA — Reçu de versement</h1>
   <p class="sub">Référence ${reference}</p>
 
-  <div class="row"><span>Statut</span><span><span class="status">${statusLabel}</span></span></div>
-  <div class="row"><span>Date de la demande</span><span>${requestedDate}</span></div>
-  ${paidDate ? `<div class="row"><span>Date du versement</span><span>${paidDate}</span></div>` : ''}
-  <div class="row"><span>Destination</span><span>${destination}</span></div>
-  <div class="row"><span>Numéro</span><span>${maskedPhone}</span></div>
-  <div class="row"><span>Montant brut</span><span>${formatPrice(payout.amount_cfa)}</span></div>
+  <div class="row"><span>Statut</span><span><span class="status">${escapeHtml(statusLabel)}</span></span></div>
+  <div class="row"><span>Date de la demande</span><span>${escapeHtml(requestedDate)}</span></div>
+  ${paidDate ? `<div class="row"><span>Date du versement</span><span>${escapeHtml(paidDate)}</span></div>` : ''}
+  <div class="row"><span>Destination</span><span>${escapeHtml(destination)}</span></div>
+  <div class="row"><span>Numéro</span><span>${escapeHtml(maskedPhone)}</span></div>
+  <div class="row"><span>Montant brut</span><span>${escapeHtml(formatPrice(payout.amount_cfa))}</span></div>
   <div class="row"><span>Frais</span><span>0 FCFA</span></div>
-  <div class="row total"><span>Montant net reçu</span><span>${formatPrice(payout.amount_cfa)}</span></div>
-  ${payout.failure_reason ? `<div class="row"><span>Motif</span><span>${payout.failure_reason}</span></div>` : ''}
+  <div class="row total"><span>Montant net reçu</span><span>${escapeHtml(formatPrice(payout.amount_cfa))}</span></div>
+  ${payout.failure_reason ? `<div class="row"><span>Motif</span><span>${escapeHtml(payout.failure_reason)}</span></div>` : ''}
 
   <p class="footer">Document généré automatiquement — DIARRA</p>
 </body>

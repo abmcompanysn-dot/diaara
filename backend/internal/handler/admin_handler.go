@@ -164,7 +164,7 @@ func (h *AdminHandler) SetRole(w http.ResponseWriter, r *http.Request) {
 
 // Users — GET /api/admin/users
 func (h *AdminHandler) Users(w http.ResponseWriter, r *http.Request) {
-	users, err := h.userRepo.ListAllUsers(r.Context())
+	users, err := h.userRepo.ListAllUsersWithStats(r.Context())
 	if err != nil {
 		http.Error(w, `{"error":"list_failed"}`, http.StatusInternalServerError)
 		return
@@ -172,6 +172,17 @@ func (h *AdminHandler) Users(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"users": users})
+}
+
+// ReactivateUser — PUT /api/admin/users/{id}/reactivate
+func (h *AdminHandler) ReactivateUser(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if err := h.userRepo.UnlockAccount(r.Context(), id); err != nil {
+		http.Error(w, `{"error":"reactivation_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "active"})
 }
 
 // Stats — GET /api/admin/stats
@@ -470,7 +481,9 @@ func (h *AdminHandler) totalRevenue(ctx context.Context) (int, error) {
 
 	total := 0
 	for _, s := range sales {
-		if s.Status != "failed" && s.Status != "refunded" {
+		// Même règle que PayoutHandler.totalEarned : seules les ventes payées
+		// comptent dans le revenu, pas les commandes en attente.
+		if s.Status == "paid" || s.Status == "delivered" {
 			total += s.PlatformFeeCFA
 		}
 	}

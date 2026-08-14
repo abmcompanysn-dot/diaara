@@ -9,8 +9,10 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/diarra/backend/internal/auth"
+	"github.com/diarra/backend/internal/email"
 	"github.com/diarra/backend/internal/middleware"
 	"github.com/diarra/backend/internal/model"
 	"github.com/diarra/backend/internal/payment"
@@ -35,6 +37,7 @@ type SaleHandler struct {
 	settingsRepo  *repository.SettingsRepo
 	pawapay       *payment.PawaPayClient
 	commissionSvc *service.CommissionService
+	notifications *email.NotificationService
 	frontendURL   string
 }
 
@@ -45,6 +48,7 @@ func NewSaleHandler(
 	userRepo *repository.UserRepo,
 	settingsRepo *repository.SettingsRepo,
 	pawapay *payment.PawaPayClient,
+	notifications *email.NotificationService,
 	frontendURL string,
 ) *SaleHandler {
 	return &SaleHandler{
@@ -55,6 +59,7 @@ func NewSaleHandler(
 		settingsRepo:  settingsRepo,
 		pawapay:       pawapay,
 		commissionSvc: service.NewCommissionService(),
+		notifications: notifications,
 		frontendURL:   strings.TrimSuffix(frontendURL, "/"),
 	}
 }
@@ -103,6 +108,17 @@ func (h *SaleHandler) Create(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, `{"error":"guest_account_creation_failed"}`, http.StatusInternalServerError)
 				return
 			}
+
+			// Le mot de passe généré ci-dessus n'est jamais communiqué à l'acheteur :
+			// on lui envoie un lien "définir mon mot de passe" (même flux que
+			// ForgotPassword) pour qu'il puisse se reconnecter plus tard.
+			if h.notifications != nil {
+				if resetToken, tokenErr := auth.GenerateToken(); tokenErr == nil {
+					if createErr := h.userRepo.CreatePasswordReset(r.Context(), user.ID, auth.HashToken(resetToken), time.Now().Add(1*time.Hour)); createErr == nil {
+						go h.notifications.SendPasswordReset(context.Background(), user.Email, resetToken)
+					}
+				}
+			}
 		}
 		userID = user.ID
 	}
@@ -118,18 +134,42 @@ func (h *SaleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Montant de la vente : pour un produit à prix fixe (comportement par
+	// défaut, inchangé), on ignore tout montant envoyé par le client et on
+	// utilise product.PriceCFA — ne jamais faire confiance à un montant
+	// client pour un produit à prix fixe. Seul un produit explicitement en
+	// price_mode "flexible" autorise l'acheteur à choisir son montant, et
+	// uniquement au-dessus du minimum fixé par le vendeur.
+	amount := product.PriceCFA
+	if product.PriceMode == "flexible" {
+		if input.AmountCFA == nil || *input.AmountCFA <= 0 {
+			http.Error(w, `{"error":"amount_required_for_flexible_pricing"}`, http.StatusBadRequest)
+			return
+		}
+		minAmount := 0
+		if product.MinPriceCFA != nil {
+			minAmount = *product.MinPriceCFA
+		}
+		if *input.AmountCFA < minAmount {
+			http.Error(w, `{"error":"amount_below_minimum"}`, http.StatusBadRequest)
+			return
+		}
+		amount = *input.AmountCFA
+	}
+
 	// Commission : taux configurable depuis l'admin (settings.commission_rate_pct,
 	// 15% par défaut). Calculé ici plutôt que via CommissionService (qui reste
 	// au taux fixe pour ses autres usages) pour ne dépendre que de ce réglage.
 	rate := h.settingsRepo.GetFloat(r.Context(), model.SettingCommissionRatePct, service.DefaultPlatformFeePct)
-	platformFee := int(float64(product.PriceCFA) * rate / 100.0)
+	platformFee := int(float64(amount) * rate / 100.0)
 	sale := &model.Sale{
 		ProductID:       product.ID,
 		BuyerID:         userID,
 		BuyerName:       input.BuyerName,
-		AmountCFA:       product.PriceCFA,
+		Country:         &input.Country,
+		AmountCFA:       amount,
 		PlatformFeeCFA:  platformFee,
-		VendorAmountCFA: product.PriceCFA - platformFee,
+		VendorAmountCFA: amount - platformFee,
 		PaymentProvider: "pawapay",
 		Status:          string(model.SalePending),
 	}
@@ -156,8 +196,8 @@ func (h *SaleHandler) Create(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		closerFee := int(float64(product.PriceCFA) * link.CommissionPct / 100.0)
-		rest := product.PriceCFA - platformFee
+		closerFee := int(float64(amount) * link.CommissionPct / 100.0)
+		rest := amount - platformFee
 		if closerFee > rest {
 			closerFee = rest
 		}
@@ -275,6 +315,25 @@ func (h *SaleHandler) List(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"orders": sales})
+}
+
+// ListVendor — GET /api/vendor/sales : les ventes des produits du vendeur
+// connecté, avec les coordonnées de l'acheteur (nom, email, pays).
+func (h *SaleHandler) ListVendor(w http.ResponseWriter, r *http.Request) {
+	vendorID := middleware.GetUserID(r.Context())
+	if vendorID == "" {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	sales, err := h.saleRepo.ListByVendor(r.Context(), vendorID)
+	if err != nil {
+		http.Error(w, `{"error":"list_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"sales": sales})
 }
 
 func newUUID() string {

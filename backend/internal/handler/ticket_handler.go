@@ -11,11 +11,12 @@ import (
 )
 
 type TicketHandler struct {
-	ticketRepo *repository.TicketRepo
+	ticketRepo    *repository.TicketRepo
+	adminPermRepo *repository.AdminPermissionRepo
 }
 
-func NewTicketHandler(ticketRepo *repository.TicketRepo) *TicketHandler {
-	return &TicketHandler{ticketRepo: ticketRepo}
+func NewTicketHandler(ticketRepo *repository.TicketRepo, adminPermRepo *repository.AdminPermissionRepo) *TicketHandler {
+	return &TicketHandler{ticketRepo: ticketRepo, adminPermRepo: adminPermRepo}
 }
 
 // Create — POST /api/tickets
@@ -153,4 +154,86 @@ func (h *TicketHandler) AddMessage(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]interface{}{"message": message})
+}
+
+// Claim — PUT /api/admin/tickets/{id}/claim (admin uniquement).
+// Le premier agent à cliquer "Prendre en charge" gagne le ticket ; les
+// autres agents reçoivent une erreur explicite (voir ClaimTicket, UPDATE
+// atomique) au lieu de traiter la même conversation en double.
+func (h *TicketHandler) Claim(w http.ResponseWriter, r *http.Request) {
+	isAdmin := middleware.GetIsAdmin(r.Context())
+	if !isAdmin {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
+
+	adminID := middleware.GetUserID(r.Context())
+	id := chi.URLParam(r, "id")
+
+	ticket, err := h.ticketRepo.ClaimTicket(r.Context(), id, adminID)
+	if err != nil {
+		switch err {
+		case repository.ErrTicketAlreadyClaimed:
+			http.Error(w, `{"error":"ticket_already_claimed"}`, http.StatusConflict)
+		case repository.ErrTicketNotFound:
+			http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
+		default:
+			http.Error(w, `{"error":"claim_failed"}`, http.StatusInternalServerError)
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"ticket": ticket})
+}
+
+// Assign — PUT /api/admin/tickets/{id}/assign (admin uniquement).
+// Redirige un ticket vers un agent précis, qu'il soit déjà pris en charge ou
+// non — utile quand le mauvais agent a répondu, ou pour équilibrer la charge.
+func (h *TicketHandler) Assign(w http.ResponseWriter, r *http.Request) {
+	isAdmin := middleware.GetIsAdmin(r.Context())
+	if !isAdmin {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
+
+	id := chi.URLParam(r, "id")
+
+	var input model.AssignTicketInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil || input.AdminID == "" {
+		http.Error(w, `{"error":"admin_id_required"}`, http.StatusBadRequest)
+		return
+	}
+
+	ticket, err := h.ticketRepo.AssignTicket(r.Context(), id, input.AdminID)
+	if err != nil {
+		if err == repository.ErrTicketNotFound {
+			http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
+			return
+		}
+		http.Error(w, `{"error":"assign_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"ticket": ticket})
+}
+
+// Assignees — GET /api/admin/tickets/assignees (admin uniquement).
+// Liste des admins vers qui un ticket peut être redirigé.
+func (h *TicketHandler) Assignees(w http.ResponseWriter, r *http.Request) {
+	isAdmin := middleware.GetIsAdmin(r.Context())
+	if !isAdmin {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
+
+	admins, err := h.adminPermRepo.ListAdmins(r.Context())
+	if err != nil {
+		http.Error(w, `{"error":"list_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"admins": admins})
 }

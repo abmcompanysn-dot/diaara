@@ -79,6 +79,15 @@ export default function VendorProductsPage() {
             <Button variant="outline" size="sm" render={<Link href="/vendor/earnings" />}>
               Revenus
             </Button>
+            <Button variant="outline" size="sm" render={<Link href="/vendor/sales" />}>
+              Mes clients
+            </Button>
+            <Button variant="outline" size="sm" render={<Link href="/vendor/products/bundles" />}>
+              Mes packs
+            </Button>
+            <Button variant="outline" size="sm" render={<Link href="/vendor/messages" />}>
+              Messages
+            </Button>
             <Button size="sm" render={<Link href="/vendor/products/new" />}>
               + Nouveau produit
             </Button>

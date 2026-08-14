@@ -100,6 +100,68 @@ func (h *RealtimeHandler) OrderWS(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// SupportWS expose /ws/support — tout admin connecté reçoit en direct les
+// nouveaux tickets, nouveaux messages et prises en charge (claim), pour que
+// deux agents ne traitent jamais la même conversation en double sans le savoir.
+func (h *RealtimeHandler) SupportWS(w http.ResponseWriter, r *http.Request) {
+	isAdmin := middleware.GetIsAdmin(r.Context())
+	if !isAdmin {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
+
+	conn, err := upgrader.Upgrade(w, r, nil)
+	if err != nil {
+		return
+	}
+	defer conn.Close()
+
+	client, err := h.hub.Subscribe(realtime.SupportChannel)
+	if err != nil {
+		return
+	}
+	defer h.hub.Unsubscribe(client)
+
+	ctx, cancel := context.WithCancel(r.Context())
+	defer cancel()
+
+	writeDone := make(chan struct{})
+	go func() {
+		defer close(writeDone)
+		for {
+			select {
+			case msg, ok := <-client.Send:
+				if !ok {
+					return
+				}
+				conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
+				if err := conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+					return
+				}
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+
+	readDone := make(chan struct{})
+	go func() {
+		defer close(readDone)
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				cancel()
+				return
+			}
+		}
+	}()
+
+	select {
+	case <-writeDone:
+	case <-readDone:
+	case <-r.Context().Done():
+	}
+}
+
 // matchesOrder vérifie que le payload NOTIFY concerne bien la commande demandée
 // et son propriétaire, pour éviter de fuir les commandes des autres utilisateurs.
 func matchesOrder(raw []byte, orderID, userID string) bool {

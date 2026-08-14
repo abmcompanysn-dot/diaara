@@ -280,14 +280,18 @@ func (h *PayoutHandler) totalEarned(ctx context.Context, vendorID string) (int, 
 
 	total := 0
 	for _, s := range sales {
-		if s.Status != "failed" && s.Status != "refunded" {
-			product, err := h.productRepo.FindByID(ctx, s.ProductID)
-			if err != nil {
-				continue
-			}
-			if product.VendorID == vendorID {
-				total += s.VendorAmountCFA
-			}
+		// Seules les ventes réellement payées comptent dans le chiffre d'affaires
+		// du vendeur — une commande "pending"/"refund_pending" n'est pas de
+		// l'argent reçu et ne doit jamais être disponible pour un versement.
+		if s.Status != "paid" && s.Status != "delivered" {
+			continue
+		}
+		product, err := h.productRepo.FindByID(ctx, s.ProductID)
+		if err != nil {
+			continue
+		}
+		if product.VendorID == vendorID {
+			total += s.VendorAmountCFA
 		}
 	}
 	return total, nil

@@ -21,13 +21,13 @@ func NewProductRepo(pool *pgxpool.Pool) *ProductRepo {
 	return &ProductRepo{pool: pool}
 }
 
-const productColumns = `id, vendor_id, title, description, price_cfa, category, file_key,
+const productColumns = `id, vendor_id, title, description, price_cfa, price_mode, min_price_cfa, category, file_key,
 	cover_image_key, moderation_status, moderation_note, affiliate_enabled, max_closer_commission_pct,
 	preview_keys, preview_status, created_at, updated_at`
 
 func scanProduct(row pgx.Row) (*model.Product, error) {
 	p := &model.Product{}
-	err := row.Scan(&p.ID, &p.VendorID, &p.Title, &p.Description, &p.PriceCFA, &p.Category,
+	err := row.Scan(&p.ID, &p.VendorID, &p.Title, &p.Description, &p.PriceCFA, &p.PriceMode, &p.MinPriceCFA, &p.Category,
 		&p.FileKey, &p.CoverImageKey, &p.ModerationStatus, &p.ModerationNote, &p.AffiliateEnabled,
 		&p.MaxCloserCommissionPct, &p.PreviewKeys, &p.PreviewStatus, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
@@ -40,12 +40,16 @@ func scanProduct(row pgx.Row) (*model.Product, error) {
 }
 
 func (r *ProductRepo) Create(ctx context.Context, input model.CreateProductInput, vendorID string) (*model.Product, error) {
+	priceMode := input.PriceMode
+	if priceMode == "" {
+		priceMode = "fixed"
+	}
 	row := r.pool.QueryRow(ctx,
-		`INSERT INTO products (vendor_id, title, description, price_cfa, category, file_key,
+		`INSERT INTO products (vendor_id, title, description, price_cfa, price_mode, min_price_cfa, category, file_key,
 			cover_image_key, affiliate_enabled, max_closer_commission_pct)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		 RETURNING `+productColumns,
-		vendorID, input.Title, input.Description, input.PriceCFA, input.Category, input.FileKey,
+		vendorID, input.Title, input.Description, input.PriceCFA, priceMode, input.MinPriceCFA, input.Category, input.FileKey,
 		input.CoverImageKey, input.AffiliateEnabled, input.MaxCloserCommissionPct,
 	)
 	return scanProduct(row)
@@ -154,6 +158,24 @@ func (r *ProductRepo) Update(ctx context.Context, id string, input model.UpdateP
 		sets = append(sets, `price_cfa = $`+itoa(argIdx))
 		args = append(args, *input.PriceCFA)
 		argIdx++
+	}
+	if input.PriceMode != nil {
+		sets = append(sets, `price_mode = $`+itoa(argIdx))
+		args = append(args, *input.PriceMode)
+		argIdx++
+	}
+	if input.MinPriceCFA != nil {
+		sets = append(sets, `min_price_cfa = $`+itoa(argIdx))
+		args = append(args, *input.MinPriceCFA)
+		argIdx++
+	}
+	if input.FileKey != nil {
+		sets = append(sets, `file_key = $`+itoa(argIdx))
+		args = append(args, *input.FileKey)
+		argIdx++
+		// Le fichier a changé : les aperçus filigranés existants ne
+		// correspondent plus, on les régénère (même flux qu'à la création).
+		sets = append(sets, `preview_status = 'pending'`, `preview_keys = '{}'`)
 	}
 	if input.Category != nil {
 		sets = append(sets, `category = $`+itoa(argIdx))

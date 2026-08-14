@@ -8,6 +8,10 @@ type Product struct {
 	Title                  string    `json:"title"`
 	Description            *string   `json:"description,omitempty"`
 	PriceCFA               int       `json:"price_cfa"`
+	// PriceMode : "fixed" (défaut) ou "flexible" ("paye ce que tu veux").
+	// MinPriceCFA n'a de sens qu'en mode flexible.
+	PriceMode              string    `json:"price_mode"`
+	MinPriceCFA            *int      `json:"min_price_cfa,omitempty"`
 	Category               string    `json:"category"`
 	FileKey                string    `json:"file_key"`
 	CoverImageKey          *string   `json:"cover_image_key,omitempty"`
@@ -28,8 +32,12 @@ type CreateProductInput struct {
 	Title       string  `json:"title"`
 	Description *string `json:"description,omitempty"`
 	PriceCFA    int     `json:"price_cfa"`
-	Category    string  `json:"category"`
-	FileKey     string  `json:"file_key"`
+	// PriceMode : "fixed" (défaut si vide) ou "flexible". MinPriceCFA requis
+	// si "flexible".
+	PriceMode    string `json:"price_mode,omitempty"`
+	MinPriceCFA  *int   `json:"min_price_cfa,omitempty"`
+	Category     string `json:"category"`
+	FileKey      string `json:"file_key"`
 	// CoverImageKey : clé objet de l'image de couverture (optionnel).
 	CoverImageKey string `json:"cover_image_key,omitempty"`
 	// Affiliation (closer) : si AffiliateEnabled, les closers peuvent générer
@@ -42,7 +50,12 @@ type UpdateProductInput struct {
 	Title                  *string  `json:"title,omitempty"`
 	Description            *string  `json:"description,omitempty"`
 	PriceCFA               *int     `json:"price_cfa,omitempty"`
+	PriceMode              *string  `json:"price_mode,omitempty"`
+	MinPriceCFA            *int     `json:"min_price_cfa,omitempty"`
 	Category               *string  `json:"category,omitempty"`
+	// FileKey : remplace le fichier livré au client (le vendeur ré-uploade
+	// via /api/vendor/products/upload puis passe la nouvelle clé ici).
+	FileKey                *string  `json:"file_key,omitempty"`
 	CoverImageKey          *string  `json:"cover_image_key,omitempty"`
 	AffiliateEnabled       *bool    `json:"affiliate_enabled,omitempty"`
 	MaxCloserCommissionPct *float64 `json:"max_closer_commission_pct,omitempty"`

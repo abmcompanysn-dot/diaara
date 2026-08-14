@@ -14,10 +14,11 @@ import (
 
 type AuthHandler struct {
 	authService *service.AuthService
+	firebase    *auth.FirebaseVerifier
 }
 
-func NewAuthHandler(authService *service.AuthService) *AuthHandler {
-	return &AuthHandler{authService: authService}
+func NewAuthHandler(authService *service.AuthService, firebase *auth.FirebaseVerifier) *AuthHandler {
+	return &AuthHandler{authService: authService, firebase: firebase}
 }
 
 // setRefreshCookie pose le cookie httpOnly pour le refresh token.
@@ -153,6 +154,104 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"user": user})
+}
+
+// AddRole — POST /api/account/roles (libre-service, sans validation admin).
+// Permet à un client déjà connecté de devenir vendeur/closer sans passer par
+// l'admin — ex: bouton "Devenir vendeur" dans l'espace client.
+func (h *AuthHandler) AddRole(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	var input model.RoleGrantInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+
+	if err := h.authService.AddRole(r.Context(), userID, input.Role); err != nil {
+		switch err {
+		case service.ErrInvalidRole:
+			http.Error(w, `{"error":"invalid_role"}`, http.StatusBadRequest)
+		default:
+			http.Error(w, `{"error":"role_grant_failed"}`, http.StatusInternalServerError)
+		}
+		return
+	}
+
+	user, err := h.authService.Me(r.Context(), userID)
+	if err != nil {
+		http.Error(w, `{"error":"me_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"user": user})
+}
+
+// UpdateProfile — PUT /api/account/profile (nom + nom de boutique).
+func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	var input model.UpdateProfileInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+
+	if err := h.authService.UpdateProfile(r.Context(), userID, input); err != nil {
+		http.Error(w, `{"error":"profile_update_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	user, err := h.authService.Me(r.Context(), userID)
+	if err != nil {
+		http.Error(w, `{"error":"me_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"user": user})
+}
+
+// GoogleLogin — POST /api/auth/google. Le frontend authentifie l'utilisateur
+// avec Firebase Auth (bouton "Continuer avec Google") et envoie ici l'ID
+// token obtenu ; le backend le vérifie puis émet une session DIARRA classique
+// (Firebase ne sert que de vérificateur d'identité, voir AuthService.LoginWithFirebase).
+func (h *AuthHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
+	if h.firebase == nil {
+		http.Error(w, `{"error":"google_login_not_configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	var input model.GoogleLoginInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil || input.IDToken == "" {
+		http.Error(w, `{"error":"id_token_required"}`, http.StatusBadRequest)
+		return
+	}
+
+	claims, err := h.firebase.VerifyIDToken(input.IDToken)
+	if err != nil {
+		http.Error(w, `{"error":"invalid_google_token"}`, http.StatusUnauthorized)
+		return
+	}
+
+	result, err := h.authService.LoginWithFirebase(r.Context(), claims.Email, claims.EmailVerified, claims.Name)
+	if err != nil {
+		http.Error(w, `{"error":"google_login_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	h.setRefreshCookie(w, result.RefreshToken)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"access_token": result.AccessToken})
 }
 
 func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {

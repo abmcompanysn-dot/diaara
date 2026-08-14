@@ -341,6 +341,15 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if input.PriceMode == "flexible" && (input.MinPriceCFA == nil || *input.MinPriceCFA <= 0) {
+		http.Error(w, `{"error":"min_price_required_for_flexible_pricing"}`, http.StatusBadRequest)
+		return
+	}
+	if input.PriceMode != "" && input.PriceMode != "fixed" && input.PriceMode != "flexible" {
+		http.Error(w, `{"error":"invalid_price_mode"}`, http.StatusBadRequest)
+		return
+	}
+
 	product, err := h.productRepo.Create(r.Context(), input, userID)
 	if err != nil {
 		http.Error(w, `{"error":"creation_failed"}`, http.StatusInternalServerError)
@@ -413,10 +422,28 @@ func (h *ProductHandler) Update(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if input.PriceMode != nil && *input.PriceMode == "flexible" {
+		minVal := product.MinPriceCFA
+		if input.MinPriceCFA != nil {
+			minVal = input.MinPriceCFA
+		}
+		if minVal == nil || *minVal <= 0 {
+			http.Error(w, `{"error":"min_price_required_for_flexible_pricing"}`, http.StatusBadRequest)
+			return
+		}
+	}
+
 	updated, err := h.productRepo.Update(r.Context(), id, input)
 	if err != nil {
 		http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
 		return
+	}
+
+	// Le fichier livré a changé : les aperçus filigranés précédents ne
+	// correspondent plus, on les régénère en tâche de fond (même mécanisme
+	// qu'à la création).
+	if input.FileKey != nil && h.storage != nil {
+		go h.generatePreview(userID, id, *input.FileKey)
 	}
 
 	// Un produit déjà approuvé repasse en attente après modification : le

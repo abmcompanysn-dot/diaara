@@ -23,11 +23,11 @@ func NewUserRepo(pool *pgxpool.Pool) *UserRepo {
 func (r *UserRepo) Create(ctx context.Context, input model.RegisterInput, hash string) (*model.User, error) {
 	user := &model.User{}
 	err := r.pool.QueryRow(ctx,
-		`INSERT INTO users (email, password_hash, phone)
-		 VALUES ($1, $2, $3)
-		 RETURNING id, email, phone, is_admin, email_verified_at, phone_verified_at, failed_login_attempts, locked_until, created_at, updated_at`,
-		input.Email, hash, input.Phone,
-	).Scan(&user.ID, &user.Email, &user.Phone, &user.IsAdmin, &user.EmailVerifiedAt, &user.PhoneVerifiedAt, &user.FailedLoginAttempts, &user.LockedUntil, &user.CreatedAt, &user.UpdatedAt)
+		`INSERT INTO users (email, password_hash, phone, display_name, shop_name)
+		 VALUES ($1, $2, $3, $4, $5)
+		 RETURNING id, email, phone, display_name, shop_name, is_admin, email_verified_at, phone_verified_at, failed_login_attempts, locked_until, created_at, updated_at`,
+		input.Email, hash, input.Phone, input.DisplayName, input.ShopName,
+	).Scan(&user.ID, &user.Email, &user.Phone, &user.DisplayName, &user.ShopName, &user.IsAdmin, &user.EmailVerifiedAt, &user.PhoneVerifiedAt, &user.FailedLoginAttempts, &user.LockedUntil, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -37,14 +37,23 @@ func (r *UserRepo) Create(ctx context.Context, input model.RegisterInput, hash s
 func (r *UserRepo) FindByEmail(ctx context.Context, email string) (*model.User, error) {
 	user := &model.User{}
 	err := r.pool.QueryRow(ctx,
-		`SELECT id, email, phone, password_hash, is_admin, email_verified_at, phone_verified_at, failed_login_attempts, locked_until, created_at, updated_at
+		`SELECT id, email, phone, display_name, shop_name, password_hash, is_admin, email_verified_at, phone_verified_at, failed_login_attempts, locked_until, created_at, updated_at
 		 FROM users WHERE email = $1`,
 		email,
-	).Scan(&user.ID, &user.Email, &user.Phone, &user.PasswordHash, &user.IsAdmin, &user.EmailVerifiedAt, &user.PhoneVerifiedAt, &user.FailedLoginAttempts, &user.LockedUntil, &user.CreatedAt, &user.UpdatedAt)
+	).Scan(&user.ID, &user.Email, &user.Phone, &user.DisplayName, &user.ShopName, &user.PasswordHash, &user.IsAdmin, &user.EmailVerifiedAt, &user.PhoneVerifiedAt, &user.FailedLoginAttempts, &user.LockedUntil, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		return nil, ErrUserNotFound
 	}
 	return user, nil
+}
+
+// SetProfile enregistre/modifie le nom affiché et le nom de boutique d'un
+// utilisateur (ex: formulaire "devenir vendeur").
+func (r *UserRepo) SetProfile(ctx context.Context, userID string, displayName, shopName *string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE users SET display_name = $2, shop_name = $3 WHERE id = $1`,
+		userID, displayName, shopName)
+	return err
 }
 
 // GetPayoutMethod retourne le moyen de versement enregistré du vendeur
@@ -68,10 +77,10 @@ func (r *UserRepo) SetPayoutMethod(ctx context.Context, userID, phone, operator,
 func (r *UserRepo) FindByID(ctx context.Context, id string) (*model.User, error) {
 	user := &model.User{}
 	err := r.pool.QueryRow(ctx,
-		`SELECT id, email, phone, password_hash, is_admin, email_verified_at, phone_verified_at, failed_login_attempts, locked_until, created_at, updated_at
+		`SELECT id, email, phone, display_name, shop_name, password_hash, is_admin, email_verified_at, phone_verified_at, failed_login_attempts, locked_until, created_at, updated_at
 		 FROM users WHERE id = $1`,
 		id,
-	).Scan(&user.ID, &user.Email, &user.Phone, &user.PasswordHash, &user.IsAdmin, &user.EmailVerifiedAt, &user.PhoneVerifiedAt, &user.FailedLoginAttempts, &user.LockedUntil, &user.CreatedAt, &user.UpdatedAt)
+	).Scan(&user.ID, &user.Email, &user.Phone, &user.DisplayName, &user.ShopName, &user.PasswordHash, &user.IsAdmin, &user.EmailVerifiedAt, &user.PhoneVerifiedAt, &user.FailedLoginAttempts, &user.LockedUntil, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		return nil, ErrUserNotFound
 	}
@@ -295,6 +304,56 @@ func (r *UserRepo) ListAllUsers(ctx context.Context) ([]*model.User, error) {
 		users = append(users, user)
 	}
 	return users, rows.Err()
+}
+
+// UserWithStats — utilisateur enrichi de ses statistiques de vente (vue admin).
+type UserWithStats struct {
+	model.User
+	ProductsSold      int `json:"products_sold"`
+	RevenueGeneratedCFA int `json:"revenue_generated_cfa"`
+}
+
+// ListAllUsersWithStats — tous les utilisateurs avec, pour chacun, le nombre
+// de ventes abouties de ses produits et le revenu (part vendeur) généré.
+func (r *UserRepo) ListAllUsersWithStats(ctx context.Context) ([]*UserWithStats, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT u.id, u.email, u.phone, u.is_admin, u.email_verified_at, u.phone_verified_at,
+		       u.locked_until, u.created_at, u.updated_at,
+		       COALESCE(ARRAY_AGG(DISTINCT ur.role) FILTER (WHERE ur.role IS NOT NULL), ARRAY[]::text[]),
+		       COALESCE(stats.products_sold, 0), COALESCE(stats.revenue_generated, 0)
+		FROM users u
+		LEFT JOIN user_roles ur ON ur.user_id = u.id
+		LEFT JOIN (
+			SELECT p.vendor_id, COUNT(s.id) AS products_sold,
+			       COALESCE(SUM(s.vendor_amount_cfa), 0) AS revenue_generated
+			FROM sales s JOIN products p ON p.id = s.product_id
+			WHERE s.status IN ('paid', 'delivered')
+			GROUP BY p.vendor_id
+		) stats ON stats.vendor_id = u.id
+		GROUP BY u.id, stats.products_sold, stats.revenue_generated
+		ORDER BY u.created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []*UserWithStats{}
+	for rows.Next() {
+		u := &UserWithStats{}
+		if err := rows.Scan(&u.ID, &u.Email, &u.Phone, &u.IsAdmin, &u.EmailVerifiedAt, &u.PhoneVerifiedAt,
+			&u.LockedUntil, &u.CreatedAt, &u.UpdatedAt, &u.Roles, &u.ProductsSold, &u.RevenueGeneratedCFA); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}
+
+// UnlockAccount — réactive un compte suspendu (retire locked_until).
+func (r *UserRepo) UnlockAccount(ctx context.Context, userID string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE users SET locked_until = NULL, failed_login_attempts = 0 WHERE id = $1`, userID)
+	return err
 }
 
 // SetAdminStatus promeut ou rétrograde un utilisateur au statut administrateur.

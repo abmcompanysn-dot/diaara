@@ -25,6 +25,7 @@ export default function DashboardPage() {
     '/closer/dashboard': 'Mes liens et mes commissions',
     '/admin': 'Modération et gestion de la plateforme',
     '/support': 'Ouvrir un ticket, suivre mes demandes',
+    '/account': 'Profil, boutique et moyen de retrait',
   };
 
   return (

@@ -8,9 +8,10 @@ import { ProductImage } from '@/components/product-image';
 import { PageHeader } from '@/components/page-header';
 import { PageLoader } from '@/components/page-loader';
 import { EmptyState } from '@/components/empty-state';
-import { PackageIcon, SearchIcon, XIcon, DownloadIcon, HeadsetIcon } from '@/components/icons';
+import { PackageIcon, SearchIcon, XIcon, DownloadIcon, HeadsetIcon, FileIcon } from '@/components/icons';
 import { ORDER_STATUS_LABELS, SALE_STATUS_BADGE, formatPrice } from '@/lib/constants';
 import { friendlyError } from '@/lib/error-messages';
+import { openSaleReceipt } from '@/lib/sale-receipt';
 import { cn } from '@/lib/utils';
 
 interface Order {
@@ -18,6 +19,7 @@ interface Order {
   product_id: string;
   amount_cfa: number;
   status: string;
+  buyer_name?: string;
   payment_reference: string;
   created_at: string;
 }
@@ -235,15 +237,26 @@ export default function OrdersPage() {
 
                       <div className="flex items-center gap-2 px-4 pb-4">
                         {available ? (
-                          <Button
-                            size="sm"
-                            onClick={() => handleDownload(order)}
-                            disabled={downloadingId === order.id}
-                            className="flex-1 gap-1.5"
-                          >
-                            <DownloadIcon size={14} />
-                            {downloadingId === order.id ? 'Préparation…' : 'Télécharger'}
-                          </Button>
+                          <>
+                            <Button
+                              size="sm"
+                              onClick={() => handleDownload(order)}
+                              disabled={downloadingId === order.id}
+                              className="flex-1 gap-1.5"
+                            >
+                              <DownloadIcon size={14} />
+                              {downloadingId === order.id ? 'Préparation…' : 'Télécharger'}
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openSaleReceipt(order, product ? { title: product.title } : null)}
+                              className="gap-1.5"
+                            >
+                              <FileIcon size={14} />
+                              Reçu
+                            </Button>
+                          </>
                         ) : (
                           <p className="flex-1 text-xs text-yellow-700 bg-yellow-50 rounded-lg px-3 py-2">
                             {order.status === 'pending'

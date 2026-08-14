@@ -33,6 +33,8 @@ export default function NewProductPage() {
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [price, setPrice] = useState('');
+  const [flexiblePrice, setFlexiblePrice] = useState(false);
+  const [minPrice, setMinPrice] = useState('');
   const [category, setCategory] = useState('ebook');
   const [affiliateEnabled, setAffiliateEnabled] = useState(false);
   const [maxCommission, setMaxCommission] = useState('10');
@@ -84,6 +86,11 @@ export default function NewProductPage() {
       setError('Prix invalide');
       return;
     }
+    const minPriceNum = parseInt(minPrice, 10);
+    if (flexiblePrice && (isNaN(minPriceNum) || minPriceNum <= 0)) {
+      setError('Indiquez un prix minimum pour le prix libre');
+      return;
+    }
 
     setUploading(true);
     try {
@@ -97,6 +104,8 @@ export default function NewProductPage() {
         title,
         description,
         price_cfa: priceNum,
+        price_mode: flexiblePrice ? 'flexible' : 'fixed',
+        min_price_cfa: flexiblePrice ? minPriceNum : undefined,
         category,
         file_key: uploadResult.file_key,
         cover_image_key: coverKey || undefined,
@@ -172,6 +181,22 @@ export default function NewProductPage() {
                   required
                   min={0}
                 />
+                <label className="flex items-center gap-2 cursor-pointer mt-1">
+                  <Checkbox checked={flexiblePrice} onCheckedChange={(checked) => setFlexiblePrice(checked === true)} />
+                  <span className="text-xs text-muted-foreground">Prix libre (le client choisit son montant)</span>
+                </label>
+                {flexiblePrice && (
+                  <div className="space-y-1">
+                    <Label htmlFor="min-price" className="text-xs">Prix minimum (FCFA)</Label>
+                    <Input
+                      id="min-price"
+                      type="number"
+                      value={minPrice}
+                      onChange={(e) => setMinPrice(e.target.value)}
+                      min={1}
+                    />
+                  </div>
+                )}
               </div>
 
               <div className="space-y-2">

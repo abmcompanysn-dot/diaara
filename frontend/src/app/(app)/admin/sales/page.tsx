@@ -11,17 +11,21 @@ import { PageLoader } from '@/components/page-loader';
 import { EmptyState } from '@/components/empty-state';
 import { formatPrice, SALE_STATUS_BADGE, ORDER_STATUS_LABELS } from '@/lib/constants';
 import { friendlyError } from '@/lib/error-messages';
+import { openSaleReceipt } from '@/lib/sale-receipt';
+import { FileIcon } from '@/components/icons';
 
 interface Sale {
   id: string;
   product_id: string;
   buyer_id: string;
+  buyer_name?: string;
   referral_link_id?: string;
   amount_cfa: number;
   platform_fee_cfa: number;
   closer_commission_cfa: number;
   vendor_amount_cfa: number;
   status: string;
+  payment_reference: string;
   created_at: string;
 }
 
@@ -29,6 +33,7 @@ export default function AdminSalesPage() {
   const [sales, setSales] = useState<Sale[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [refundingId, setRefundingId] = useState<string | null>(null);
 
   useEffect(() => {
     loadSales();
@@ -43,6 +48,26 @@ export default function AdminSalesPage() {
       setError(friendlyError(err));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRefund = async (sale: Sale) => {
+    if (
+      !confirm(
+        `Rembourser ${formatPrice(sale.amount_cfa)} à l'acheteur ? Cette action envoie réellement l'argent via PawaPay et ne peut pas être annulée.`
+      )
+    ) {
+      return;
+    }
+    setRefundingId(sale.id);
+    setError('');
+    try {
+      await api.refundSale(sale.id);
+      await loadSales();
+    } catch (err: any) {
+      setError(friendlyError(err));
+    } finally {
+      setRefundingId(null);
     }
   };
 
@@ -90,6 +115,7 @@ export default function AdminSalesPage() {
                   <TableHead>Commission affilié</TableHead>
                   <TableHead>Vendeur</TableHead>
                   <TableHead>Statut</TableHead>
+                  <TableHead></TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -114,6 +140,29 @@ export default function AdminSalesPage() {
                       <Badge variant="outline" className={SALE_STATUS_BADGE[sale.status]}>
                         {ORDER_STATUS_LABELS[sale.status] || sale.status}
                       </Badge>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        {sale.status === 'paid' && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            disabled={refundingId === sale.id}
+                            onClick={() => handleRefund(sale)}
+                          >
+                            {refundingId === sale.id ? 'Remboursement…' : 'Rembourser'}
+                          </Button>
+                        )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => openSaleReceipt(sale)}
+                          className="gap-1.5"
+                        >
+                          <FileIcon size={14} />
+                          Reçu
+                        </Button>
+                      </div>
                     </TableCell>
                   </TableRow>
                 ))}

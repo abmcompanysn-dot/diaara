@@ -10,6 +10,7 @@ import (
 )
 
 var ErrTicketNotFound = errors.New("ticket not found")
+var ErrTicketAlreadyClaimed = errors.New("ticket already claimed")
 
 type TicketRepo struct {
 	pool *pgxpool.Pool
@@ -19,11 +20,11 @@ func NewTicketRepo(pool *pgxpool.Pool) *TicketRepo {
 	return &TicketRepo{pool: pool}
 }
 
-const ticketColumns = `id, user_id, sale_id, subject, status, created_at`
+const ticketColumns = `id, user_id, sale_id, subject, status, assigned_admin_id, claimed_at, created_at`
 
 func scanTicket(row pgx.Row) (*model.SupportTicket, error) {
 	t := &model.SupportTicket{}
-	err := row.Scan(&t.ID, &t.UserID, &t.SaleID, &t.Subject, &t.Status, &t.CreatedAt)
+	err := row.Scan(&t.ID, &t.UserID, &t.SaleID, &t.Subject, &t.Status, &t.AssignedAdminID, &t.ClaimedAt, &t.CreatedAt)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, ErrTicketNotFound
@@ -134,4 +135,39 @@ func (r *TicketRepo) UpdateStatus(ctx context.Context, id, status string) error 
 	_, err := r.pool.Exec(ctx,
 		`UPDATE support_tickets SET status = $2 WHERE id = $1`, id, status)
 	return err
+}
+
+// AssignTicket redirige un ticket vers un agent précis (contrairement à
+// ClaimTicket, pas de condition "assigned_admin_id IS NULL" — un agent peut
+// rediriger un ticket déjà pris en charge, par lui-même ou un autre).
+func (r *TicketRepo) AssignTicket(ctx context.Context, ticketID, adminID string) (*model.SupportTicket, error) {
+	return scanTicket(r.pool.QueryRow(ctx,
+		`UPDATE support_tickets SET assigned_admin_id = $2, claimed_at = NOW()
+		 WHERE id = $1
+		 RETURNING `+ticketColumns,
+		ticketID, adminID))
+}
+
+// ClaimTicket assigne un ticket à un agent admin — UPDATE atomique conditionné
+// à assigned_admin_id IS NULL, pour qu'un seul agent puisse "gagner" la prise
+// en charge même si deux agents cliquent au même moment. Retourne
+// ErrTicketAlreadyClaimed si le ticket est déjà pris (par soi ou un autre).
+func (r *TicketRepo) ClaimTicket(ctx context.Context, ticketID, adminID string) (*model.SupportTicket, error) {
+	t, err := scanTicket(r.pool.QueryRow(ctx,
+		`UPDATE support_tickets SET assigned_admin_id = $2, claimed_at = NOW()
+		 WHERE id = $1 AND assigned_admin_id IS NULL
+		 RETURNING `+ticketColumns,
+		ticketID, adminID))
+	if err != nil {
+		if err == ErrTicketNotFound {
+			// La ligne existe peut-être mais assigned_admin_id n'était pas NULL —
+			// on distingue "vraiment introuvable" de "déjà pris".
+			if _, findErr := r.FindByID(ctx, ticketID); findErr == nil {
+				return nil, ErrTicketAlreadyClaimed
+			}
+			return nil, ErrTicketNotFound
+		}
+		return nil, err
+	}
+	return t, nil
 }

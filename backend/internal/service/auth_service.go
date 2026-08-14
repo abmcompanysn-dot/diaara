@@ -165,6 +165,12 @@ func (s *AuthService) Login(ctx context.Context, input model.LoginInput) (*Login
 
 	_ = s.userRepo.ResetFailedAttempts(ctx, user.ID)
 
+	return s.issueSession(ctx, user)
+}
+
+// issueSession émet la paire access/refresh token pour un utilisateur déjà
+// authentifié par un autre moyen (mot de passe validé, Firebase, etc.).
+func (s *AuthService) issueSession(ctx context.Context, user *model.User) (*LoginResult, error) {
 	roles := s.loadRoles(ctx, user.ID)
 	adminPerms := s.loadAdminPermissions(ctx, user.IsAdmin, user.ID)
 
@@ -182,6 +188,61 @@ func (s *AuthService) Login(ctx context.Context, input model.LoginInput) (*Login
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 	}, nil
+}
+
+// LoginWithFirebase trouve-ou-crée un compte à partir d'une identité Firebase
+// déjà vérifiée (voir handler.AuthHandler.GoogleLogin) et émet une session
+// DIARRA classique — Firebase ne sert que de vérificateur d'identité Google,
+// pas de gestionnaire de session (voir plan : le système JWT/rôles actuel
+// reste la source de vérité).
+func (s *AuthService) LoginWithFirebase(ctx context.Context, email string, emailVerified bool, displayName string) (*LoginResult, error) {
+	user, err := s.userRepo.FindByEmail(ctx, email)
+	if err != nil {
+		// Nouveau compte : pas de mot de passe utilisable (même pattern que le
+		// compte invité créé au premier achat), l'utilisateur se reconnectera
+		// toujours via Google.
+		randomPassword, genErr := auth.GenerateToken()
+		if genErr != nil {
+			return nil, genErr
+		}
+		hash, hashErr := auth.HashPassword(randomPassword)
+		if hashErr != nil {
+			return nil, hashErr
+		}
+		var name *string
+		if displayName != "" {
+			name = &displayName
+		}
+		user, err = s.userRepo.Create(ctx, model.RegisterInput{Email: email, Password: randomPassword, DisplayName: name}, hash)
+		if err != nil {
+			return nil, err
+		}
+		if emailVerified {
+			_ = s.userRepo.VerifyEmail(ctx, user.ID)
+		}
+		return s.issueSession(ctx, user)
+	}
+
+	if emailVerified && user.EmailVerifiedAt == nil {
+		// Le compte existait déjà mais son email n'avait jamais été vérifié —
+		// il a pu être pré-enregistré par quelqu'un d'autre avec un mot de
+		// passe, sans jamais prouver qu'il possède réellement cette adresse
+		// (voir Register : aucune vérification n'est requise pour qu'un compte
+		// devienne utilisable par mot de passe). Google vient de prouver que
+		// CET utilisateur est le vrai propriétaire de l'adresse : on invalide
+		// l'ancien mot de passe et on révoque toutes les sessions existantes
+		// pour empêcher une prise de contrôle persistante par un tiers qui
+		// aurait pré-enregistré ce compte.
+		if randomPassword, genErr := auth.GenerateToken(); genErr == nil {
+			if hash, hashErr := auth.HashPassword(randomPassword); hashErr == nil {
+				_ = s.userRepo.UpdatePassword(ctx, user.ID, hash)
+			}
+		}
+		_ = s.userRepo.RevokeAllUserRefreshTokens(ctx, user.ID)
+		_ = s.userRepo.VerifyEmail(ctx, user.ID)
+	}
+
+	return s.issueSession(ctx, user)
 }
 
 // RefreshToken valide le refresh token présenté, révoque l'ancien et émet une
@@ -379,6 +440,19 @@ func (s *AuthService) loadAdminPermissions(ctx context.Context, isAdmin bool, us
 		return []string{}
 	}
 	return perms
+}
+
+// UpdateProfile enregistre le nom affiché et/ou le nom de boutique d'un
+// utilisateur (ex: formulaire "devenir vendeur").
+func (s *AuthService) UpdateProfile(ctx context.Context, userID string, input model.UpdateProfileInput) error {
+	return s.userRepo.SetProfile(ctx, userID, input.DisplayName, input.ShopName)
+}
+
+// AddRole attribue un rôle cumulable (vendeur/closer) à un compte déjà
+// existant — libre-service, sans validation admin (ex: bouton "devenir
+// vendeur" depuis l'espace client).
+func (s *AuthService) AddRole(ctx context.Context, userID, role string) error {
+	return s.grantRoles(ctx, userID, []string{role})
 }
 
 // grantRoles valide et attribue les rôles demandés à l'inscription.

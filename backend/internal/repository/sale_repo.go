@@ -19,12 +19,12 @@ func NewSaleRepo(pool *pgxpool.Pool) *SaleRepo {
 	return &SaleRepo{pool: pool}
 }
 
-const saleColumns = `id, product_id, buyer_id, buyer_name, referral_link_id, amount_cfa, platform_fee_cfa,
+const saleColumns = `id, product_id, buyer_id, buyer_name, country, referral_link_id, amount_cfa, platform_fee_cfa,
 	closer_commission_cfa, vendor_amount_cfa, payment_provider, payment_reference, checkout_token, status, refund_reference, delivered_at, created_at`
 
 func scanSale(row pgx.Row) (*model.Sale, error) {
 	s := &model.Sale{}
-	err := row.Scan(&s.ID, &s.ProductID, &s.BuyerID, &s.BuyerName, &s.ReferralLinkID, &s.AmountCFA,
+	err := row.Scan(&s.ID, &s.ProductID, &s.BuyerID, &s.BuyerName, &s.Country, &s.ReferralLinkID, &s.AmountCFA,
 		&s.PlatformFeeCFA, &s.CloserCommissionCFA, &s.VendorAmountCFA, &s.PaymentProvider,
 		&s.PaymentReference, &s.CheckoutToken, &s.Status, &s.RefundReference, &s.DeliveredAt, &s.CreatedAt)
 	if err != nil {
@@ -38,13 +38,55 @@ func scanSale(row pgx.Row) (*model.Sale, error) {
 
 func (r *SaleRepo) Create(ctx context.Context, s *model.Sale) (*model.Sale, error) {
 	row := r.pool.QueryRow(ctx,
-		`INSERT INTO sales (product_id, buyer_id, buyer_name, referral_link_id, amount_cfa, platform_fee_cfa,
+		`INSERT INTO sales (product_id, buyer_id, buyer_name, country, referral_link_id, amount_cfa, platform_fee_cfa,
 			closer_commission_cfa, vendor_amount_cfa, payment_provider, payment_reference, checkout_token, status)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		 RETURNING `+saleColumns,
-		s.ProductID, s.BuyerID, s.BuyerName, s.ReferralLinkID, s.AmountCFA, s.PlatformFeeCFA,
+		s.ProductID, s.BuyerID, s.BuyerName, s.Country, s.ReferralLinkID, s.AmountCFA, s.PlatformFeeCFA,
 		s.CloserCommissionCFA, s.VendorAmountCFA, s.PaymentProvider, s.PaymentReference, s.CheckoutToken, s.Status)
 	return scanSale(row)
+}
+
+// VendorSaleView — vente enrichie pour l'espace vendeur : le vendeur voit
+// qui a acheté (nom, email, pays) et quel produit, sans exposer les autres
+// champs internes (frais plateforme, etc. déjà visibles ailleurs).
+type VendorSaleView struct {
+	*model.Sale
+	BuyerEmail   string `json:"buyer_email"`
+	ProductTitle string `json:"product_title"`
+}
+
+// ListByVendor retourne les ventes des produits d'un vendeur, avec les
+// coordonnées de l'acheteur (jointure users) et le titre du produit.
+func (r *SaleRepo) ListByVendor(ctx context.Context, vendorID string) ([]*VendorSaleView, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT s.id, s.product_id, s.buyer_id, s.buyer_name, s.country, s.referral_link_id, s.amount_cfa,
+			s.platform_fee_cfa, s.closer_commission_cfa, s.vendor_amount_cfa, s.payment_provider,
+			s.payment_reference, s.checkout_token, s.status, s.refund_reference, s.delivered_at, s.created_at,
+			u.email, p.title
+		 FROM sales s
+		 JOIN products p ON p.id = s.product_id
+		 JOIN users u ON u.id = s.buyer_id
+		 WHERE p.vendor_id = $1
+		 ORDER BY s.created_at DESC`, vendorID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	views := []*VendorSaleView{}
+	for rows.Next() {
+		s := &model.Sale{}
+		v := &VendorSaleView{Sale: s}
+		if err := rows.Scan(&s.ID, &s.ProductID, &s.BuyerID, &s.BuyerName, &s.Country, &s.ReferralLinkID, &s.AmountCFA,
+			&s.PlatformFeeCFA, &s.CloserCommissionCFA, &s.VendorAmountCFA, &s.PaymentProvider,
+			&s.PaymentReference, &s.CheckoutToken, &s.Status, &s.RefundReference, &s.DeliveredAt, &s.CreatedAt,
+			&v.BuyerEmail, &v.ProductTitle); err != nil {
+			return nil, err
+		}
+		views = append(views, v)
+	}
+	return views, rows.Err()
 }
 
 func (r *SaleRepo) FindByID(ctx context.Context, id string) (*model.Sale, error) {

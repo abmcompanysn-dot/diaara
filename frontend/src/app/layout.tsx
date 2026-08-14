@@ -18,7 +18,7 @@ function Footer() {
       <div className="max-w-6xl mx-auto px-4 py-12">
         <div className="grid gap-8 md:grid-cols-4">
           <div>
-            <p className="font-display text-2xl font-bold text-white mb-2">DIARRA</p>
+            <img src="/brand/diarra-logo-white-text.svg" alt="DIARRA" className="h-7 w-auto mb-3" />
             <p className="text-sm">
               Le marché des biens numériques en Afrique. Payez en mobile money, recevez
               instantanément.
@@ -40,18 +40,45 @@ function Footer() {
           </div>
           <div>
             <p className="font-semibold text-green-300 mb-3 text-sm">Paiements acceptés</p>
-            <div className="flex flex-wrap gap-2 text-xs">
-              {['Wave', 'Orange Money', 'MTN MoMo'].map((p) => (
-                <span key={p} className="px-2 py-1 rounded bg-green-800 text-white/80">
-                  {p}
+            <div className="flex flex-wrap items-center gap-2">
+              {[
+                { logo: 'orange-money.png', label: 'Orange Money' },
+                { logo: 'mtn-momo.png', label: 'MTN MoMo' },
+                { logo: 'moov-money.png', label: 'Moov Money' },
+                { logo: 'safaricom-mpesa.png', label: 'M-Pesa' },
+                { logo: 'vodacom.png', label: 'Vodacom' },
+                { logo: 'at-money.png', label: 'Airtel Money' },
+                { logo: 'tnm.png', label: 'TNM Mpamba' },
+                { logo: 'zamtel.png', label: 'Zamtel Money' },
+                { logo: 'movitel.png', label: 'Movitel' },
+                { logo: 'halopesa.png', label: 'HaloPesa' },
+              ].map((op) => (
+                <span key={op.logo} className="h-6 px-1.5 rounded bg-white/90 flex items-center" title={op.label}>
+                  <img src={`/payments/${op.logo}`} alt={op.label} className="h-4 max-w-[56px] object-contain" />
                 </span>
               ))}
+              <span className="px-2 py-1 rounded bg-green-800 text-white/80 text-xs">Wave</span>
             </div>
           </div>
         </div>
-        <div className="mt-10 pt-6 border-t border-white/10 flex flex-col sm:flex-row justify-between gap-2 text-xs">
+        <div className="mt-10 pt-6 border-t border-white/10 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 text-xs">
           <p>© {new Date().getFullYear()} DIARRA. Tous droits réservés.</p>
-          <p className="font-mono text-white/40">paiement sécurisé · livraison instantanée</p>
+          <div className="flex items-center gap-4">
+            {process.env.NEXT_PUBLIC_TIKTOK_URL && (
+              <a
+                href={process.env.NEXT_PUBLIC_TIKTOK_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="DIARRA sur TikTok"
+                className="text-white/60 hover:text-lime transition-colors"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+                  <path d="M16.6 5.82s.51.5 0 0A4.278 4.278 0 0 1 15.54 3h-3.09v12.4a2.592 2.592 0 0 1-2.59 2.5c-1.42 0-2.6-1.16-2.6-2.6 0-1.72 1.66-3.01 3.37-2.48V9.66c-3.45-.46-6.47 2.22-6.47 5.64 0 3.33 2.76 5.7 5.69 5.7 3.14 0 5.69-2.55 5.69-5.7V9.01a7.35 7.35 0 0 0 4.3 1.38V7.3s-1.88.09-3.24-1.48z" />
+                </svg>
+              </a>
+            )}
+            <p className="font-mono text-white/40">paiement sécurisé · livraison instantanée</p>
+          </div>
         </div>
       </div>
     </footer>

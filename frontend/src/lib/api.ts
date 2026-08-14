@@ -67,6 +67,13 @@ export const api = {
       skipAuth: true,
     }),
 
+  googleLogin: (idToken: string) =>
+    fetchApi<{ access_token: string }>('/api/auth/google', {
+      method: 'POST',
+      body: JSON.stringify({ id_token: idToken }),
+      skipAuth: true,
+    }),
+
   getMe: () => fetchApi<{ user: any }>('/api/auth/me'),
 
   logout: () =>
@@ -121,6 +128,8 @@ export const api = {
     title: string;
     description: string;
     price_cfa: number;
+    price_mode?: 'fixed' | 'flexible';
+    min_price_cfa?: number;
     category: string;
     file_key: string;
     cover_image_key?: string;
@@ -138,7 +147,10 @@ export const api = {
       title?: string;
       description?: string;
       price_cfa?: number;
+      price_mode?: 'fixed' | 'flexible';
+      min_price_cfa?: number;
       category?: string;
+      file_key?: string;
       affiliate_enabled?: boolean;
       max_closer_commission_pct?: number;
     }
@@ -158,6 +170,9 @@ export const api = {
     buyer_email?: string;
     country: string;
     referral_link_id?: string;
+    // amount_cfa : uniquement pris en compte si le produit est en prix libre
+    // (price_mode "flexible") — ignoré côté serveur pour un produit à prix fixe.
+    amount_cfa?: number;
   }) =>
     fetchApi<{ order: any; checkout: { deposit_id: string; redirect_url: string } }>('/api/orders', {
       method: 'POST',
@@ -188,8 +203,23 @@ export const api = {
       skipAuth: true,
     }),
 
+  // Packs de produits
+  getBundle: (id: string) => fetchApi<{ bundle: any; products: any[] }>(`/api/bundles/${id}`),
+
+  getVendorBundles: () => fetchApi<{ bundles: any[] }>('/api/vendor/bundles'),
+
+  createBundle: (data: { title: string; description?: string; price_cfa: number; product_ids: string[] }) =>
+    fetchApi<{ bundle: any }>('/api/vendor/bundles', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  deleteBundle: (id: string) => fetchApi<void>(`/api/vendor/bundles/${id}`, { method: 'DELETE' }),
+
   // Vendor
   getVendorProducts: () => fetchApi<{ products: any[] }>('/api/vendor/products'),
+
+  getVendorSales: () => fetchApi<{ sales: any[] }>('/api/vendor/sales'),
 
   uploadFile: (formData: FormData) =>
     fetchApi<{ file_key: string; size: string }>('/api/vendor/products/upload', {
@@ -215,6 +245,32 @@ export const api = {
   setPayoutMethod: (data: { phone: string; operator: string; country: string }) =>
     fetchApi<{ payout_method: { phone: string; operator: string; operator_label: string; country: string } }>(
       '/api/vendor/payout-method',
+      { method: 'PUT', body: JSON.stringify(data) }
+    ),
+
+  // Compte (libre-service, tout utilisateur connecté)
+  addRole: (role: string) =>
+    fetchApi<{ user: any }>('/api/account/roles', {
+      method: 'POST',
+      body: JSON.stringify({ role }),
+    }),
+
+  updateProfile: (data: { display_name?: string; shop_name?: string }) =>
+    fetchApi<{ user: any }>('/api/account/profile', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  // Moyen de versement/retrait — accessible à tout utilisateur connecté
+  // (client ou vendeur), contrairement à /api/vendor/payout-method.
+  getAccountPayoutMethod: () =>
+    fetchApi<{ payout_method: { phone: string | null; operator: string | null; operator_label: string; country: string | null } }>(
+      '/api/account/payout-method'
+    ),
+
+  setAccountPayoutMethod: (data: { phone: string; operator: string; country: string }) =>
+    fetchApi<{ payout_method: { phone: string; operator: string; operator_label: string; country: string } }>(
+      '/api/account/payout-method',
       { method: 'PUT', body: JSON.stringify(data) }
     ),
 
@@ -246,6 +302,9 @@ export const api = {
 
   suspendUser: (id: string) =>
     fetchApi<void>(`/api/admin/users/${id}/suspend`, { method: 'PUT' }),
+
+  reactivateUser: (id: string) =>
+    fetchApi<void>(`/api/admin/users/${id}/reactivate`, { method: 'PUT' }),
 
   getSales: () => fetchApi<{ sales: any[] }>('/api/admin/sales'),
 
@@ -322,6 +381,17 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+
+  claimTicket: (id: string) =>
+    fetchApi<{ ticket: any }>(`/api/admin/tickets/${id}/claim`, { method: 'PUT' }),
+
+  assignTicket: (id: string, adminId: string) =>
+    fetchApi<{ ticket: any }>(`/api/admin/tickets/${id}/assign`, {
+      method: 'PUT',
+      body: JSON.stringify({ admin_id: adminId }),
+    }),
+
+  getTicketAssignees: () => fetchApi<{ admins: any[] }>('/api/admin/tickets/assignees'),
 };
 
 export { ApiError };

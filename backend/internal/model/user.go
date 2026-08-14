@@ -17,29 +17,46 @@ type User struct {
 	ID                  string     `json:"id"`
 	Email               string     `json:"email"`
 	Phone               *string    `json:"phone,omitempty"`
+	DisplayName         *string    `json:"display_name,omitempty"`
+	ShopName            *string    `json:"shop_name,omitempty"`
 	PasswordHash        string     `json:"-"`
 	EmailVerifiedAt     *time.Time `json:"email_verified_at,omitempty"`
 	PhoneVerifiedAt     *time.Time `json:"phone_verified_at,omitempty"`
 	IsAdmin             bool       `json:"is_admin"`
 	Roles               []string   `json:"roles,omitempty"`
 	FailedLoginAttempts int        `json:"-"`
-	LockedUntil         *time.Time `json:"-"`
+	LockedUntil         *time.Time `json:"locked_until,omitempty"`
 	CreatedAt           time.Time  `json:"created_at"`
 	UpdatedAt           time.Time  `json:"updated_at"`
 }
 
 type RegisterInput struct {
-	Email    string  `json:"email"`
-	Password string  `json:"password"`
-	Phone    *string `json:"phone,omitempty"`
+	Email       string  `json:"email"`
+	Password    string  `json:"password"`
+	Phone       *string `json:"phone,omitempty"`
+	DisplayName *string `json:"display_name,omitempty"`
+	ShopName    *string `json:"shop_name,omitempty"`
 	// Rôles demandés à l'inscription (auto-inscription), cumulables :
 	// "vendeur", "closer". Le rôle "client" est implicite pour tous.
 	Roles []string `json:"roles,omitempty"`
 }
 
+// UpdateProfileInput — PUT /api/account/profile (nom + nom de boutique,
+// typiquement rempli au moment de devenir vendeur).
+type UpdateProfileInput struct {
+	DisplayName *string `json:"display_name,omitempty"`
+	ShopName    *string `json:"shop_name,omitempty"`
+}
+
 type LoginInput struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`
+}
+
+// GoogleLoginInput — POST /api/auth/google. IDToken est le jeton Firebase
+// obtenu côté frontend après la connexion Google (Firebase Auth JS SDK).
+type GoogleLoginInput struct {
+	IDToken string `json:"id_token"`
 }
 
 type RefreshInput struct {
@@ -66,6 +83,12 @@ type LogoutInput struct {
 type RoleInput struct {
 	Role   string `json:"role"`
 	Action string `json:"action"` // "grant" ou "revoke"
+}
+
+// RoleGrantInput — libre-service (POST /api/account/roles) : un utilisateur
+// connecté ne peut que s'ajouter un rôle, jamais le révoquer.
+type RoleGrantInput struct {
+	Role string `json:"role"`
 }
 
 type EmailVerification struct {

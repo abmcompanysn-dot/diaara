@@ -8,6 +8,7 @@ import {
   MegaphoneIcon,
   ShieldIcon,
   HeadsetIcon,
+  UserIcon,
 } from '@/components/icons';
 
 export type IconType = ComponentType<SVGProps<SVGSVGElement> & { size?: number }>;
@@ -50,6 +51,7 @@ export const NAV_ITEMS: NavItem[] = [
   { href: '/closer/dashboard', label: 'Affiliation', Icon: MegaphoneIcon, section: 'closer', roles: ['closer'] },
   { href: '/admin', label: 'Administration', Icon: ShieldIcon, section: 'admin', admin: true },
   { href: '/support', label: 'Support', Icon: HeadsetIcon, section: 'principal', always: true },
+  { href: '/account', label: 'Mon compte', Icon: UserIcon, section: 'principal', always: true },
 ];
 
 /** Filtre les liens visibles selon le rôle de l'utilisateur connecté. */

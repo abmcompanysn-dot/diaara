@@ -17,6 +17,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { AuthShell } from '@/components/auth-shell';
+import { GoogleLoginButton } from '@/components/google-login-button';
 import { cn } from '@/lib/utils';
 import { friendlyError } from '@/lib/error-messages';
 
@@ -197,6 +198,8 @@ export default function RegisterPage() {
               {loading ? "Inscription..." : "S'inscrire"}
             </Button>
           </form>
+
+          <GoogleLoginButton onError={setError} />
         </CardContent>
 
         <CardFooter className="justify-center text-sm text-green-900/70">

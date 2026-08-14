@@ -1,0 +1,35 @@
+<svg width="900" height="260" viewBox="0 0 900 260" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="markGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0F5E3F"/>
+      <stop offset="100%" stop-color="#0F714A"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Icon: rotated diamond/rhombus (echoes site pattern) with a "D" cut and exchange arrows -->
+  <g transform="translate(20,20)">
+    <rect x="0" y="0" width="220" height="220" rx="42" fill="url(#markGrad)"/>
+    <!-- diamond outline motif, echoing site background pattern -->
+    <rect x="40" y="40" width="140" height="140" rx="14"
+          transform="rotate(45 110 110)"
+          fill="none" stroke="#17381F" stroke-opacity="0.35" stroke-width="6"/>
+
+    <!-- Stylised D built from two exchange arrows (buy / sell) -->
+    <path d="M 78 62
+             C 128 62, 158 84, 158 110
+             C 158 136, 128 158, 78 158
+             L 78 132
+             C 112 132, 130 122, 130 110
+             C 130 98, 112 88, 78 88
+             Z"
+          fill="#C9F22E"/>
+
+    <!-- small orbiting dot, echoes original logo dot -->
+    <circle cx="176" cy="66" r="10" fill="#C9F22E"/>
+  </g>
+
+  <!-- Wordmark -->
+  <text x="270" y="150" font-family="Arial, Helvetica, sans-serif" font-weight="800"
+        font-size="108" fill="#0A1F17" letter-spacing="1">DIARRA</text>
+  <circle cx="850" cy="80" r="9" fill="#C9F22E"/>
+</svg>

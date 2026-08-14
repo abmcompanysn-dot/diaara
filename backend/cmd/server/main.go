@@ -91,6 +91,7 @@ func main() {
 	deliveryRepo := repository.NewDeliveryRepo(pool)
 	payoutRepo := repository.NewPayoutRepo(pool)
 	referralRepo := repository.NewReferralRepo(pool)
+	bundleRepo := repository.NewBundleRepo(pool)
 	adminPermRepo := repository.NewAdminPermissionRepo(pool)
 	settingsRepo := repository.NewSettingsRepo(pool)
 
@@ -152,6 +153,15 @@ func main() {
 	// Services
 	authService := service.NewAuthService(userRepo, otpRepo, otpService, smsSender, jwtManager, notifications, adminPermRepo)
 
+	// Connexion Google via Firebase Auth (optionnelle — nécessite un projet
+	// Firebase avec le fournisseur Google activé, voir FIREBASE_PROJECT_ID).
+	var firebaseVerifier *auth.FirebaseVerifier
+	if projectID := os.Getenv("FIREBASE_PROJECT_ID"); projectID != "" {
+		firebaseVerifier = auth.NewFirebaseVerifier(projectID)
+	} else {
+		log.Println("WARNING: FIREBASE_PROJECT_ID non configuré, connexion Google désactivée")
+	}
+
 	// Paiement PawaPay (mobile money, optionnel en dev local)
 	var pawapay *payment.PawaPayClient
 	if os.Getenv("PAWAPAY_API_KEY") != "" {
@@ -172,10 +182,11 @@ func main() {
 
 	// Handlers
 	healthHandler := handler.NewHealthHandler(pool)
-	authHandler := handler.NewAuthHandler(authService)
+	authHandler := handler.NewAuthHandler(authService, firebaseVerifier)
 	productHandler := handler.NewProductHandler(productRepo, storageService, os.Getenv("FRONTEND_URL"))
-	saleHandler := handler.NewSaleHandler(saleRepo, productRepo, referralRepo, userRepo, settingsRepo, pawapay, os.Getenv("FRONTEND_URL"))
+	saleHandler := handler.NewSaleHandler(saleRepo, productRepo, referralRepo, userRepo, settingsRepo, pawapay, notifications, os.Getenv("FRONTEND_URL"))
 	closerHandler := handler.NewCloserHandler(referralRepo, productRepo, os.Getenv("FRONTEND_URL"))
+	bundleHandler := handler.NewBundleHandler(bundleRepo, productRepo)
 	webhookHandler := handler.NewWebhookHandler(saleRepo, userRepo, productRepo, payoutRepo, pawapay, notifications, allowedIPs)
 
 	// Temps réel (LISTEN/NOTIFY + WebSocket)
@@ -196,7 +207,7 @@ func main() {
 
 	// Support tickets
 	ticketRepo := repository.NewTicketRepo(pool)
-	ticketHandler := handler.NewTicketHandler(ticketRepo)
+	ticketHandler := handler.NewTicketHandler(ticketRepo, adminPermRepo)
 
 	// Administration
 	adminHandler := handler.NewAdminHandler(productRepo, saleRepo, userRepo, referralRepo, adminPermRepo, payoutRepo, settingsRepo, ticketRepo, pool, storageHealthPinger, startTime, pawapay)
@@ -227,6 +238,7 @@ func main() {
 	r.Route("/api/auth", func(r chi.Router) {
 		r.Post("/register", authHandler.Register)
 		r.Post("/login", authHandler.Login)
+		r.Post("/google", authHandler.GoogleLogin)
 		r.Post("/logout", authHandler.Logout)
 		r.Post("/refresh", authHandler.Refresh)
 		r.Post("/verify-email", authHandler.VerifyEmail) // Ancien flux (lien) — conservé
@@ -235,6 +247,28 @@ func main() {
 		r.With(middleware.RequireAuth(jwtManager)).Post("/send-otp", authHandler.SendOTP)
 		r.With(middleware.RequireAuth(jwtManager)).Post("/verify-otp", authHandler.VerifyOTP)
 		r.With(middleware.RequireAuth(jwtManager)).Get("/me", authHandler.Me)
+	})
+
+	// Compte (libre-service, tout utilisateur connecté — client, vendeur ou closer)
+	r.Route("/api/account", func(r chi.Router) {
+		r.Use(middleware.RequireAuth(jwtManager))
+		r.Post("/roles", authHandler.AddRole)
+		r.Put("/profile", authHandler.UpdateProfile)
+		// Moyen de versement/retrait — ouvert à tout utilisateur connecté (pas
+		// seulement les vendeurs), ex: un client enregistre un numéro pour
+		// recevoir un remboursement.
+		r.Get("/payout-method", payoutHandler.GetPayoutMethod)
+		r.With(middleware.RequireVerifiedPhone(userRepo)).Put("/payout-method", payoutHandler.SetPayoutMethod)
+	})
+
+	// Packs de produits — lecture publique, gestion vendeur.
+	r.Get("/api/bundles/{id}", bundleHandler.Get)
+	r.Route("/api/vendor/bundles", func(r chi.Router) {
+		r.Use(middleware.RequireAuth(jwtManager))
+		r.Use(middleware.RequireRole(model.RoleVendeur))
+		r.Get("/", bundleHandler.ListVendor)
+		r.Post("/", bundleHandler.Create)
+		r.Delete("/{id}", bundleHandler.Delete)
 	})
 
 	// Public product routes
@@ -301,6 +335,7 @@ func main() {
 			r.Use(middleware.RequireAuth(jwtManager))
 			r.Use(middleware.RequireAdmin)
 			r.Get("/admin", realtimeHandler.ModerationWS)
+			r.Get("/support", realtimeHandler.SupportWS)
 		})
 	})
 
@@ -323,6 +358,7 @@ func main() {
 		r.With(middleware.RequireVerifiedPhone(userRepo)).Put("/payout-method", payoutHandler.SetPayoutMethod)
 		r.With(middleware.RequireVerifiedPhone(userRepo)).Post("/payouts", payoutHandler.Create)
 		r.Get("/payouts", payoutHandler.Earnings)
+		r.Get("/sales", saleHandler.ListVendor)
 	})
 
 	// Routes admin (authentifié + admin). Un admin sans scope assigné garde
@@ -342,6 +378,7 @@ func main() {
 			r.Get("/users", adminHandler.Users)
 			r.Put("/users/{id}/role", adminHandler.SetRole)
 			r.Put("/users/{id}/suspend", adminHandler.SuspendUser)
+			r.Put("/users/{id}/reactivate", adminHandler.ReactivateUser)
 		})
 
 		r.Group(func(r chi.Router) {
@@ -360,6 +397,12 @@ func main() {
 		// Notifications : accessible à tout admin (même restreint), pour que
 		// chacun voie au moins ce qui concerne son propre périmètre.
 		r.Get("/notifications", adminHandler.Notifications)
+
+		// Support : accessible à tout admin (pas de scope dédié) — n'importe
+		// quel agent peut prendre en charge un ticket.
+		r.Put("/tickets/{id}/claim", ticketHandler.Claim)
+		r.Put("/tickets/{id}/assign", ticketHandler.Assign)
+		r.Get("/tickets/assignees", ticketHandler.Assignees)
 
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAdminScope(model.AdminPermInfra))

@@ -454,6 +454,9 @@ type Operator struct {
 	DialCode   string // indicatif téléphonique du pays
 }
 
+// Couvre les 20 pays PawaPay (mêmes pays que CountryCurrency ci-dessous),
+// source : docs.pawapay.io/v2/docs/providers (relevé 2026-08-13). Miroir
+// exact de PAYOUT_COUNTRIES côté frontend (frontend/src/lib/operators.ts).
 var XOFOperators = []Operator{
 	// Sénégal
 	{Label: "Orange Money", Provider: "ORANGE_SEN", Country: "SEN", DialCode: "221"},
@@ -469,6 +472,54 @@ var XOFOperators = []Operator{
 	// Burkina Faso
 	{Label: "Moov Money", Provider: "MOOV_BFA", Country: "BFA", DialCode: "226"},
 	{Label: "Orange Money", Provider: "ORANGE_BFA", Country: "BFA", DialCode: "226"},
+	// Cameroun
+	{Label: "MTN MoMo", Provider: "MTN_MOMO_CMR", Country: "CMR", DialCode: "237"},
+	{Label: "Orange Money", Provider: "ORANGE_CMR", Country: "CMR", DialCode: "237"},
+	// Gabon
+	{Label: "Airtel Money", Provider: "AIRTEL_GAB", Country: "GAB", DialCode: "241"},
+	// Congo-Brazzaville
+	{Label: "Airtel Money", Provider: "AIRTEL_COG", Country: "COG", DialCode: "242"},
+	{Label: "MTN MoMo", Provider: "MTN_MOMO_COG", Country: "COG", DialCode: "242"},
+	// RD Congo
+	{Label: "Vodacom M-Pesa", Provider: "VODACOM_MPESA_COD", Country: "COD", DialCode: "243"},
+	{Label: "Airtel Money", Provider: "AIRTEL_COD", Country: "COD", DialCode: "243"},
+	{Label: "Orange Money", Provider: "ORANGE_COD", Country: "COD", DialCode: "243"},
+	// Ghana
+	{Label: "MTN MoMo", Provider: "MTN_MOMO_GHA", Country: "GHA", DialCode: "233"},
+	{Label: "AirtelTigo Money", Provider: "AIRTELTIGO_GHA", Country: "GHA", DialCode: "233"},
+	{Label: "Vodafone Cash", Provider: "VODAFONE_GHA", Country: "GHA", DialCode: "233"},
+	// Nigeria
+	{Label: "Airtel Money", Provider: "AIRTEL_NGA", Country: "NGA", DialCode: "234"},
+	{Label: "MTN MoMo", Provider: "MTN_MOMO_NGA", Country: "NGA", DialCode: "234"},
+	// Kenya
+	{Label: "M-Pesa", Provider: "MPESA_KEN", Country: "KEN", DialCode: "254"},
+	// Rwanda
+	{Label: "Airtel Money", Provider: "AIRTEL_RWA", Country: "RWA", DialCode: "250"},
+	{Label: "MTN MoMo", Provider: "MTN_MOMO_RWA", Country: "RWA", DialCode: "250"},
+	// Ouganda
+	{Label: "Airtel Money", Provider: "AIRTEL_OAPI_UGA", Country: "UGA", DialCode: "256"},
+	{Label: "MTN MoMo", Provider: "MTN_MOMO_UGA", Country: "UGA", DialCode: "256"},
+	// Tanzanie
+	{Label: "Airtel Money", Provider: "AIRTEL_TZA", Country: "TZA", DialCode: "255"},
+	{Label: "Vodacom M-Pesa", Provider: "VODACOM_TZA", Country: "TZA", DialCode: "255"},
+	{Label: "Tigo Pesa", Provider: "TIGO_TZA", Country: "TZA", DialCode: "255"},
+	{Label: "HaloPesa", Provider: "HALOTEL_TZA", Country: "TZA", DialCode: "255"},
+	// Zambie
+	{Label: "Airtel Money", Provider: "AIRTEL_OAPI_ZMB", Country: "ZMB", DialCode: "260"},
+	{Label: "MTN MoMo", Provider: "MTN_MOMO_ZMB", Country: "ZMB", DialCode: "260"},
+	{Label: "Zamtel Money", Provider: "ZAMTEL_ZMB", Country: "ZMB", DialCode: "260"},
+	// Malawi
+	{Label: "Airtel Money", Provider: "AIRTEL_MWI", Country: "MWI", DialCode: "265"},
+	{Label: "TNM Mpamba", Provider: "TNM_MWI", Country: "MWI", DialCode: "265"},
+	// Mozambique
+	{Label: "Movitel", Provider: "MOVITEL_MOZ", Country: "MOZ", DialCode: "258"},
+	{Label: "Vodacom M-Pesa", Provider: "VODACOM_MOZ", Country: "MOZ", DialCode: "258"},
+	// Lesotho
+	{Label: "M-Pesa", Provider: "MPESA_LSO", Country: "LSO", DialCode: "266"},
+	// Sierra Leone
+	{Label: "Orange Money", Provider: "ORANGE_SLE", Country: "SLE", DialCode: "232"},
+	// Éthiopie
+	{Label: "Safaricom M-Pesa", Provider: "MPESA_ETH", Country: "ETH", DialCode: "251"},
 }
 
 // GatewaySettingKey retourne la clé settings ("gateway_...") correspondant à un
@@ -487,6 +538,26 @@ func GatewaySettingKey(provider string) string {
 		return "gateway_free_money"
 	case strings.HasPrefix(provider, "MOOV_"):
 		return "gateway_moov_money"
+	case strings.HasPrefix(provider, "VODACOM_"):
+		return "gateway_vodacom"
+	case strings.HasPrefix(provider, "AIRTELTIGO_"):
+		return "gateway_airteltigo"
+	case strings.HasPrefix(provider, "AIRTEL_"):
+		return "gateway_airtel_money"
+	case strings.HasPrefix(provider, "MPESA_"):
+		return "gateway_mpesa"
+	case strings.HasPrefix(provider, "TNM_"):
+		return "gateway_tnm"
+	case strings.HasPrefix(provider, "ZAMTEL_"):
+		return "gateway_zamtel"
+	case strings.HasPrefix(provider, "MOVITEL_"):
+		return "gateway_movitel"
+	case strings.HasPrefix(provider, "HALOTEL_"):
+		return "gateway_halotel"
+	case strings.HasPrefix(provider, "TIGO_"):
+		return "gateway_tigo"
+	case strings.HasPrefix(provider, "VODAFONE_"):
+		return "gateway_vodafone"
 	default:
 		return ""
 	}

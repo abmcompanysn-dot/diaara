@@ -4,9 +4,12 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { api, apiOrigin } from '@/lib/api';
+import { useAuth } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ProductImage } from '@/components/product-image';
+import { VendorChat } from '@/components/vendor-chat';
+import { firebaseEnabled } from '@/lib/firebase';
 import { ArrowLeftIcon, CheckIcon, LockIcon, ZapIcon, LinkIcon } from '@/components/icons';
 import { CATEGORY_LABELS, PAYMENTS } from '@/lib/constants';
 
@@ -16,6 +19,7 @@ interface Product {
   description: string;
   price_cfa: number;
   category: string;
+  vendor_id: string;
   moderation_status: string;
   cover_image_key?: string;
   preview_keys?: string[];
@@ -32,6 +36,7 @@ const previewKind = (key: string): 'image' | 'audio' | 'video' => {
 export default function ProductDetailPage() {
   const searchParams = useSearchParams();
   const id = searchParams.get('id') || '';
+  const { user } = useAuth();
   const [product, setProduct] = useState<Product | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -229,6 +234,21 @@ export default function ProductDetailPage() {
               ))}
             </ul>
           </div>
+
+          {firebaseEnabled && user && user.id !== product.vendor_id && (
+            <div className="mt-6 bg-white rounded-xl p-6 sm:p-8 shadow-card border border-green-900/5">
+              <p className="font-mono text-sm text-green-700/60 uppercase tracking-widest mb-4">
+                // contacter le vendeur
+              </p>
+              <VendorChat
+                buyerId={user.id}
+                vendorId={product.vendor_id}
+                buyerName={user.display_name || user.email}
+                vendorName="Vendeur"
+                role="buyer"
+              />
+            </div>
+          )}
         </div>
 
         <aside className="lg:col-span-2">
