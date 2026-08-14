@@ -228,6 +228,10 @@ frontend** sur un VPS. Deux options :
 1. Copier le projet sur le VPS (`git clone`, ou `scp` si le VPS n'a pas d'accès au
    dépôt privé) et créer un fichier `.env` **à la racine du repo** (à côté de
    `docker-compose.yml`, pas dans `backend/`) avec :
+   - `APP_ENV=production` — **important** : sans ça, l'API renvoie les codes
+     OTP/reset de mot de passe en clair dans ses réponses (utile en dev sans
+     fournisseur email configuré, dangereux en production) et les cookies de
+     session ne sont pas marqués `Secure`.
    - `POSTGRES_PASSWORD`, `JWT_SECRET`, `REFRESH_SECRET` (générés avec
      `openssl rand -base64 48`).
    - `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS`, `NEXT_PUBLIC_API_URL`,

@@ -25,6 +25,7 @@ services:
       # ce conteneur. On force la vraie IP publique.
       - "srv1790747.hstgr.cloud:187.77.178.170"
     environment:
+      APP_ENV: ${APP_ENV:-development}
       DATABASE_URL: postgres://diarra:${POSTGRES_PASSWORD:-diarra_dev}@postgres:5432/diarra?sslmode=disable
       PORT: "8080"
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
@@ -49,6 +50,7 @@ services:
       PAWAPAY_BASE_URL: ${PAWAPAY_BASE_URL:-https://api.sandbox.pawapay.io}
       PAWAPAY_CALLBACK_URL: ${PAWAPAY_CALLBACK_URL:-}
       PAWAPAY_CALLBACK_IPS: ${PAWAPAY_CALLBACK_IPS:-}
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
     depends_on:
       postgres:
         condition: service_healthy
