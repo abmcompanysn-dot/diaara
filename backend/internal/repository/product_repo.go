@@ -199,7 +199,7 @@ func (r *ProductRepo) Update(ctx context.Context, id string, input model.UpdateP
 	}
 
 	sets = append(sets, `updated_at = NOW()`)
-	query += `, ` + join(sets, ", ")
+	query += join(sets, ", ")
 	query += ` WHERE id = $` + itoa(argIdx)
 	args = append(args, id)
 
