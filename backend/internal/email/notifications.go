@@ -144,17 +144,33 @@ func (n *NotificationService) SendPasswordReset(ctx context.Context, to, token s
 	return n.client.Send(ctx, to, "Réinitialisation de votre mot de passe", n.renderEmail(inner))
 }
 
+// MaxEmailAttachmentBytes — au-delà, le fichier n'est plus joint à l'email de
+// confirmation (seul le lien de téléchargement reste) : la plupart des
+// fournisseurs d'envoi transactionnel rejettent l'email entier au-delà de
+// 10-25 Mo selon le fournisseur — mieux vaut un email sans pièce jointe
+// qu'un email qui échoue silencieusement pour un gros fichier.
+const MaxEmailAttachmentBytes = 10 * 1024 * 1024 // 10 Mo
+
 // SendOrderConfirmed — le lien pointe vers la page de suivi publique (par
 // checkout_token) plutôt que /orders/{id}, car un acheteur invité n'a pas de
-// session pour accéder à son espace connecté.
-func (n *NotificationService) SendOrderConfirmed(ctx context.Context, to, buyerName, productTitle string, amountCFA int, checkoutToken string) error {
+// session pour accéder à son espace connecté. Si le fichier acheté est fourni
+// (attachment non nil) et sous la limite de taille, il est aussi joint
+// directement à l'email — le lien reste affiché dans tous les cas.
+func (n *NotificationService) SendOrderConfirmed(ctx context.Context, to, buyerName, productTitle string, amountCFA int, checkoutToken string, attachment *Attachment) error {
 	link := fmt.Sprintf("%s/checkout/return?token=%s", n.frontendURL, checkoutToken)
-	body := fmt.Sprintf(`<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Bonjour %s, votre commande a été payée avec succès. Téléchargez votre fichier depuis le bouton ci-dessous.</p>
+	note := ""
+	if attachment != nil {
+		note = " Il est aussi joint à cet email."
+	}
+	body := fmt.Sprintf(`<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Bonjour %s, votre commande a été payée avec succès. Téléchargez votre fichier depuis le bouton ci-dessous.%s</p>
 <div style="margin:16px 0 0;padding:16px 18px;background-color:#f2f7f4;border-left:4px solid #0f7a50;border-radius:8px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#0a3225;">
 <strong>%s</strong><br>
 Montant payé : <strong>%s FCFA</strong>
-</div>`, buyerName, productTitle, formatCFA(amountCFA))
+</div>`, buyerName, note, productTitle, formatCFA(amountCFA))
 	inner := contentHTML("Paiement confirmé !", body, "Télécharger mon fichier", link)
+	if attachment != nil && len(attachment.Content) <= MaxEmailAttachmentBytes {
+		return n.client.Send(ctx, to, "Commande confirmée", n.renderEmail(inner), *attachment)
+	}
 	return n.client.Send(ctx, to, "Commande confirmée", n.renderEmail(inner))
 }
 

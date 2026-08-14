@@ -1,6 +1,7 @@
 package email
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"time"
@@ -42,7 +43,7 @@ func NewSMTPClient(cfg SMTPConfig) (*SMTPClient, error) {
 	return &SMTPClient{from: cfg.From, client: client}, nil
 }
 
-func (c *SMTPClient) Send(ctx context.Context, to, subject, html string) error {
+func (c *SMTPClient) Send(ctx context.Context, to, subject, html string, attachments ...Attachment) error {
 	m := mail.NewMsg()
 	if err := m.From(c.from); err != nil {
 		return fmt.Errorf("smtp: from: %w", err)
@@ -52,6 +53,12 @@ func (c *SMTPClient) Send(ctx context.Context, to, subject, html string) error {
 	}
 	m.Subject(subject)
 	m.SetBodyString(mail.TypeTextHTML, html)
+
+	for _, a := range attachments {
+		if err := m.AttachReader(a.Filename, bytes.NewReader(a.Content)); err != nil {
+			return fmt.Errorf("smtp: attach %s: %w", a.Filename, err)
+		}
+	}
 
 	if err := c.client.DialAndSendWithContext(ctx, m); err != nil {
 		return fmt.Errorf("smtp: send: %w", err)

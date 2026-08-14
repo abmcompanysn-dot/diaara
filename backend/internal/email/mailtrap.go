@@ -3,6 +3,7 @@ package email
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -25,12 +26,20 @@ type mailtrapAddress struct {
 	Name  string `json:"name,omitempty"`
 }
 
+type mailtrapAttachment struct {
+	Filename    string `json:"filename"`
+	Content     string `json:"content"` // base64
+	Type        string `json:"type,omitempty"`
+	Disposition string `json:"disposition,omitempty"`
+}
+
 type mailtrapSendRequest struct {
-	From     mailtrapAddress   `json:"from"`
-	To       []mailtrapAddress `json:"to"`
-	Subject  string            `json:"subject"`
-	HTML     string            `json:"html"`
-	Category string            `json:"category,omitempty"`
+	From        mailtrapAddress      `json:"from"`
+	To          []mailtrapAddress    `json:"to"`
+	Subject     string               `json:"subject"`
+	HTML        string               `json:"html"`
+	Category    string               `json:"category,omitempty"`
+	Attachments []mailtrapAttachment `json:"attachments,omitempty"`
 }
 
 // MailtrapClient envoie les emails via l'API Mailtrap.
@@ -63,13 +72,23 @@ func NewMailtrapClient(cfg MailtrapConfig) *MailtrapClient {
 	}
 }
 
-func (c *MailtrapClient) Send(ctx context.Context, to, subject, html string) error {
+func (c *MailtrapClient) Send(ctx context.Context, to, subject, html string, attachments ...Attachment) error {
+	var atts []mailtrapAttachment
+	for _, a := range attachments {
+		atts = append(atts, mailtrapAttachment{
+			Filename:    a.Filename,
+			Content:     base64.StdEncoding.EncodeToString(a.Content),
+			Type:        a.ContentType,
+			Disposition: "attachment",
+		})
+	}
 	body, err := json.Marshal(mailtrapSendRequest{
-		From:     mailtrapAddress{Email: c.fromEmail, Name: c.fromName},
-		To:       []mailtrapAddress{{Email: to}},
-		Subject:  subject,
-		HTML:     html,
-		Category: "transactional",
+		From:        mailtrapAddress{Email: c.fromEmail, Name: c.fromName},
+		To:          []mailtrapAddress{{Email: to}},
+		Subject:     subject,
+		HTML:        html,
+		Category:    "transactional",
+		Attachments: atts,
 	})
 	if err != nil {
 		return err

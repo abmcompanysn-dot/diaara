@@ -7,7 +7,9 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"mime"
 	"net/http"
+	"path/filepath"
 	"strings"
 
 	"github.com/diarra/backend/internal/email"
@@ -15,6 +17,7 @@ import (
 	"github.com/diarra/backend/internal/payment"
 	"github.com/diarra/backend/internal/repository"
 	"github.com/diarra/backend/internal/service"
+	"github.com/diarra/backend/internal/storage"
 )
 
 type WebhookHandler struct {
@@ -25,6 +28,7 @@ type WebhookHandler struct {
 	pawapay       *payment.PawaPayClient
 	commissionSvc *service.CommissionService
 	notifications *email.NotificationService
+	storage       *storage.S3Storage
 	allowedIPs    map[string]bool
 }
 
@@ -35,6 +39,7 @@ func NewWebhookHandler(
 	payoutRepo *repository.PayoutRepo,
 	pawapay *payment.PawaPayClient,
 	notifications *email.NotificationService,
+	storage *storage.S3Storage,
 	allowedIPs []string,
 ) *WebhookHandler {
 	ips := make(map[string]bool, len(allowedIPs))
@@ -49,6 +54,7 @@ func NewWebhookHandler(
 		pawapay:       pawapay,
 		commissionSvc: service.NewCommissionService(),
 		notifications: notifications,
+		storage:       storage,
 		allowedIPs:    ips,
 	}
 }
@@ -351,7 +357,7 @@ func (h *WebhookHandler) notifyPaid(ctx context.Context, sale *model.Sale) {
 
 	buyer, err := h.userRepo.FindByID(ctx, sale.BuyerID)
 	if err == nil && buyer.Email != "" && sale.CheckoutToken != nil {
-		h.notifications.SendOrderConfirmed(ctx, buyer.Email, sale.BuyerName, product.Title, sale.AmountCFA, *sale.CheckoutToken)
+		h.notifications.SendOrderConfirmed(ctx, buyer.Email, sale.BuyerName, product.Title, sale.AmountCFA, *sale.CheckoutToken, h.fileAttachment(ctx, product.FileKey))
 	}
 
 	vendor, err := h.userRepo.FindByID(ctx, product.VendorID)
@@ -360,5 +366,28 @@ func (h *WebhookHandler) notifyPaid(ctx context.Context, sale *model.Sale) {
 	}
 	if vendor.Email != "" {
 		h.notifications.SendVendorSale(ctx, vendor.Email, product.Title, sale.VendorAmountCFA)
+	}
+}
+
+// fileAttachment télécharge le fichier acheté pour le joindre à l'email de
+// confirmation. Retourne nil (pas d'échec) si le stockage n'est pas
+// configuré ou si le téléchargement échoue — l'email part quand même, avec
+// juste le lien de téléchargement (voir NotificationService.SendOrderConfirmed).
+func (h *WebhookHandler) fileAttachment(ctx context.Context, fileKey string) *email.Attachment {
+	if h.storage == nil || fileKey == "" {
+		return nil
+	}
+	content, err := h.storage.Download(ctx, fileKey)
+	if err != nil {
+		return nil
+	}
+	contentType := mime.TypeByExtension(filepath.Ext(fileKey))
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	return &email.Attachment{
+		Filename:    filepath.Base(fileKey),
+		Content:     content,
+		ContentType: contentType,
 	}
 }

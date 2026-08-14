@@ -3,6 +3,7 @@ package email
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -33,20 +34,34 @@ func NewResendClient(cfg ResendConfig) *ResendClient {
 	}
 }
 
+type resendAttachment struct {
+	Filename string `json:"filename"`
+	Content  string `json:"content"` // base64
+}
+
 type sendRequest struct {
-	From    string `json:"from"`
-	To      string `json:"to"`
-	Subject string `json:"subject"`
-	HTML    string `json:"html"`
+	From        string             `json:"from"`
+	To          string             `json:"to"`
+	Subject     string             `json:"subject"`
+	HTML        string             `json:"html"`
+	Attachments []resendAttachment `json:"attachments,omitempty"`
 }
 
 // Send envoie un email HTML transactionnel via l'API Resend.
-func (c *ResendClient) Send(ctx context.Context, to, subject, html string) error {
+func (c *ResendClient) Send(ctx context.Context, to, subject, html string, attachments ...Attachment) error {
+	var atts []resendAttachment
+	for _, a := range attachments {
+		atts = append(atts, resendAttachment{
+			Filename: a.Filename,
+			Content:  base64.StdEncoding.EncodeToString(a.Content),
+		})
+	}
 	body, err := json.Marshal(sendRequest{
-		From:    c.from,
-		To:      to,
-		Subject: subject,
-		HTML:    html,
+		From:        c.from,
+		To:          to,
+		Subject:     subject,
+		HTML:        html,
+		Attachments: atts,
 	})
 	if err != nil {
 		return err
