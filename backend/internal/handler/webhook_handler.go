@@ -182,10 +182,12 @@ func (h *WebhookHandler) notifyRefunded(ctx context.Context, sale *model.Sale) {
 	h.notifications.SendRefundConfirmed(ctx, buyer.Email, sale.BuyerName, product.Title, sale.AmountCFA)
 }
 
-// PawaPayDepositCallback est le corps du callback PawaPay (statut final d'un dépôt).
+// PawaPayDepositCallback est le corps du callback PawaPay (statut final d'un
+// dépôt). Seul DepositId est utilisé : le statut n'est jamais lu depuis ce
+// payload (voir PawaPayWebhook — même principe défensif que pour les
+// payouts/remboursements, la forme exacte de ce corps n'est pas garantie).
 type PawaPayDepositCallback struct {
 	DepositId string `json:"depositId"`
-	Status    string `json:"status"` // COMPLETED | FAILED
 }
 
 // PawaPayWebhook reçoit la confirmation de paiement depuis PawaPay.
@@ -236,7 +238,19 @@ func (h *WebhookHandler) PawaPayWebhook(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if payload.Status == "COMPLETED" {
+	// Le corps du callback sert uniquement de signal de réveil : le statut
+	// réel est revérifié via l'API (même principe défensif que pour les
+	// payouts/remboursements) plutôt que de faire confiance au champ "status"
+	// du webhook, dont la forme exacte (top-level ou nested sous "data")
+	// n'est pas fiable — un bug ici avait pour effet de marquer "failed"
+	// des paiements réellement complétés.
+	status, err := h.pawapay.GetDepositStatus(r.Context(), payload.DepositId)
+	if err != nil || status.Data == nil {
+		http.Error(w, `{"error":"status_check_failed"}`, http.StatusBadGateway)
+		return
+	}
+
+	if status.Data.Status == "COMPLETED" {
 		if err := h.saleRepo.UpdateStatus(r.Context(), sale.ID, string(model.SalePaid)); err != nil {
 			http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
 			return
@@ -249,12 +263,14 @@ func (h *WebhookHandler) PawaPayWebhook(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := h.saleRepo.UpdateStatus(r.Context(), sale.ID, string(model.SaleFailed)); err != nil {
-		http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
-		return
+	if status.Data.Status == "FAILED" {
+		if err := h.saleRepo.UpdateStatus(r.Context(), sale.ID, string(model.SaleFailed)); err != nil {
+			http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
+			return
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "failed"})
+	json.NewEncoder(w).Encode(map[string]string{"status": status.Data.Status})
 }
 
 // verifyContentDigest vérifie le header Content-Digest (RFC 9530) : "sha-256=:base64:".
