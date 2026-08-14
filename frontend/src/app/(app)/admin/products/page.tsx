@@ -10,6 +10,8 @@ import { PageLoader } from '@/components/page-loader';
 import { EmptyState } from '@/components/empty-state';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { Textarea } from '@/components/ui/textarea';
+import { Input } from '@/components/ui/input';
+import { CopyIcon, CheckIcon } from '@/components/icons';
 import { PRODUCT_STATUS_BADGE, PRODUCT_STATUS_LABELS, CATEGORY_LABELS } from '@/lib/constants';
 import { friendlyError } from '@/lib/error-messages';
 import { cn } from '@/lib/utils';
@@ -24,6 +26,8 @@ interface Product {
   vendor_email?: string;
   moderation_status: string;
   moderation_note?: string | null;
+  file_key?: string;
+  image_prompt?: string | null;
   created_at: string;
 }
 
@@ -43,6 +47,8 @@ export default function AdminProductsPage() {
   const [error, setError] = useState('');
   const [toModerate, setToModerate] = useState<{ id: string; status: string } | null>(null);
   const [rejectNote, setRejectNote] = useState('');
+  const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
 
   useEffect(() => {
     loadProducts(tab);
@@ -75,6 +81,29 @@ export default function AdminProductsPage() {
     } finally {
       setToModerate(null);
       setRejectNote('');
+    }
+  };
+
+  const handleAttachFile = async (productId: string, file: File | undefined) => {
+    if (!file) return;
+    setUploadingId(productId);
+    try {
+      await api.attachProductFile(productId, file);
+      await loadProducts(tab);
+    } catch (err: any) {
+      setError(friendlyError(err));
+    } finally {
+      setUploadingId(null);
+    }
+  };
+
+  const handleCopyPrompt = async (productId: string, prompt: string) => {
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setCopiedId(productId);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch {
+      // Presse-papiers indisponible : rien d'autre à faire.
     }
   };
 
@@ -144,6 +173,35 @@ export default function AdminProductsPage() {
                 {product.moderation_status === 'rejected' && product.moderation_note && (
                   <p className="text-sm text-red-600 mb-4">Raison du refus : {product.moderation_note}</p>
                 )}
+                {!product.file_key && product.image_prompt && (
+                  <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
+                    <p className="text-xs font-semibold text-amber-800 mb-1">
+                      Créé automatiquement — aucun fichier attaché. Prompt de génération d'image :
+                    </p>
+                    <div className="flex items-start gap-2">
+                      <p className="text-sm text-amber-900/80 flex-1">{product.image_prompt}</p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-8 shrink-0 gap-1.5"
+                        onClick={() => handleCopyPrompt(product.id, product.image_prompt!)}
+                      >
+                        {copiedId === product.id ? <CheckIcon size={14} /> : <CopyIcon size={14} />}
+                        {copiedId === product.id ? 'Copié' : 'Copier'}
+                      </Button>
+                    </div>
+                    <div className="mt-3 flex items-center gap-2">
+                      <Input
+                        type="file"
+                        accept="image/*"
+                        disabled={uploadingId === product.id}
+                        onChange={(e) => handleAttachFile(product.id, e.target.files?.[0])}
+                        className="bg-white text-sm"
+                      />
+                      {uploadingId === product.id && <span className="text-xs text-amber-800 shrink-0">Envoi...</span>}
+                    </div>
+                  </div>
+                )}
                 <div className="flex flex-wrap items-center gap-4 text-xs text-muted-foreground mb-6">
                   <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
                     {CATEGORY_LABELS[product.category] || product.category}
@@ -155,6 +213,8 @@ export default function AdminProductsPage() {
                   {product.moderation_status !== 'approved' && (
                     <Button
                       onClick={() => setToModerate({ id: product.id, status: 'approved' })}
+                      disabled={!product.file_key}
+                      title={!product.file_key ? 'Attachez un fichier avant d\'approuver' : undefined}
                       className="bg-green-600 text-white hover:bg-green-500"
                     >
                       Approuver

@@ -398,6 +398,9 @@ func main() {
 			// Création de produit automatisée (script/IA) — un seul appel
 			// combine upload + création, voir ProductHandler.AutoCreate.
 			r.Post("/products/auto", productHandler.AutoCreate)
+			// Attache un fichier à un produit créé sans fichier (avec un
+			// image_prompt), avant approbation.
+			r.Put("/products/{id}/file", productHandler.AttachFile)
 		})
 
 		r.Group(func(r chi.Router) {

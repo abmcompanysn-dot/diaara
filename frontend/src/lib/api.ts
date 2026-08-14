@@ -320,6 +320,16 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  attachProductFile: (id: string, file: File) => {
+    const form = new FormData();
+    form.append('file', file);
+    return fetchApi<{ product: any }>(`/api/admin/products/${id}/file`, {
+      method: 'PUT',
+      body: form as any,
+      headers: {},
+    });
+  },
+
   getUsers: () => fetchApi<{ users: any[] }>('/api/admin/users'),
 
   setRole: (id: string, role: string, action: 'grant' | 'revoke') =>

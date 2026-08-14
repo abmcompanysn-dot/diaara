@@ -10,11 +10,15 @@ type Product struct {
 	PriceCFA    int     `json:"price_cfa"`
 	// PriceMode : "fixed" (défaut) ou "flexible" ("paye ce que tu veux").
 	// MinPriceCFA n'a de sens qu'en mode flexible.
-	PriceMode              string  `json:"price_mode"`
-	MinPriceCFA            *int    `json:"min_price_cfa,omitempty"`
-	Category               string  `json:"category"`
-	FileKey                string  `json:"file_key"`
-	CoverImageKey          *string `json:"cover_image_key,omitempty"`
+	PriceMode     string  `json:"price_mode"`
+	MinPriceCFA   *int    `json:"min_price_cfa,omitempty"`
+	Category      string  `json:"category"`
+	FileKey       string  `json:"file_key"`
+	CoverImageKey *string `json:"cover_image_key,omitempty"`
+	// ImagePrompt : prompt de génération d'image renseigné par une création
+	// automatisée (IA/script) qui n'a pas encore de fichier — un modérateur
+	// génère l'image à partir de ce prompt puis l'attache avant d'approuver.
+	ImagePrompt            *string `json:"image_prompt,omitempty"`
 	ModerationStatus       string  `json:"moderation_status"`
 	ModerationNote         *string `json:"moderation_note,omitempty"`
 	AffiliateEnabled       bool    `json:"affiliate_enabled"`
@@ -47,6 +51,8 @@ type CreateProductInput struct {
 	FileKey     string `json:"file_key"`
 	// CoverImageKey : clé objet de l'image de couverture (optionnel).
 	CoverImageKey string `json:"cover_image_key,omitempty"`
+	// ImagePrompt : voir Product.ImagePrompt.
+	ImagePrompt *string `json:"image_prompt,omitempty"`
 	// Affiliation (closer) : si AffiliateEnabled, les closers peuvent générer
 	// un lien avec une commission ≤ MaxCloserCommissionPct.
 	AffiliateEnabled       bool    `json:"affiliate_enabled"`

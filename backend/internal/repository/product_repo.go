@@ -22,13 +22,13 @@ func NewProductRepo(pool *pgxpool.Pool) *ProductRepo {
 }
 
 const productColumns = `id, vendor_id, title, description, price_cfa, price_mode, min_price_cfa, category, file_key,
-	cover_image_key, moderation_status, moderation_note, affiliate_enabled, max_closer_commission_pct,
+	cover_image_key, image_prompt, moderation_status, moderation_note, affiliate_enabled, max_closer_commission_pct,
 	preview_keys, preview_status, created_at, updated_at`
 
 func scanProduct(row pgx.Row) (*model.Product, error) {
 	p := &model.Product{}
 	err := row.Scan(&p.ID, &p.VendorID, &p.Title, &p.Description, &p.PriceCFA, &p.PriceMode, &p.MinPriceCFA, &p.Category,
-		&p.FileKey, &p.CoverImageKey, &p.ModerationStatus, &p.ModerationNote, &p.AffiliateEnabled,
+		&p.FileKey, &p.CoverImageKey, &p.ImagePrompt, &p.ModerationStatus, &p.ModerationNote, &p.AffiliateEnabled,
 		&p.MaxCloserCommissionPct, &p.PreviewKeys, &p.PreviewStatus, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -46,11 +46,11 @@ func (r *ProductRepo) Create(ctx context.Context, input model.CreateProductInput
 	}
 	row := r.pool.QueryRow(ctx,
 		`INSERT INTO products (vendor_id, title, description, price_cfa, price_mode, min_price_cfa, category, file_key,
-			cover_image_key, affiliate_enabled, max_closer_commission_pct)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			cover_image_key, image_prompt, affiliate_enabled, max_closer_commission_pct)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
 		 RETURNING `+productColumns,
 		vendorID, input.Title, input.Description, input.PriceCFA, priceMode, input.MinPriceCFA, input.Category, input.FileKey,
-		input.CoverImageKey, input.AffiliateEnabled, input.MaxCloserCommissionPct,
+		input.CoverImageKey, input.ImagePrompt, input.AffiliateEnabled, input.MaxCloserCommissionPct,
 	)
 	return scanProduct(row)
 }
@@ -164,7 +164,7 @@ func (r *ProductRepo) ListPending(ctx context.Context) ([]*model.Product, error)
 // vendeur joint, pour l'écran de modération admin. status vide = tous statuts.
 func (r *ProductRepo) ListForAdmin(ctx context.Context, status string) ([]*model.AdminProduct, error) {
 	query := `SELECT p.id, p.vendor_id, p.title, p.description, p.price_cfa, p.price_mode, p.min_price_cfa,
-		p.category, p.file_key, p.cover_image_key, p.moderation_status, p.moderation_note, p.affiliate_enabled,
+		p.category, p.file_key, p.cover_image_key, p.image_prompt, p.moderation_status, p.moderation_note, p.affiliate_enabled,
 		p.max_closer_commission_pct, p.preview_keys, p.preview_status, p.created_at, p.updated_at, u.email
 		FROM products p JOIN users u ON u.id = p.vendor_id`
 	args := []interface{}{}
@@ -184,7 +184,7 @@ func (r *ProductRepo) ListForAdmin(ctx context.Context, status string) ([]*model
 	for rows.Next() {
 		p := &model.AdminProduct{}
 		err := rows.Scan(&p.ID, &p.VendorID, &p.Title, &p.Description, &p.PriceCFA, &p.PriceMode, &p.MinPriceCFA, &p.Category,
-			&p.FileKey, &p.CoverImageKey, &p.ModerationStatus, &p.ModerationNote, &p.AffiliateEnabled,
+			&p.FileKey, &p.CoverImageKey, &p.ImagePrompt, &p.ModerationStatus, &p.ModerationNote, &p.AffiliateEnabled,
 			&p.MaxCloserCommissionPct, &p.PreviewKeys, &p.PreviewStatus, &p.CreatedAt, &p.UpdatedAt, &p.VendorEmail)
 		if err != nil {
 			return nil, err
