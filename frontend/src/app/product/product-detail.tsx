@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
+import QRCode from 'qrcode';
 import { api, apiOrigin } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
 import { Button } from '@/components/ui/button';
@@ -10,7 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { ProductImage } from '@/components/product-image';
 import { VendorChat } from '@/components/vendor-chat';
 import { firebaseEnabled } from '@/lib/firebase';
-import { ArrowLeftIcon, CheckIcon, LockIcon, ZapIcon, LinkIcon } from '@/components/icons';
+import { ArrowLeftIcon, CheckIcon, LockIcon, ZapIcon, LinkIcon, CopyIcon } from '@/components/icons';
 import { CATEGORY_LABELS, PAYMENTS } from '@/lib/constants';
 
 interface Product {
@@ -41,21 +42,32 @@ export default function ProductDetailPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [qrDataUrl, setQrDataUrl] = useState('');
+
+  // Lien canonique de la fiche produit (utilisé pour le partage ET le QR code
+  // ci-dessous) — /p/:id n'existe pas dans ce site en export statique.
+  const productUrl = typeof window !== 'undefined' ? `${window.location.origin}/product?id=${id}` : '';
 
   const handleShare = async () => {
-    const url = `${window.location.origin}/p/${id}`;
     try {
-      await navigator.clipboard.writeText(url);
+      await navigator.clipboard.writeText(productUrl);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {
-      window.prompt('Copiez ce lien :', url);
+      window.prompt('Copiez ce lien :', productUrl);
     }
   };
 
   useEffect(() => {
     if (id) loadProduct();
   }, [id]);
+
+  useEffect(() => {
+    if (!productUrl) return;
+    QRCode.toDataURL(productUrl, { width: 200, margin: 1, color: { dark: '#0a3d2b', light: '#ffffff' } })
+      .then(setQrDataUrl)
+      .catch(() => {});
+  }, [productUrl]);
 
   const loadProduct = async () => {
     try {
@@ -266,6 +278,32 @@ export default function ProductDetailPage() {
             >
               Acheter maintenant
             </Button>
+
+            {/* QR code de la fiche produit : à scanner pour retrouver et acheter
+                ce produit précis (partage physique — flyer, écran boutique...). */}
+            <div className="mt-6 pt-5 border-t border-green-900/10 flex items-center gap-4">
+              <div className="shrink-0 w-20 h-20 rounded-lg bg-paper flex items-center justify-center overflow-hidden">
+                {qrDataUrl ? (
+                  <img src={qrDataUrl} alt="QR code de cette fiche produit" className="w-20 h-20" />
+                ) : (
+                  <div className="w-16 h-16 animate-pulse bg-green-900/10 rounded" />
+                )}
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-green-950">Scannez ce produit</p>
+                <p className="text-xs text-green-900/60 mt-0.5">
+                  Retrouvez cette fiche et payez en scannant ce code.
+                </p>
+                <button
+                  type="button"
+                  onClick={handleShare}
+                  className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-green-700 hover:underline"
+                >
+                  <CopyIcon size={12} />
+                  {copied ? 'Lien copié !' : 'Copier le lien'}
+                </button>
+              </div>
+            </div>
 
             <ul className="mt-6 space-y-2.5">
               {[
