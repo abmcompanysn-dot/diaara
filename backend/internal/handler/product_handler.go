@@ -7,7 +7,9 @@ import (
 	"html"
 	"io"
 	"log"
+	"mime"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
@@ -199,7 +201,13 @@ func (h *ProductHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Cover — public. Redirige vers une URL signée (1 h) de l'image de couverture.
+// Cover — public. Sert directement les octets de l'image de couverture
+// (plutôt qu'une redirection vers une URL signée) : Upload() n'enregistre
+// aucun Content-Type sur l'objet S3/MinIO, donc une redirection expose le
+// type générique renvoyé par le stockage — les navigateurs l'ignorent et
+// devinent quand même, mais les robots WhatsApp/Facebook le respectent
+// strictement et refusent d'afficher l'image dans la carte de partage si ce
+// n'est pas "image/...". Servir en direct permet de forcer le bon type.
 func (h *ProductHandler) Cover(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	product, err := h.productRepo.FindByID(r.Context(), id)
@@ -217,18 +225,25 @@ func (h *ProductHandler) Cover(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	url, err := h.storage.GenerateSignedURL(r.Context(), *product.CoverImageKey, time.Hour)
+	data, err := h.storage.Download(r.Context(), *product.CoverImageKey)
 	if err != nil {
 		http.Error(w, `{"error":"cover_failed"}`, http.StatusInternalServerError)
 		return
 	}
 
-	// Sans ça, le navigateur retélécharge l'image à chaque affichage (une
-	// URL signée différente est générée à chaque appel, donc rien n'est
-	// jamais reconnu comme "déjà en cache") — 1h ici, aligné sur la durée
-	// de validité de l'URL signée elle-même.
+	w.Header().Set("Content-Type", imageContentType(*product.CoverImageKey, data))
 	w.Header().Set("Cache-Control", "public, max-age=3600")
-	http.Redirect(w, r, url, http.StatusFound)
+	w.Write(data)
+}
+
+// imageContentType devine le type MIME d'une image à partir de son
+// extension (rapide, couvre le cas normal) puis, à défaut, en reniflant les
+// premiers octets du fichier (couvre les clés sans extension exploitable).
+func imageContentType(key string, data []byte) string {
+	if ct := mime.TypeByExtension(filepath.Ext(key)); ct != "" {
+		return ct
+	}
+	return http.DetectContentType(data)
 }
 
 // Preview — public (produits approuvés) ou vendeur/admin (produit en
@@ -266,14 +281,15 @@ func (h *ProductHandler) Preview(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	url, err := h.storage.GenerateSignedURL(r.Context(), product.PreviewKeys[idx], time.Hour)
+	data, err := h.storage.Download(r.Context(), product.PreviewKeys[idx])
 	if err != nil {
 		http.Error(w, `{"error":"preview_failed"}`, http.StatusInternalServerError)
 		return
 	}
 
+	w.Header().Set("Content-Type", imageContentType(product.PreviewKeys[idx], data))
 	w.Header().Set("Cache-Control", "public, max-age=3600")
-	http.Redirect(w, r, url, http.StatusFound)
+	w.Write(data)
 }
 
 // socialCrawlerUA reconnaît les robots des réseaux sociaux qui n'exécutent pas
@@ -323,15 +339,22 @@ func (h *ProductHandler) Share(w http.ResponseWriter, r *http.Request) {
 	}
 	shareURL := fmt.Sprintf("%s://%s/p/%s", scheme, r.Host, id)
 
+	// WhatsApp/Facebook n'ont pas d'emplacement dédié pour product:price:*
+	// dans un aperçu de lien classique (ces balises servent à leurs systèmes
+	// de catalogue, pas à l'aperçu affiché en discussion) — le prix doit
+	// donc être visible dans le texte de la description pour apparaître.
 	description := ""
 	if product.Description != nil {
 		description = *product.Description
 	}
-	if len(description) > 200 {
-		description = description[:200] + "…"
+	if len(description) > 180 {
+		description = description[:180] + "…"
 	}
+	priceLine := fmt.Sprintf("%d FCFA", product.PriceCFA)
 	if description == "" {
-		description = fmt.Sprintf("%d FCFA — produit numérique sur DIARRA", product.PriceCFA)
+		description = fmt.Sprintf("%s — produit numérique sur DIARRA", priceLine)
+	} else {
+		description = fmt.Sprintf("%s — %s", priceLine, description)
 	}
 
 	var imageTag string
