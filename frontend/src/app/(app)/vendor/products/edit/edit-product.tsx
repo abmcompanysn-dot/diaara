@@ -52,6 +52,9 @@ export default function EditProduct() {
 
   const [newFile, setNewFile] = useState<File | null>(null);
   const [uploadingFile, setUploadingFile] = useState(false);
+  const [currentFileKey, setCurrentFileKey] = useState('');
+  const [previewStatus, setPreviewStatus] = useState('');
+  const [previewCount, setPreviewCount] = useState(0);
 
   const [coverKey, setCoverKey] = useState('');
   const [coverPreview, setCoverPreview] = useState('');
@@ -72,6 +75,9 @@ export default function EditProduct() {
         setMaxCommission(String(product.max_closer_commission_pct || 10));
         setStatus(product.moderation_status);
         setModerationNote(product.moderation_note || '');
+        setCurrentFileKey(product.file_key || '');
+        setPreviewStatus(product.preview_status || '');
+        setPreviewCount(product.preview_keys?.length || 0);
         if (product.cover_image_key) {
           setCoverPreview(`${apiOrigin}/api/products/${id}/cover`);
         }
@@ -283,6 +289,29 @@ export default function EditProduct() {
                   </Select>
                 </div>
               </div>
+
+              {currentFileKey && (
+                <div className="space-y-2">
+                  <Label>Fichier livré actuellement</Label>
+                  <div className="p-3 flex items-center gap-3 bg-secondary/40 rounded-lg border border-border">
+                    <FileIcon size={24} className="text-primary shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-medium truncate">
+                        {currentFileKey.split('/').pop()?.replace(/^[0-9a-f]{16}_/, '') || currentFileKey}
+                      </p>
+                      <p className="text-xs text-muted-foreground">
+                        {previewStatus === 'pending'
+                          ? 'Aperçu en cours de génération...'
+                          : previewStatus === 'unsupported'
+                            ? "Pas d'aperçu pour ce type de fichier"
+                            : previewCount > 0
+                              ? `${previewCount} aperçu(s) généré(s)`
+                              : "Pas encore d'aperçu"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
 
               <div className="space-y-2">
                 <Label htmlFor="new-file">Remplacer le fichier livré (optionnel)</Label>
