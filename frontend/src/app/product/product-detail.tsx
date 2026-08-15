@@ -12,7 +12,7 @@ import { ProductImage } from '@/components/product-image';
 import { VendorChat } from '@/components/vendor-chat';
 import { firebaseEnabled } from '@/lib/firebase';
 import { ArrowLeftIcon, CheckIcon, LockIcon, ZapIcon, LinkIcon, CopyIcon } from '@/components/icons';
-import { CATEGORY_LABELS, PAYMENTS } from '@/lib/constants';
+import { CATEGORY_LABELS, PAYMENT_LOGOS } from '@/lib/constants';
 
 interface Product {
   id: string;
@@ -323,12 +323,13 @@ export default function ProductDetailPage() {
             <div className="mt-6 pt-5 border-t border-green-900/10">
               <p className="text-xs text-green-900/50 mb-2.5">Paiements acceptés :</p>
               <div className="flex flex-wrap gap-2">
-                {PAYMENTS.map((p) => (
+                {PAYMENT_LOGOS.map((p) => (
                   <span
                     key={p.name}
-                    className={`px-2.5 py-1 rounded ${p.color} ${p.text} text-xs font-bold`}
+                    title={p.name}
+                    className="h-9 px-2 rounded-lg bg-white border border-green-900/10 flex items-center justify-center"
                   >
-                    {p.name}
+                    <img src={`/payments/${p.logo}`} alt={p.name} className="max-h-5 max-w-[70px] object-contain" />
                   </span>
                 ))}
               </div>

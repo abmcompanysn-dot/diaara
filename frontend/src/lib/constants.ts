@@ -72,6 +72,25 @@ export const PAYMENTS = [
   { name: 'Free', color: 'bg-white', text: 'text-green-950' },
 ];
 
+/** Logos de tous les opérateurs mobile money couverts par le site (fichiers
+ * dans /public/payments, mêmes assets que PAYOUT_COUNTRIES). */
+export const PAYMENT_LOGOS = [
+  { name: 'Wave', logo: 'wave.png' },
+  { name: 'Orange Money', logo: 'orange-money.png' },
+  { name: 'MTN MoMo', logo: 'mtn-momo.png' },
+  { name: 'Moov Money', logo: 'moov-money.png' },
+  { name: 'Airtel Money', logo: 'at-money.png' },
+  { name: 'Vodacom M-Pesa', logo: 'vodacom.png' },
+  { name: 'M-Pesa', logo: 'mpesa.png' },
+  { name: 'Safaricom M-Pesa', logo: 'safaricom-mpesa.png' },
+  { name: 'HaloPesa', logo: 'halopesa.png' },
+  { name: 'TNM Mpamba', logo: 'tnm.png' },
+  { name: 'Zamtel Money', logo: 'zamtel.png' },
+  { name: 'Movitel', logo: 'movitel.png' },
+  { name: 'Mixx by Yas', logo: 'mixx-yas.png' },
+  { name: 'Telecel Cash', logo: 'telecel-cash.png' },
+];
+
 /** Libellés des rôles utilisateurs (admin). */
 export const ROLE_LABELS: Record<string, string> = {
   vendeur: 'Vendeur',
