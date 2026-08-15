@@ -237,6 +237,10 @@ frontend** sur un VPS. Deux options :
    - `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS`, `NEXT_PUBLIC_API_URL`,
      `NEXT_PUBLIC_WS_URL` → votre domaine (ex. `https://diarra.abmcy.com`,
      `wss://diarra.abmcy.com`).
+   - `NEXT_PUBLIC_SITE_URL=https://diarra.abmcy.com` — URL publique du site,
+     utilisée pour générer `sitemap.xml`, `robots.ts` et les URLs canoniques
+     (SEO). Sans elle, ces fichiers retombent sur `https://diarra.abmcy.com`
+     par défaut.
    - `BACKEND_HOST_PORT` / `FRONTEND_HOST_PORT` / `MINIO_API_HOST_PORT` /
      `MINIO_CONSOLE_HOST_PORT` : uniquement si les ports par défaut (`8080`,
      `3000`, `9000`, `9001`) sont déjà pris par une autre app sur le même VPS.
@@ -266,9 +270,15 @@ frontend** sur un VPS. Deux options :
 
    ```caddyfile
    diarra.abmcy.com {
-       handle /api/* { reverse_proxy 127.0.0.1:8080 }
-       handle /ws/*  { reverse_proxy 127.0.0.1:8080 }
-       handle        { reverse_proxy 127.0.0.1:3001 }
+       handle /api/*  { reverse_proxy 127.0.0.1:8080 }
+       handle /ws/*   { reverse_proxy 127.0.0.1:8080 }
+       # Liens de partage produit, redirection d'affiliation, flux produits
+       # (Google Merchant / Facebook) : servis par le backend Go, pas le
+       # build statique du frontend.
+       handle /p/*    { reverse_proxy 127.0.0.1:8080 }
+       handle /r/*    { reverse_proxy 127.0.0.1:8080 }
+       handle /feed/* { reverse_proxy 127.0.0.1:8080 }
+       handle         { reverse_proxy 127.0.0.1:3001 }
    }
 
    s3.diarra.abmcy.com {

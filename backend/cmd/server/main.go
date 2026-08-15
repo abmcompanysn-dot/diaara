@@ -192,6 +192,7 @@ func main() {
 	closerHandler := handler.NewCloserHandler(referralRepo, productRepo, os.Getenv("FRONTEND_URL"))
 	bundleHandler := handler.NewBundleHandler(bundleRepo, productRepo)
 	webhookHandler := handler.NewWebhookHandler(saleRepo, userRepo, productRepo, payoutRepo, pawapay, notifications, notificationRepo, s3, allowedIPs)
+	feedHandler := handler.NewFeedHandler(productRepo, os.Getenv("FRONTEND_URL"))
 
 	// Temps réel (LISTEN/NOTIFY + WebSocket)
 	hub := realtime.NewHub(pool)
@@ -339,6 +340,10 @@ func main() {
 
 	// Lien de partage produit (carte Open Graph pour WhatsApp/Facebook/etc.)
 	r.Get("/p/{id}", productHandler.Share)
+
+	// Flux produits pour les plateformes publicitaires (import par URL)
+	r.Get("/feed/google-merchant.xml", feedHandler.GoogleMerchant)
+	r.Get("/feed/facebook.csv", feedHandler.Facebook)
 
 	// Webhooks (pas de JWT)
 	r.Route("/api/webhooks", func(r chi.Router) {

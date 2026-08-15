@@ -4,6 +4,8 @@ import type { MetadataRoute } from 'next';
 // donc être générée au build plutôt qu'à la demande.
 export const dynamic = 'force-static';
 
+const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || 'https://diarra.abmcy.com').replace(/\/$/, '');
+
 export default function robots(): MetadataRoute.Robots {
   return {
     rules: {
@@ -13,5 +15,6 @@ export default function robots(): MetadataRoute.Robots {
       // API, flux d'achat/inscription (contenu dupliqué par produit/paramètre).
       disallow: ['/dashboard', '/admin', '/vendor', '/closer', '/account', '/orders', '/order', '/checkout', '/api'],
     },
+    sitemap: `${SITE_URL}/sitemap.xml`,
   };
 }

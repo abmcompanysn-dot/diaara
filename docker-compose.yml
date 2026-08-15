@@ -13,6 +13,18 @@ services:
       timeout: 3s
       retries: 10
 
+  redis:
+    image: redis:7-alpine
+    # Pur cache (catalogue, stats admin, solde vendeur, rate limiting) —
+    # jamais de donnée qui n'existe pas déjà ailleurs, donc pas de
+    # persistance : évite l'I/O disque inutile et un volume à gérer.
+    command: redis-server --save ""
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   backend:
     build:
       context: ./backend
@@ -27,6 +39,7 @@ services:
     environment:
       APP_ENV: ${APP_ENV:-development}
       DATABASE_URL: postgres://diarra:${POSTGRES_PASSWORD:-diarra_dev}@postgres:5432/diarra?sslmode=disable
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       PORT: "8080"
       JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
       REFRESH_SECRET: ${REFRESH_SECRET:-dev-refresh-secret-change-in-production}
@@ -56,6 +69,8 @@ services:
         condition: service_healthy
       minio:
         condition: service_started
+      redis:
+        condition: service_healthy
 
   frontend:
     build:
@@ -64,6 +79,7 @@ services:
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8080}
         NEXT_PUBLIC_WS_URL: ${NEXT_PUBLIC_WS_URL:-ws://localhost:8080}
+        NEXT_PUBLIC_SITE_URL: ${NEXT_PUBLIC_SITE_URL:-https://diarra.abmcy.com}
         NEXT_PUBLIC_FIREBASE_API_KEY: ${NEXT_PUBLIC_FIREBASE_API_KEY:-}
         NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: ${NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:-}
         NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${NEXT_PUBLIC_FIREBASE_PROJECT_ID:-}
