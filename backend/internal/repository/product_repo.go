@@ -23,13 +23,13 @@ func NewProductRepo(pool *pgxpool.Pool) *ProductRepo {
 
 const productColumns = `id, vendor_id, title, description, price_cfa, price_mode, min_price_cfa, category, file_key,
 	cover_image_key, image_prompt, moderation_status, moderation_note, affiliate_enabled, max_closer_commission_pct,
-	preview_keys, preview_status, created_at, updated_at`
+	preview_keys, preview_status, deletion_requested, created_at, updated_at`
 
 func scanProduct(row pgx.Row) (*model.Product, error) {
 	p := &model.Product{}
 	err := row.Scan(&p.ID, &p.VendorID, &p.Title, &p.Description, &p.PriceCFA, &p.PriceMode, &p.MinPriceCFA, &p.Category,
 		&p.FileKey, &p.CoverImageKey, &p.ImagePrompt, &p.ModerationStatus, &p.ModerationNote, &p.AffiliateEnabled,
-		&p.MaxCloserCommissionPct, &p.PreviewKeys, &p.PreviewStatus, &p.CreatedAt, &p.UpdatedAt)
+		&p.MaxCloserCommissionPct, &p.PreviewKeys, &p.PreviewStatus, &p.DeletionRequested, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, ErrProductNotFound
@@ -190,7 +190,7 @@ func (r *ProductRepo) ListPendingPreviews(ctx context.Context) ([]*model.Product
 func (r *ProductRepo) ListForAdmin(ctx context.Context, status string) ([]*model.AdminProduct, error) {
 	query := `SELECT p.id, p.vendor_id, p.title, p.description, p.price_cfa, p.price_mode, p.min_price_cfa,
 		p.category, p.file_key, p.cover_image_key, p.image_prompt, p.moderation_status, p.moderation_note, p.affiliate_enabled,
-		p.max_closer_commission_pct, p.preview_keys, p.preview_status, p.created_at, p.updated_at, u.email
+		p.max_closer_commission_pct, p.preview_keys, p.preview_status, p.deletion_requested, p.created_at, p.updated_at, u.email
 		FROM products p JOIN users u ON u.id = p.vendor_id`
 	args := []interface{}{}
 	if status != "" {
@@ -210,7 +210,7 @@ func (r *ProductRepo) ListForAdmin(ctx context.Context, status string) ([]*model
 		p := &model.AdminProduct{}
 		err := rows.Scan(&p.ID, &p.VendorID, &p.Title, &p.Description, &p.PriceCFA, &p.PriceMode, &p.MinPriceCFA, &p.Category,
 			&p.FileKey, &p.CoverImageKey, &p.ImagePrompt, &p.ModerationStatus, &p.ModerationNote, &p.AffiliateEnabled,
-			&p.MaxCloserCommissionPct, &p.PreviewKeys, &p.PreviewStatus, &p.CreatedAt, &p.UpdatedAt, &p.VendorEmail)
+			&p.MaxCloserCommissionPct, &p.PreviewKeys, &p.PreviewStatus, &p.DeletionRequested, &p.CreatedAt, &p.UpdatedAt, &p.VendorEmail)
 		if err != nil {
 			return nil, err
 		}
@@ -310,6 +310,32 @@ func (r *ProductRepo) SetPreview(ctx context.Context, id string, keys []string, 
 
 func (r *ProductRepo) Delete(ctx context.Context, id string) error {
 	tag, err := r.pool.Exec(ctx, `DELETE FROM products WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrProductNotFound
+	}
+	return nil
+}
+
+// RequestDeletion — le vendeur demande la suppression du produit ; la
+// suppression réelle n'a lieu qu'après confirmation d'un admin (voir Delete).
+func (r *ProductRepo) RequestDeletion(ctx context.Context, id string) error {
+	tag, err := r.pool.Exec(ctx, `UPDATE products SET deletion_requested = true WHERE id = $1`, id)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrProductNotFound
+	}
+	return nil
+}
+
+// CancelDeletionRequest — un admin rejette la demande de suppression, le
+// produit reste actif.
+func (r *ProductRepo) CancelDeletionRequest(ctx context.Context, id string) error {
+	tag, err := r.pool.Exec(ctx, `UPDATE products SET deletion_requested = false WHERE id = $1`, id)
 	if err != nil {
 		return err
 	}

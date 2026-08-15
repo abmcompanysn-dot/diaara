@@ -28,15 +28,17 @@ interface Product {
   moderation_note?: string | null;
   file_key?: string;
   image_prompt?: string | null;
+  deletion_requested?: boolean;
   created_at: string;
 }
 
-type Tab = 'pending' | 'approved' | 'rejected' | 'all';
+type Tab = 'pending' | 'approved' | 'rejected' | 'all' | 'deletion';
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'pending', label: 'En attente' },
   { key: 'approved', label: 'Approuvés' },
   { key: 'rejected', label: 'Refusés' },
+  { key: 'deletion', label: 'Suppressions demandées' },
   { key: 'all', label: 'Tous' },
 ];
 
@@ -49,6 +51,7 @@ export default function AdminProductsPage() {
   const [rejectNote, setRejectNote] = useState('');
   const [uploadingId, setUploadingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
+  const [toDeletionAction, setToDeletionAction] = useState<{ id: string; action: 'confirm' | 'cancel' } | null>(null);
 
   useEffect(() => {
     loadProducts(tab);
@@ -58,12 +61,28 @@ export default function AdminProductsPage() {
   const loadProducts = async (t: Tab) => {
     setLoading(true);
     try {
-      const result = await api.getAdminProducts(t === 'all' ? undefined : t);
+      const result = await api.getAdminProducts(t === 'all' || t === 'deletion' ? undefined : t);
       setProducts(result.products);
     } catch (err: any) {
       setError(friendlyError(err));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDeletionAction = async () => {
+    if (!toDeletionAction) return;
+    try {
+      if (toDeletionAction.action === 'confirm') {
+        await api.confirmProductDeletion(toDeletionAction.id);
+      } else {
+        await api.cancelProductDeletion(toDeletionAction.id);
+      }
+      await loadProducts(tab);
+    } catch (err: any) {
+      setError(friendlyError(err));
+    } finally {
+      setToDeletionAction(null);
     }
   };
 
@@ -107,6 +126,8 @@ export default function AdminProductsPage() {
     }
   };
 
+  const displayedProducts = tab === 'deletion' ? products.filter((p) => p.deletion_requested) : products;
+
   return (
     <main>
       <PageHeader
@@ -147,14 +168,20 @@ export default function AdminProductsPage() {
 
         {loading ? (
           <PageLoader />
-        ) : products.length === 0 ? (
+        ) : displayedProducts.length === 0 ? (
           <EmptyState
             title="Aucun produit"
-            description={tab === 'pending' ? 'Toutes les soumissions ont été traitées.' : 'Rien à afficher dans cet onglet.'}
+            description={
+              tab === 'pending'
+                ? 'Toutes les soumissions ont été traitées.'
+                : tab === 'deletion'
+                  ? 'Aucune demande de suppression en attente.'
+                  : 'Rien à afficher dans cet onglet.'
+            }
           />
         ) : (
           <div className="space-y-4">
-            {products.map((product) => (
+            {displayedProducts.map((product) => (
               <div key={product.id} className="p-6 border rounded-xl bg-white shadow-card border-green-900/10">
                 <div className="flex justify-between items-start mb-2 gap-3">
                   <h2 className="font-display font-bold text-lg text-green-950">{product.title}</h2>
@@ -172,6 +199,29 @@ export default function AdminProductsPage() {
                 </p>
                 {product.moderation_status === 'rejected' && product.moderation_note && (
                   <p className="text-sm text-red-600 mb-4">Raison du refus : {product.moderation_note}</p>
+                )}
+                {product.deletion_requested && (
+                  <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg flex flex-wrap items-center justify-between gap-3">
+                    <p className="text-sm text-red-800 font-medium">
+                      Le vendeur a demandé la suppression de ce produit.
+                    </p>
+                    <div className="flex gap-2 shrink-0">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setToDeletionAction({ id: product.id, action: 'cancel' })}
+                      >
+                        Refuser la demande
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        onClick={() => setToDeletionAction({ id: product.id, action: 'confirm' })}
+                      >
+                        Confirmer la suppression
+                      </Button>
+                    </div>
+                  </div>
                 )}
                 {!product.file_key && product.image_prompt && (
                   <div className="mb-4 p-3 bg-amber-50 border border-amber-200 rounded-lg">
@@ -265,6 +315,21 @@ export default function AdminProductsPage() {
           </div>
         )}
       </ConfirmDialog>
+
+      <ConfirmDialog
+        open={!!toDeletionAction}
+        title={toDeletionAction?.action === 'confirm' ? 'Supprimer définitivement ce produit ?' : 'Refuser la demande de suppression ?'}
+        description={
+          toDeletionAction?.action === 'confirm'
+            ? 'Le produit et son fichier livré seront supprimés définitivement. Cette action est irréversible.'
+            : 'Le produit reste actif dans la boutique du vendeur.'
+        }
+        confirmLabel={toDeletionAction?.action === 'confirm' ? 'Supprimer définitivement' : 'Refuser la demande'}
+        cancelLabel="Annuler"
+        danger={toDeletionAction?.action === 'confirm'}
+        onConfirm={handleDeletionAction}
+        onCancel={() => setToDeletionAction(null)}
+      />
     </main>
   );
 }

@@ -36,6 +36,7 @@ interface Product {
   moderation_status: string;
   moderation_note?: string | null;
   preview_status?: string;
+  deletion_requested?: boolean;
 }
 
 export default function VendorProductsPage() {
@@ -65,7 +66,7 @@ export default function VendorProductsPage() {
     if (!toDelete) return;
     try {
       await api.deleteProduct(toDelete.id);
-      setProducts(products.filter((p) => p.id !== toDelete.id));
+      setProducts(products.map((p) => (p.id === toDelete.id ? { ...p, deletion_requested: true } : p)));
     } catch (err: any) {
       setError(friendlyError(err));
     } finally {
@@ -170,6 +171,11 @@ export default function VendorProductsPage() {
                       <Badge className={PRODUCT_STATUS_BADGE[product.moderation_status]}>
                         {PRODUCT_STATUS_LABELS[product.moderation_status] || product.moderation_status}
                       </Badge>
+                      {product.deletion_requested && (
+                        <Badge className="ml-1 bg-amber-100 text-amber-800 hover:bg-amber-100">
+                          Suppression demandée
+                        </Badge>
+                      )}
                       {product.preview_status === 'pending' && (
                         <p className="text-[11px] text-green-900/40 mt-1">Aperçu en cours…</p>
                       )}
@@ -189,7 +195,8 @@ export default function VendorProductsPage() {
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="text-destructive hover:text-destructive hover:bg-destructive/10 min-h-9"
+                        disabled={product.deletion_requested}
+                        className="text-destructive hover:text-destructive hover:bg-destructive/10 min-h-9 disabled:opacity-40"
                         onClick={() => setToDelete(product)}
                       >
                         <TrashIcon size={16} />
@@ -240,6 +247,11 @@ export default function VendorProductsPage() {
                         <Badge className={PRODUCT_STATUS_BADGE[product.moderation_status]}>
                           {PRODUCT_STATUS_LABELS[product.moderation_status] || product.moderation_status}
                         </Badge>
+                        {product.deletion_requested && (
+                          <Badge className="ml-1 bg-amber-100 text-amber-800 hover:bg-amber-100">
+                            Suppression demandée
+                          </Badge>
+                        )}
                         {product.preview_status === 'pending' && (
                           <p className="text-[11px] text-green-900/40 mt-1">Aperçu en cours…</p>
                         )}
@@ -260,7 +272,8 @@ export default function VendorProductsPage() {
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="text-destructive hover:text-destructive hover:bg-destructive/10 min-h-9"
+                          disabled={product.deletion_requested}
+                          className="text-destructive hover:text-destructive hover:bg-destructive/10 min-h-9 disabled:opacity-40"
                           onClick={() => setToDelete(product)}
                         >
                           <TrashIcon size={16} className="mr-1.5" />
@@ -278,9 +291,9 @@ export default function VendorProductsPage() {
 
       <ConfirmDialog
         open={!!toDelete}
-        title="Supprimer ce produit ?"
-        description={`« ${toDelete?.title} » sera retiré de la boutique. Cette action est définitive.`}
-        confirmLabel="Supprimer"
+        title="Demander la suppression ?"
+        description={`« ${toDelete?.title} » sera retiré de la boutique une fois la suppression confirmée par un admin.`}
+        confirmLabel="Demander la suppression"
         cancelLabel="Annuler"
         danger
         onConfirm={handleDelete}

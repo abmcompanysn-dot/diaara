@@ -400,6 +400,8 @@ func main() {
 			r.Get("/products/pending", adminHandler.PendingProducts)
 			r.Get("/products", adminHandler.ListProducts)
 			r.Put("/products/{id}/moderate", adminHandler.Moderate)
+			r.Delete("/products/{id}", adminHandler.ConfirmDeletion)
+			r.Put("/products/{id}/cancel-deletion", adminHandler.CancelDeletion)
 		})
 
 		r.Group(func(r chi.Router) {

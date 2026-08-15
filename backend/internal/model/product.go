@@ -28,8 +28,11 @@ type Product struct {
 	// audio/vidéo). Vide tant que preview_status vaut "pending".
 	PreviewKeys   []string  `json:"preview_keys"`
 	PreviewStatus string    `json:"preview_status"`
-	CreatedAt     time.Time `json:"created_at"`
-	UpdatedAt     time.Time `json:"updated_at"`
+	// DeletionRequested : le vendeur a demandé la suppression du produit,
+	// en attente de confirmation par un admin (voir AdminHandler.ConfirmDeletion).
+	DeletionRequested bool      `json:"deletion_requested"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 // AdminProduct — un produit avec l'email du vendeur, pour l'écran de

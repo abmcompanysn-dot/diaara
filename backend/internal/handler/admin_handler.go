@@ -130,6 +130,40 @@ func (h *AdminHandler) Moderate(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"product": product})
 }
 
+// ConfirmDeletion — DELETE /api/admin/products/{id} : supprime
+// définitivement un produit dont le vendeur a demandé la suppression.
+func (h *AdminHandler) ConfirmDeletion(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	if err := h.productRepo.Delete(r.Context(), id); err != nil {
+		http.Error(w, `{"error":"delete_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
+}
+
+// CancelDeletion — PUT /api/admin/products/{id}/cancel-deletion : rejette la
+// demande de suppression du vendeur, le produit reste actif.
+func (h *AdminHandler) CancelDeletion(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	if err := h.productRepo.CancelDeletionRequest(r.Context(), id); err != nil {
+		http.Error(w, `{"error":"cancel_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	product, err := h.productRepo.FindByID(r.Context(), id)
+	if err != nil {
+		http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"product": product})
+}
+
 // SuspendUser — PUT /api/admin/users/{id}/suspend
 func (h *AdminHandler) SuspendUser(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")

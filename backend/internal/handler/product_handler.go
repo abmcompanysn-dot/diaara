@@ -696,7 +696,9 @@ func (h *ProductHandler) Update(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"product": updated})
 }
 
-// Delete — vendeur propriétaire ou admin
+// Delete — vendeur propriétaire ou admin. Un vendeur ne supprime jamais
+// directement : sa demande est marquée deletion_requested et attend la
+// confirmation d'un admin (voir AdminHandler.ConfirmDeletion/CancelDeletion).
 func (h *ProductHandler) Delete(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	isAdmin := middleware.GetIsAdmin(r.Context())
@@ -712,13 +714,22 @@ func (h *ProductHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.productRepo.Delete(r.Context(), id); err != nil {
-		http.Error(w, `{"error":"delete_failed"}`, http.StatusInternalServerError)
+	if isAdmin {
+		if err := h.productRepo.Delete(r.Context(), id); err != nil {
+			http.Error(w, `{"error":"delete_failed"}`, http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
 		return
 	}
 
+	if err := h.productRepo.RequestDeletion(r.Context(), id); err != nil {
+		http.Error(w, `{"error":"delete_failed"}`, http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
+	json.NewEncoder(w).Encode(map[string]string{"status": "deletion_requested"})
 }
 
 // validAffiliateConfig vérifie la cohérence des paramètres d'affiliation :

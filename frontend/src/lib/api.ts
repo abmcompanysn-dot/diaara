@@ -169,7 +169,7 @@ export const api = {
     }),
 
   deleteProduct: (id: string) =>
-    fetchApi<void>(`/api/vendor/products/${id}`, { method: 'DELETE' }),
+    fetchApi<{ status: string }>(`/api/vendor/products/${id}`, { method: 'DELETE' }),
 
   // Orders
   createOrder: (data: {
@@ -322,6 +322,12 @@ export const api = {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
+
+  confirmProductDeletion: (id: string) =>
+    fetchApi<{ status: string }>(`/api/admin/products/${id}`, { method: 'DELETE' }),
+
+  cancelProductDeletion: (id: string) =>
+    fetchApi<{ product: any }>(`/api/admin/products/${id}/cancel-deletion`, { method: 'PUT' }),
 
   attachProductFile: (id: string, file: File) => {
     const form = new FormData();
