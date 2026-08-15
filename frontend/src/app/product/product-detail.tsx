@@ -44,9 +44,13 @@ export default function ProductDetailPage() {
   const [copied, setCopied] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState('');
 
-  // Lien canonique de la fiche produit (utilisé pour le partage ET le QR code
-  // ci-dessous) — /p/:id n'existe pas dans ce site en export statique.
-  const productUrl = typeof window !== 'undefined' ? `${window.location.origin}/product?id=${id}` : '';
+  // Lien de partage (copie + QR code) : /p/:id, servi dynamiquement par le
+  // backend (ProductHandler.Share) — carte Open Graph pour les robots des
+  // réseaux sociaux, redirection 302 vers /product?id=:id pour les vrais
+  // visiteurs. Ne jamais partager /product?id= directement : le site étant
+  // en export statique, cette page ne peut pas avoir de balises OG par
+  // produit (toujours celles, génériques, du site).
+  const productUrl = typeof window !== 'undefined' ? `${window.location.origin}/p/${id}` : '';
 
   const handleShare = async () => {
     try {

@@ -342,7 +342,7 @@ func (h *ProductHandler) Share(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	fmt.Fprintf(w, `<!DOCTYPE html>
-<html lang="fr">
+<html lang="fr" prefix="og: https://ogp.me/ns# product: https://ogp.me/ns/product#">
 <head>
 <meta charset="utf-8">
 <title>%s</title>
@@ -351,6 +351,8 @@ func (h *ProductHandler) Share(w http.ResponseWriter, r *http.Request) {
 <meta property="og:title" content="%s">
 <meta property="og:description" content="%s">
 <meta property="og:url" content="%s">
+<meta property="product:price:amount" content="%d">
+<meta property="product:price:currency" content="XOF">
 %s
 <meta name="twitter:card" content="summary_large_image">
 <meta http-equiv="refresh" content="0; url=%s">
@@ -361,6 +363,7 @@ func (h *ProductHandler) Share(w http.ResponseWriter, r *http.Request) {
 		html.EscapeString(product.Title),
 		html.EscapeString(description),
 		html.EscapeString(shareURL),
+		product.PriceCFA,
 		imageTag,
 		html.EscapeString(productURL),
 	)

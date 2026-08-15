@@ -7,8 +7,16 @@ import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { friendlyError } from '@/lib/error-messages';
 import { CheckIcon, AlertTriangleIcon, DownloadIcon } from '@/components/icons';
+import { ProductImage } from '@/components/product-image';
 
 type Step = 'pending' | 'done' | 'error';
+
+interface PurchasedProduct {
+  id: string;
+  title: string;
+  category: string;
+  cover_image_key?: string;
+}
 
 const POLL_INTERVAL_MS = 3000;
 const MAX_AUTO_POLLS = 20; // ~60s avant de proposer une vérification manuelle
@@ -22,6 +30,7 @@ export default function CheckoutReturnView() {
   const [deliveryUrl, setDeliveryUrl] = useState('');
   const [delivering, setDelivering] = useState(false);
   const [productId, setProductId] = useState('');
+  const [product, setProduct] = useState<PurchasedProduct | null>(null);
   const [timedOut, setTimedOut] = useState(false);
   const [checkingNow, setCheckingNow] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -75,6 +84,18 @@ export default function CheckoutReturnView() {
     return () => stopPolling();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
+
+  // Dès que la commande révèle son produit (paiement confirmé ou échoué),
+  // on récupère sa fiche pour afficher son image sur cet écran.
+  useEffect(() => {
+    if (!productId) return;
+    api
+      .getProduct(productId)
+      .then((res) => setProduct(res.product))
+      .catch(() => {
+        // Pas bloquant : l'écran reste utilisable sans l'image.
+      });
+  }, [productId]);
 
   const stopPolling = () => {
     if (pollRef.current) {
@@ -145,12 +166,23 @@ export default function CheckoutReturnView() {
 
         {step === 'done' && (
           <div className="text-center py-8">
-            <div className="mx-auto w-14 h-14 rounded-full bg-lime/20 flex items-center justify-center">
-              <CheckIcon size={32} className="text-green-700" />
-            </div>
+            {product ? (
+              <div className="mx-auto w-20 h-20 rounded-xl overflow-hidden shadow-card">
+                <ProductImage product={product} className="h-20" />
+              </div>
+            ) : (
+              <div className="mx-auto w-14 h-14 rounded-full bg-lime/20 flex items-center justify-center">
+                <CheckIcon size={32} className="text-green-700" />
+              </div>
+            )}
             <h1 className="font-display text-lg font-bold mt-4 text-green-950">
               Paiement confirmé
             </h1>
+            {product && (
+              <p className="mt-1 text-sm font-medium text-green-900/80 max-w-xs mx-auto line-clamp-2">
+                {product.title}
+              </p>
+            )}
             <p className="mt-2 text-sm text-green-900/60 max-w-xs mx-auto">
               Merci ! Un email de confirmation vous a été envoyé. Vous pouvez
               aussi télécharger votre fichier directement ci-dessous.

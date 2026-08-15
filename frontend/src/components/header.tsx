@@ -30,6 +30,11 @@ export function Header() {
   const { open: menuOpen, setOpen: setMenuOpen } = useMobileMenu();
   const panelRef = useRef<HTMLDivElement>(null);
 
+  // "Mon espace" doit conduire chacun vers SON espace : un vendeur vers son
+  // tableau de bord vendeur, un client (ou un closer sans rôle vendeur) vers
+  // le tableau de bord générique.
+  const mySpaceHref = user?.roles?.includes('vendeur') ? '/vendor' : '/dashboard';
+
   // Liens publics affichés dans la nav desktop (toujours visibles).
   const publicLinks: DrawerLink[] = [
     { href: '/catalog', label: 'Catalogue', Icon: CartIcon },
@@ -43,7 +48,7 @@ export function Header() {
       label: 'Navigation',
       links: user
         ? [
-            { href: '/dashboard', label: 'Mon espace', Icon: HomeIcon },
+            { href: mySpaceHref, label: 'Mon espace', Icon: HomeIcon },
             { href: '/catalog', label: 'Catalogue des produits', Icon: CartIcon },
             { href: '/how-it-works', label: 'Comment ça marche', Icon: ZapIcon },
             { href: '/orders', label: 'Mes achats / commandes', Icon: WalletIcon },
@@ -147,11 +152,11 @@ export function Header() {
           ))}
           {user && (
             <Link
-              href="/dashboard"
-              aria-current={isActive('/dashboard') ? 'page' : undefined}
+              href={mySpaceHref}
+              aria-current={isActive(mySpaceHref) ? 'page' : undefined}
               className={cn(
                 'flex items-center gap-1.5 text-sm text-white/80 hover:text-green-300 transition-colors',
-                isActive('/dashboard') && 'text-green-300 font-medium'
+                isActive(mySpaceHref) && 'text-green-300 font-medium'
               )}
             >
               <HomeIcon size={16} className="shrink-0" />

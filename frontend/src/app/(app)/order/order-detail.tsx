@@ -12,6 +12,7 @@ import { PageLoader } from '@/components/page-loader';
 import { ArrowLeftIcon, DownloadIcon } from '@/components/icons';
 import { ORDER_STATUS_LABELS, formatPrice } from '@/lib/constants';
 import { friendlyError } from '@/lib/error-messages';
+import { ProductImage } from '@/components/product-image';
 
 interface Order {
   id: string;
@@ -20,6 +21,13 @@ interface Order {
   status: string;
   payment_reference: string;
   created_at: string;
+}
+
+interface OrderProduct {
+  id: string;
+  title: string;
+  category: string;
+  cover_image_key?: string;
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -34,7 +42,7 @@ export default function OrderDetailPage() {
   const searchParams = useSearchParams();
   const id = searchParams.get('id') || '';
   const [order, setOrder] = useState<Order | null>(null);
-  const [productTitle, setProductTitle] = useState('');
+  const [product, setProduct] = useState<OrderProduct | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [delivering, setDelivering] = useState(false);
@@ -75,7 +83,7 @@ export default function OrderDetailPage() {
       if (pid) {
         api
           .getProduct(pid)
-          .then((r) => setProductTitle(r.product?.title || ''))
+          .then((r) => setProduct(r.product || null))
           .catch(() => {});
       }
     } catch (err: any) {
@@ -127,10 +135,15 @@ export default function OrderDetailPage() {
               </p>
             )}
 
-            {productTitle && (
-              <p className="mb-4 text-sm text-green-900/70">
-                Produit : <span className="font-medium text-green-950">{productTitle}</span>
-              </p>
+            {product && (
+              <div className="mb-4 flex items-center gap-3">
+                <div className="w-14 h-14 rounded-lg overflow-hidden shrink-0 shadow-sm">
+                  <ProductImage product={product} className="h-14" />
+                </div>
+                <p className="text-sm text-green-900/70">
+                  Produit : <span className="font-medium text-green-950">{product.title}</span>
+                </p>
+              </div>
             )}
 
             <div className="space-y-3 text-lg">
