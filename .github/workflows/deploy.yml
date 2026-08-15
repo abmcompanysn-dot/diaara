@@ -57,8 +57,8 @@ jobs:
               exit 1
             fi
 
-            docker compose build backend frontend
-            docker compose up -d --remove-orphans backend frontend postgres minio
+            docker compose build backend backend2 frontend
+            docker compose up -d --remove-orphans backend backend2 frontend postgres minio redis
             docker image prune -f
           EOF
 

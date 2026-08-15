@@ -241,9 +241,10 @@ frontend** sur un VPS. Deux options :
      utilisée pour générer `sitemap.xml`, `robots.ts` et les URLs canoniques
      (SEO). Sans elle, ces fichiers retombent sur `https://diarra.abmcy.com`
      par défaut.
-   - `BACKEND_HOST_PORT` / `FRONTEND_HOST_PORT` / `MINIO_API_HOST_PORT` /
-     `MINIO_CONSOLE_HOST_PORT` : uniquement si les ports par défaut (`8080`,
-     `3000`, `9000`, `9001`) sont déjà pris par une autre app sur le même VPS.
+   - `BACKEND_HOST_PORT` / `BACKEND2_HOST_PORT` / `FRONTEND_HOST_PORT` /
+     `MINIO_API_HOST_PORT` / `MINIO_CONSOLE_HOST_PORT` : uniquement si les
+     ports par défaut (`8080`, `8081`, `3000`, `9000`, `9001`) sont déjà pris
+     par une autre app sur le même VPS.
    - `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` (identifiants MinIO, générés
      aléatoirement) + `S3_ENDPOINT=https://<sous-domaine-stockage>`,
      `S3_ACCESS_KEY_ID=$MINIO_ROOT_USER`, `S3_SECRET_ACCESS_KEY=$MINIO_ROOT_PASSWORD`,
@@ -253,10 +254,12 @@ frontend** sur un VPS. Deux options :
      `NEXT_PUBLIC_FIREBASE_APP_ID` (frontend, build-time — voir Firebase Console >
      Paramètres du projet) — sans ça le bouton "Continuer avec Google" reste masqué.
      `NEXT_PUBLIC_TIKTOK_URL` optionnel (lien affiché dans le footer).
-2. `docker compose build backend frontend && docker compose up -d` → lance
-   Postgres (réseau interne uniquement), MinIO, backend et frontend, tous bindés
-   sur `127.0.0.1` (jamais exposés directement — la convention sur un VPS partagé
-   entre plusieurs apps est de tout faire passer par le reverse proxy).
+2. `docker compose build backend backend2 frontend && docker compose up -d` →
+   lance Postgres (réseau interne uniquement), MinIO, deux instances du
+   backend (`backend`/`backend2`, équilibrées par Caddy — voir étape 4) et le
+   frontend, tous bindés sur `127.0.0.1` (jamais exposés directement — la
+   convention sur un VPS partagé entre plusieurs apps est de tout faire
+   passer par le reverse proxy).
 3. Créer le bucket MinIO une fois le conteneur `minio` démarré :
 
    ```bash
@@ -269,16 +272,29 @@ frontend** sur un VPS. Deux options :
    Encrypt automatique, aucun certbot à gérer) :
 
    ```caddyfile
+   # Équilibre entre les deux instances du backend (backend/backend2) avec
+   # bascule automatique : si l'une échoue son /health, Caddy arrête de lui
+   # envoyer du trafic jusqu'à ce qu'elle redevienne saine.
+   (backend_lb) {
+       reverse_proxy 127.0.0.1:8080 127.0.0.1:8081 {
+           lb_policy round_robin
+           health_uri /health
+           health_interval 10s
+           health_timeout 3s
+       }
+   }
+
    diarra.abmcy.com {
-       handle /api/*  { reverse_proxy 127.0.0.1:8080 }
-       handle /ws/*   { reverse_proxy 127.0.0.1:8080 }
+       handle /api/* { import backend_lb }
+       handle /ws/*  { import backend_lb }
        # Liens de partage produit, redirection d'affiliation, flux produits
-       # (Google Merchant / Facebook) : servis par le backend Go, pas le
-       # build statique du frontend.
-       handle /p/*    { reverse_proxy 127.0.0.1:8080 }
-       handle /r/*    { reverse_proxy 127.0.0.1:8080 }
-       handle /feed/* { reverse_proxy 127.0.0.1:8080 }
-       handle         { reverse_proxy 127.0.0.1:3001 }
+       # (Google Merchant / Facebook, sitemap) : servis par le backend Go,
+       # pas le build statique du frontend.
+       handle /p/*           { import backend_lb }
+       handle /r/*           { import backend_lb }
+       handle /feed/*        { import backend_lb }
+       handle /sitemap.xml   { import backend_lb }
+       handle                { reverse_proxy 127.0.0.1:3001 }
    }
 
    s3.diarra.abmcy.com {

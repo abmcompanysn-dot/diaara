@@ -1,6 +1,57 @@
+x-backend-env: &backend-env
+  APP_ENV: ${APP_ENV:-development}
+  DATABASE_URL: postgres://diarra:${POSTGRES_PASSWORD:-diarra_dev}@postgres:5432/diarra?sslmode=disable
+  REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+  PORT: "8080"
+  JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
+  REFRESH_SECRET: ${REFRESH_SECRET:-dev-refresh-secret-change-in-production}
+  FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+  S3_ENDPOINT: ${S3_ENDPOINT:-}
+  S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
+  S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
+  S3_BUCKET: ${S3_BUCKET:-}
+  S3_REGION: ${S3_REGION:-auto}
+  RESEND_API_KEY: ${RESEND_API_KEY:-}
+  RESEND_FROM: ${RESEND_FROM:-}
+  SMTP_HOST: ${SMTP_HOST:-}
+  SMTP_PORT: ${SMTP_PORT:-587}
+  SMTP_USER: ${SMTP_USER:-}
+  SMTP_PASS: ${SMTP_PASS:-}
+  SMTP_FROM: ${SMTP_FROM:-}
+  MAILTRAP_API_KEY: ${MAILTRAP_API_KEY:-}
+  MAILTRAP_FROM: ${MAILTRAP_FROM:-}
+  MAILTRAP_SANDBOX_ID: ${MAILTRAP_SANDBOX_ID:-}
+  PAWAPAY_API_KEY: ${PAWAPAY_API_KEY:-}
+  PAWAPAY_BASE_URL: ${PAWAPAY_BASE_URL:-https://api.sandbox.pawapay.io}
+  PAWAPAY_CALLBACK_URL: ${PAWAPAY_CALLBACK_URL:-}
+  PAWAPAY_CALLBACK_IPS: ${PAWAPAY_CALLBACK_IPS:-}
+  FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
+
+x-backend-extra-hosts: &backend-extra-hosts
+  # Le VPS resout son propre hostname vers 127.0.1.1 (config cloud-init),
+  # ce qui casse la connexion SMTP sortante vers le serveur mail depuis
+  # ce conteneur. On force la vraie IP publique.
+  - "srv1790747.hstgr.cloud:187.77.178.170"
+
+x-backend-depends-on: &backend-depends-on
+  postgres:
+    condition: service_healthy
+  minio:
+    condition: service_started
+  redis:
+    condition: service_healthy
+
+x-backend-healthcheck: &backend-healthcheck
+  test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+  interval: 10s
+  timeout: 3s
+  retries: 5
+  start_period: 15s
+
 services:
   postgres:
     image: postgres:16-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: diarra
       POSTGRES_USER: diarra
@@ -12,9 +63,15 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 1024M
 
   redis:
     image: redis:7-alpine
+    restart: unless-stopped
     # Pur cache (catalogue, stats admin, solde vendeur, rate limiting) —
     # jamais de donnée qui n'existe pas déjà ailleurs, donc pas de
     # persistance : évite l'I/O disque inutile et un volume à gérer.
@@ -24,53 +81,48 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
 
+  # Deux instances du backend, équilibrées par Caddy (round-robin +
+  # bascule automatique sur /health) — voir Caddyfile du VPS. Le site
+  # continue de fonctionner si l'une des deux crashe ou redémarre.
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
+    restart: unless-stopped
     ports:
       - "127.0.0.1:${BACKEND_HOST_PORT:-8080}:8080"
-    extra_hosts:
-      # Le VPS resout son propre hostname vers 127.0.1.1 (config cloud-init),
-      # ce qui casse la connexion SMTP sortante vers le serveur mail depuis
-      # ce conteneur. On force la vraie IP publique.
-      - "srv1790747.hstgr.cloud:187.77.178.170"
-    environment:
-      APP_ENV: ${APP_ENV:-development}
-      DATABASE_URL: postgres://diarra:${POSTGRES_PASSWORD:-diarra_dev}@postgres:5432/diarra?sslmode=disable
-      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
-      PORT: "8080"
-      JWT_SECRET: ${JWT_SECRET:-dev-secret-change-in-production}
-      REFRESH_SECRET: ${REFRESH_SECRET:-dev-refresh-secret-change-in-production}
-      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
-      S3_ENDPOINT: ${S3_ENDPOINT:-}
-      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-}
-      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-}
-      S3_BUCKET: ${S3_BUCKET:-}
-      S3_REGION: ${S3_REGION:-auto}
-      RESEND_API_KEY: ${RESEND_API_KEY:-}
-      RESEND_FROM: ${RESEND_FROM:-}
-      SMTP_HOST: ${SMTP_HOST:-}
-      SMTP_PORT: ${SMTP_PORT:-587}
-      SMTP_USER: ${SMTP_USER:-}
-      SMTP_PASS: ${SMTP_PASS:-}
-      SMTP_FROM: ${SMTP_FROM:-}
-      MAILTRAP_API_KEY: ${MAILTRAP_API_KEY:-}
-      MAILTRAP_FROM: ${MAILTRAP_FROM:-}
-      MAILTRAP_SANDBOX_ID: ${MAILTRAP_SANDBOX_ID:-}
-      PAWAPAY_API_KEY: ${PAWAPAY_API_KEY:-}
-      PAWAPAY_BASE_URL: ${PAWAPAY_BASE_URL:-https://api.sandbox.pawapay.io}
-      PAWAPAY_CALLBACK_URL: ${PAWAPAY_CALLBACK_URL:-}
-      PAWAPAY_CALLBACK_IPS: ${PAWAPAY_CALLBACK_IPS:-}
-      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
-    depends_on:
-      postgres:
-        condition: service_healthy
-      minio:
-        condition: service_started
-      redis:
-        condition: service_healthy
+    extra_hosts: *backend-extra-hosts
+    environment: *backend-env
+    depends_on: *backend-depends-on
+    healthcheck: *backend-healthcheck
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  backend2:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${BACKEND2_HOST_PORT:-8081}:8080"
+    extra_hosts: *backend-extra-hosts
+    environment: *backend-env
+    depends_on: *backend-depends-on
+    healthcheck: *backend-healthcheck
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
 
   frontend:
     build:
@@ -85,13 +137,20 @@ services:
         NEXT_PUBLIC_FIREBASE_PROJECT_ID: ${NEXT_PUBLIC_FIREBASE_PROJECT_ID:-}
         NEXT_PUBLIC_FIREBASE_APP_ID: ${NEXT_PUBLIC_FIREBASE_APP_ID:-}
         NEXT_PUBLIC_TIKTOK_URL: ${NEXT_PUBLIC_TIKTOK_URL:-}
+    restart: unless-stopped
     ports:
       - "127.0.0.1:${FRONTEND_HOST_PORT:-3000}:80"
     depends_on:
       - backend
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
 
   minio:
     image: minio/minio:latest
+    restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-diarra_minio}
@@ -106,6 +165,11 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 1024M
 
 volumes:
   pgdata:
