@@ -15,6 +15,7 @@ import { friendlyError } from '@/lib/error-messages';
 
 interface Product {
   id: string;
+  slug?: string;
   title: string;
   description: string;
   price_cfa: number;
@@ -106,7 +107,7 @@ export default function BoutiqueView() {
                 key={product.id}
                 className="bg-white rounded-xl overflow-hidden border border-green-900/5 shadow-card hover:shadow-lift transition-all"
               >
-                <Link href={`/product?id=${product.id}`}>
+                <Link href={`/product?id=${product.slug || product.id}`}>
                   <div className="h-40 overflow-hidden">
                     <ProductImage product={product} className="h-40" />
                   </div>
@@ -115,7 +116,7 @@ export default function BoutiqueView() {
                   <span className="text-[11px] font-semibold text-green-700 uppercase tracking-wide">
                     {CATEGORY_LABELS[product.category] || product.category}
                   </span>
-                  <Link href={`/product?id=${product.id}`}>
+                  <Link href={`/product?id=${product.slug || product.id}`}>
                     <h2 className="font-display font-bold text-green-950 line-clamp-1 mt-1 hover:text-green-600 transition-colors">
                       {product.title}
                     </h2>
@@ -130,7 +131,7 @@ export default function BoutiqueView() {
                         : formatPrice(product.price_cfa)}
                     </span>
                     <Button
-                      render={<Link href={`/product?id=${product.id}`} />}
+                      render={<Link href={`/product?id=${product.slug || product.id}`} />}
                       className="h-9 rounded-full bg-green-950 text-white hover:bg-green-900 px-3.5"
                     >
                       Voir

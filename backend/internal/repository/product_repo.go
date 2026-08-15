@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -21,13 +22,13 @@ func NewProductRepo(pool *pgxpool.Pool) *ProductRepo {
 	return &ProductRepo{pool: pool}
 }
 
-const productColumns = `id, vendor_id, title, description, price_cfa, price_mode, min_price_cfa, category, file_key,
+const productColumns = `id, vendor_id, title, slug, description, price_cfa, price_mode, min_price_cfa, category, file_key,
 	cover_image_key, image_prompt, moderation_status, moderation_note, affiliate_enabled, max_closer_commission_pct,
 	preview_keys, preview_status, deletion_requested, created_at, updated_at`
 
 func scanProduct(row pgx.Row) (*model.Product, error) {
 	p := &model.Product{}
-	err := row.Scan(&p.ID, &p.VendorID, &p.Title, &p.Description, &p.PriceCFA, &p.PriceMode, &p.MinPriceCFA, &p.Category,
+	err := row.Scan(&p.ID, &p.VendorID, &p.Title, &p.Slug, &p.Description, &p.PriceCFA, &p.PriceMode, &p.MinPriceCFA, &p.Category,
 		&p.FileKey, &p.CoverImageKey, &p.ImagePrompt, &p.ModerationStatus, &p.ModerationNote, &p.AffiliateEnabled,
 		&p.MaxCloserCommissionPct, &p.PreviewKeys, &p.PreviewStatus, &p.DeletionRequested, &p.CreatedAt, &p.UpdatedAt)
 	if err != nil {
@@ -39,25 +40,114 @@ func scanProduct(row pgx.Row) (*model.Product, error) {
 	return p, nil
 }
 
+var slugNonAlnum = regexp.MustCompile(`[^a-z0-9]+`)
+
+// slugify dérive un identifiant lisible d'un titre produit : minuscules,
+// accents français translittérés, tout le reste réduit à des tirets.
+// L'unicité n'est PAS gérée ici (voir uniqueSlug).
+func slugify(title string) string {
+	s := strings.ToLower(title)
+	s = strings.NewReplacer(
+		"à", "a", "â", "a", "ä", "a", "á", "a", "ã", "a",
+		"ç", "c",
+		"é", "e", "è", "e", "ê", "e", "ë", "e",
+		"î", "i", "ï", "i", "í", "i",
+		"ô", "o", "ö", "o", "ó", "o", "õ", "o",
+		"ù", "u", "û", "u", "ü", "u", "ú", "u",
+		"ñ", "n",
+		"œ", "oe", "æ", "ae",
+	).Replace(s)
+	s = slugNonAlnum.ReplaceAllString(s, "-")
+	s = strings.Trim(s, "-")
+	if len(s) > 80 {
+		s = strings.Trim(s[:80], "-")
+	}
+	if s == "" {
+		s = "produit"
+	}
+	return s
+}
+
+// uniqueSlug garantit l'unicité en ajoutant un suffixe numérique en cas de
+// collision (ex: titres identiques par deux vendeurs différents).
+func (r *ProductRepo) uniqueSlug(ctx context.Context, base string) (string, error) {
+	candidate := base
+	for i := 2; ; i++ {
+		var exists bool
+		if err := r.pool.QueryRow(ctx,
+			`SELECT EXISTS(SELECT 1 FROM products WHERE slug = $1)`, candidate).Scan(&exists); err != nil {
+			return "", err
+		}
+		if !exists {
+			return candidate, nil
+		}
+		candidate = base + "-" + itoa(i)
+	}
+}
+
 func (r *ProductRepo) Create(ctx context.Context, input model.CreateProductInput, vendorID string) (*model.Product, error) {
 	priceMode := input.PriceMode
 	if priceMode == "" {
 		priceMode = "fixed"
 	}
+	slug, err := r.uniqueSlug(ctx, slugify(input.Title))
+	if err != nil {
+		return nil, err
+	}
 	row := r.pool.QueryRow(ctx,
-		`INSERT INTO products (vendor_id, title, description, price_cfa, price_mode, min_price_cfa, category, file_key,
+		`INSERT INTO products (vendor_id, title, slug, description, price_cfa, price_mode, min_price_cfa, category, file_key,
 			cover_image_key, image_prompt, affiliate_enabled, max_closer_commission_pct)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		 RETURNING `+productColumns,
-		vendorID, input.Title, input.Description, input.PriceCFA, priceMode, input.MinPriceCFA, input.Category, input.FileKey,
+		vendorID, input.Title, slug, input.Description, input.PriceCFA, priceMode, input.MinPriceCFA, input.Category, input.FileKey,
 		input.CoverImageKey, input.ImagePrompt, input.AffiliateEnabled, input.MaxCloserCommissionPct,
 	)
 	return scanProduct(row)
 }
 
-func (r *ProductRepo) FindByID(ctx context.Context, id string) (*model.Product, error) {
+// FindByID accepte soit l'UUID technique, soit le slug lisible — les deux
+// espaces de valeurs ne se recoupent jamais (un slug n'est jamais un UUID
+// valide), donc une seule requête suffit pour couvrir les anciens liens
+// partagés (UUID) et les nouveaux (slug).
+func (r *ProductRepo) FindByID(ctx context.Context, idOrSlug string) (*model.Product, error) {
 	return scanProduct(r.pool.QueryRow(ctx,
-		`SELECT `+productColumns+` FROM products WHERE id = $1`, id))
+		`SELECT `+productColumns+` FROM products WHERE id::text = $1 OR slug = $1`, idOrSlug))
+}
+
+// BackfillSlugs génère un slug pour les produits qui n'en ont pas encore
+// (créés avant l'introduction de la colonne). Idempotent — appelé une fois
+// au démarrage du serveur, voir ProductHandler.RecoverStuckPreviews pour le
+// même genre de rattrapage au boot.
+func (r *ProductRepo) BackfillSlugs(ctx context.Context) error {
+	rows, err := r.pool.Query(ctx, `SELECT id, title FROM products WHERE slug IS NULL OR slug = ''`)
+	if err != nil {
+		return err
+	}
+	type pending struct{ id, title string }
+	var list []pending
+	for rows.Next() {
+		var p pending
+		if err := rows.Scan(&p.id, &p.title); err != nil {
+			rows.Close()
+			return err
+		}
+		list = append(list, p)
+	}
+	rows.Close()
+	if err := rows.Err(); err != nil {
+		return err
+	}
+
+	for _, p := range list {
+		slug, err := r.uniqueSlug(ctx, slugify(p.title))
+		if err != nil {
+			return err
+		}
+		if _, err := r.pool.Exec(ctx, `UPDATE products SET slug = $2 WHERE id = $1`, p.id, slug); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (r *ProductRepo) FindByVendor(ctx context.Context, vendorID string) ([]*model.Product, error) {
@@ -188,7 +278,7 @@ func (r *ProductRepo) ListPendingPreviews(ctx context.Context) ([]*model.Product
 // ListForAdmin — tous les produits (ou filtrés par statut) avec l'email du
 // vendeur joint, pour l'écran de modération admin. status vide = tous statuts.
 func (r *ProductRepo) ListForAdmin(ctx context.Context, status string) ([]*model.AdminProduct, error) {
-	query := `SELECT p.id, p.vendor_id, p.title, p.description, p.price_cfa, p.price_mode, p.min_price_cfa,
+	query := `SELECT p.id, p.vendor_id, p.title, p.slug, p.description, p.price_cfa, p.price_mode, p.min_price_cfa,
 		p.category, p.file_key, p.cover_image_key, p.image_prompt, p.moderation_status, p.moderation_note, p.affiliate_enabled,
 		p.max_closer_commission_pct, p.preview_keys, p.preview_status, p.deletion_requested, p.created_at, p.updated_at, u.email
 		FROM products p JOIN users u ON u.id = p.vendor_id`
@@ -208,7 +298,7 @@ func (r *ProductRepo) ListForAdmin(ctx context.Context, status string) ([]*model
 	products := []*model.AdminProduct{}
 	for rows.Next() {
 		p := &model.AdminProduct{}
-		err := rows.Scan(&p.ID, &p.VendorID, &p.Title, &p.Description, &p.PriceCFA, &p.PriceMode, &p.MinPriceCFA, &p.Category,
+		err := rows.Scan(&p.ID, &p.VendorID, &p.Title, &p.Slug, &p.Description, &p.PriceCFA, &p.PriceMode, &p.MinPriceCFA, &p.Category,
 			&p.FileKey, &p.CoverImageKey, &p.ImagePrompt, &p.ModerationStatus, &p.ModerationNote, &p.AffiliateEnabled,
 			&p.MaxCloserCommissionPct, &p.PreviewKeys, &p.PreviewStatus, &p.DeletionRequested, &p.CreatedAt, &p.UpdatedAt, &p.VendorEmail)
 		if err != nil {

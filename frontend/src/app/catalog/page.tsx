@@ -31,6 +31,7 @@ import { cn } from '@/lib/utils';
 
 interface Product {
   id: string;
+  slug?: string;
   title: string;
   description: string;
   price_cfa: number;
@@ -294,7 +295,7 @@ export default function CatalogPage() {
                 key={product.id}
                 className="group bg-white rounded-xl overflow-hidden shadow-card hover:shadow-lift transition-all hover:-translate-y-0.5 border border-green-900/5 flex flex-col"
               >
-                <Link href={`/product?id=${product.id}`} className="relative block">
+                <Link href={`/product?id=${product.slug || product.id}`} className="relative block">
                   <ProductImage product={product} className="h-40 sm:h-44" />
                   <span className="absolute top-2.5 left-2.5 px-2 py-1 bg-white/95 text-green-700 rounded-md text-[11px] font-semibold shadow-sm">
                     {CATEGORY_LABELS[product.category] || product.category}
@@ -306,7 +307,7 @@ export default function CatalogPage() {
                   )}
                 </Link>
                 <div className="p-4 flex flex-col flex-1">
-                  <Link href={`/product?id=${product.id}`}>
+                  <Link href={`/product?id=${product.slug || product.id}`}>
                     <h2 className="font-display font-bold text-base text-green-950 group-hover:text-green-600 transition-colors line-clamp-2">
                       {product.title}
                     </h2>
@@ -319,7 +320,7 @@ export default function CatalogPage() {
                       {formatPrice(product.price_cfa)}
                     </span>
                     <Button
-                      render={<Link href={`/product?id=${product.id}`} />}
+                      render={<Link href={`/product?id=${product.slug || product.id}`} />}
                       className="h-9 rounded-full bg-green-950 text-white hover:bg-green-900 px-3.5"
                     >
                       Voir
@@ -334,7 +335,7 @@ export default function CatalogPage() {
             {sortedProducts.map((product) => (
               <Link
                 key={product.id}
-                href={`/product?id=${product.id}`}
+                href={`/product?id=${product.slug || product.id}`}
                 className="group flex gap-4 bg-white rounded-xl p-3 shadow-card hover:shadow-lift transition-all border border-green-900/5"
               >
                 <div className="relative w-24 h-24 sm:w-28 sm:h-28 shrink-0 rounded-lg overflow-hidden">

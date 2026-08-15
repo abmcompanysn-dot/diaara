@@ -477,6 +477,14 @@ func main() {
 		r.Post("/{id}/messages", ticketHandler.AddMessage)
 	})
 
+	// Génère le slug des produits créés avant l'introduction de la colonne
+	// (voir migration 019). Idempotent, rapide (quelques lignes), fait avant
+	// d'accepter du trafic pour que sitemap/flux/partage servent tout de
+	// suite des URLs lisibles plutôt que l'UUID.
+	if err := productRepo.BackfillSlugs(ctx); err != nil {
+		log.Printf("WARNING: échec du rattrapage des slugs produits: %v", err)
+	}
+
 	// Relance les aperçus filigranés restés bloqués "pending" suite à un
 	// redémarrage précédent survenu pendant leur génération.
 	go productHandler.RecoverStuckPreviews(context.Background())

@@ -304,7 +304,11 @@ func (h *ProductHandler) Share(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	productURL := fmt.Sprintf("%s/product?id=%s", strings.TrimSuffix(h.frontendURL, "/"), id)
+	productRef := product.Slug
+	if productRef == "" {
+		productRef = id
+	}
+	productURL := fmt.Sprintf("%s/product?id=%s", strings.TrimSuffix(h.frontendURL, "/"), productRef)
 
 	if !isSocialCrawler(r.Header.Get("User-Agent")) {
 		http.Redirect(w, r, productURL, http.StatusFound)

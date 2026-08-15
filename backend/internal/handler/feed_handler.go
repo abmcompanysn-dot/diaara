@@ -58,8 +58,15 @@ func requestOrigin(r *http.Request) string {
 	return fmt.Sprintf("%s://%s", scheme, r.Host)
 }
 
-func productLink(frontendURL, id string) string {
-	return fmt.Sprintf("%s/product?id=%s", strings.TrimSuffix(frontendURL, "/"), id)
+// productLink construit l'URL publique d'un produit, en préférant le slug
+// lisible à l'UUID technique (retombe sur l'ID si le slug n'est pas encore
+// renseigné — fenêtre de migration).
+func productLink(frontendURL string, p *model.Product) string {
+	ref := p.Slug
+	if ref == "" {
+		ref = p.ID
+	}
+	return fmt.Sprintf("%s/product?id=%s", strings.TrimSuffix(frontendURL, "/"), ref)
 }
 
 func productDescription(p *model.Product) string {
@@ -119,7 +126,7 @@ func (h *FeedHandler) GoogleMerchant(w http.ResponseWriter, r *http.Request) {
 			ID:               p.ID,
 			Title:            p.Title,
 			Description:      productDescription(p),
-			Link:             productLink(h.frontendURL, p.ID),
+			Link:             productLink(h.frontendURL, p),
 			ImageLink:        imageLink,
 			Availability:     "in stock",
 			Price:            fmt.Sprintf("%d XOF", p.PriceCFA),
@@ -209,7 +216,7 @@ func (h *FeedHandler) Sitemap(w http.ResponseWriter, r *http.Request) {
 			pImages = []sitemapImage{{Loc: pImageURL}}
 		}
 		urls = append(urls, sitemapURL{
-			Loc:        productLink(h.frontendURL, p.ID),
+			Loc:        productLink(h.frontendURL, p),
 			LastMod:    p.UpdatedAt.UTC().Format(time.RFC3339),
 			ChangeFreq: "weekly",
 			Priority:   "0.8",
@@ -290,7 +297,7 @@ func (h *FeedHandler) Facebook(w http.ResponseWriter, r *http.Request) {
 			"in stock",
 			"new",
 			fmt.Sprintf("%d XOF", p.PriceCFA),
-			productLink(h.frontendURL, p.ID),
+			productLink(h.frontendURL, p),
 			imageLink,
 			"DIARRA",
 		})

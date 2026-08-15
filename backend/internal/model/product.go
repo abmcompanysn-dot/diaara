@@ -6,6 +6,9 @@ type Product struct {
 	ID          string  `json:"id"`
 	VendorID    string  `json:"vendor_id"`
 	Title       string  `json:"title"`
+	// Slug : identifiant lisible dérivé du titre (ex: "10-templates-n8n"),
+	// utilisé dans les URLs publiques à la place de l'UUID technique.
+	Slug        string  `json:"slug"`
 	Description *string `json:"description,omitempty"`
 	PriceCFA    int     `json:"price_cfa"`
 	// PriceMode : "fixed" (défaut) ou "flexible" ("paye ce que tu veux").
