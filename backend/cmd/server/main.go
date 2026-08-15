@@ -345,6 +345,10 @@ func main() {
 	r.Get("/feed/google-merchant.xml", feedHandler.GoogleMerchant)
 	r.Get("/feed/facebook.csv", feedHandler.Facebook)
 
+	// Sitemap XML (produits + boutiques) — généré à la demande côté backend,
+	// voir le commentaire sur FeedHandler.Sitemap pour le pourquoi.
+	r.Get("/sitemap.xml", feedHandler.Sitemap)
+
 	// Webhooks (pas de JWT)
 	r.Route("/api/webhooks", func(r chi.Router) {
 		r.Post("/pawapay", webhookHandler.PawaPayWebhook)

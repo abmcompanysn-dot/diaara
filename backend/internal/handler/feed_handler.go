@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/diarra/backend/internal/model"
 	"github.com/diarra/backend/internal/repository"
@@ -147,6 +148,114 @@ func (h *FeedHandler) GoogleMerchant(w http.ResponseWriter, r *http.Request) {
 	enc.Indent("", "  ")
 	if err := enc.Encode(feed); err != nil {
 		log.Printf("feed: échec encodage flux Google Merchant: %v", err)
+	}
+}
+
+// --- sitemap.xml (produits + boutiques, avec extension image) ---
+
+type sitemapURLSet struct {
+	XMLName    xml.Name     `xml:"urlset"`
+	Xmlns      string       `xml:"xmlns,attr"`
+	XmlnsImage string       `xml:"xmlns:image,attr"`
+	URLs       []sitemapURL `xml:"url"`
+}
+
+type sitemapURL struct {
+	Loc        string         `xml:"loc"`
+	LastMod    string         `xml:"lastmod,omitempty"`
+	ChangeFreq string         `xml:"changefreq,omitempty"`
+	Priority   string         `xml:"priority,omitempty"`
+	Images     []sitemapImage `xml:"image:image"`
+}
+
+type sitemapImage struct {
+	Loc string `xml:"image:loc"`
+}
+
+// Sitemap — GET /sitemap.xml (public). Générée à la demande côté backend
+// plutôt qu'au build du frontend statique : depuis le conteneur de build,
+// un fetch vers le propre domaine public du VPS échoue silencieusement
+// (hairpin NAT — même souci que la connexion SMTP sortante, voir main.go),
+// ce qui produisait un sitemap sans aucun produit/boutique.
+func (h *FeedHandler) Sitemap(w http.ResponseWriter, r *http.Request) {
+	products, err := h.allApprovedProducts(r.Context())
+	if err != nil {
+		http.Error(w, `{"error":"sitemap_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	base := strings.TrimSuffix(h.frontendURL, "/")
+	origin := requestOrigin(r)
+
+	urls := []sitemapURL{
+		{Loc: base + "/", ChangeFreq: "daily", Priority: "1.0"},
+		{Loc: base + "/catalog", ChangeFreq: "daily", Priority: "0.9"},
+		{Loc: base + "/how-it-works", ChangeFreq: "monthly", Priority: "0.5"},
+		{Loc: base + "/sell", ChangeFreq: "monthly", Priority: "0.6"},
+		{Loc: base + "/mentions-legales", ChangeFreq: "yearly", Priority: "0.1"},
+		{Loc: base + "/confidentialite", ChangeFreq: "yearly", Priority: "0.1"},
+		{Loc: base + "/cgu", ChangeFreq: "yearly", Priority: "0.1"},
+	}
+
+	seenVendor := map[string]bool{}
+	vendorOrder := []string{}
+	vendorImage := map[string]string{}
+
+	for _, p := range products {
+		var pImages []sitemapImage
+		var pImageURL string
+		if p.CoverImageKey != nil && *p.CoverImageKey != "" {
+			pImageURL = fmt.Sprintf("%s/api/products/%s/cover", origin, p.ID)
+			pImages = []sitemapImage{{Loc: pImageURL}}
+		}
+		urls = append(urls, sitemapURL{
+			Loc:        productLink(h.frontendURL, p.ID),
+			LastMod:    p.UpdatedAt.UTC().Format(time.RFC3339),
+			ChangeFreq: "weekly",
+			Priority:   "0.8",
+			Images:     pImages,
+		})
+
+		if !seenVendor[p.VendorID] {
+			seenVendor[p.VendorID] = true
+			vendorOrder = append(vendorOrder, p.VendorID)
+		}
+		if pImageURL != "" {
+			if _, ok := vendorImage[p.VendorID]; !ok {
+				vendorImage[p.VendorID] = pImageURL
+			}
+		}
+	}
+
+	// Une entrée par boutique (vendeur), avec la couverture d'un de ses
+	// produits comme image représentative (pas de photo de profil dédiée
+	// côté vendeur).
+	for _, vid := range vendorOrder {
+		var images []sitemapImage
+		if img, ok := vendorImage[vid]; ok {
+			images = []sitemapImage{{Loc: img}}
+		}
+		urls = append(urls, sitemapURL{
+			Loc:        fmt.Sprintf("%s/boutique?id=%s", base, vid),
+			ChangeFreq: "weekly",
+			Priority:   "0.6",
+			Images:     images,
+		})
+	}
+
+	feed := sitemapURLSet{
+		Xmlns:      "http://www.sitemaps.org/schemas/sitemap/0.9",
+		XmlnsImage: "http://www.google.com/schemas/sitemap-image/1.1",
+		URLs:       urls,
+	}
+
+	w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+	w.Header().Set("Cache-Control", "public, max-age=1800")
+	w.Write([]byte(xml.Header))
+	enc := xml.NewEncoder(w)
+	enc.Indent("", "  ")
+	if err := enc.Encode(feed); err != nil {
+		log.Printf("feed: échec encodage sitemap: %v", err)
 	}
 }
 
