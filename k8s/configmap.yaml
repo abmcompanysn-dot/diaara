@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: diarra-config
+  namespace: diarra
+data:
+  APP_ENV: "production"
+  PORT: "8080"
+  # URL publique du site — inchangée, sert aussi de base pour les liens
+  # produits/boutiques générés côté backend (sitemap, flux, partage).
+  FRONTEND_URL: "https://diarra.abmcy.com"
+  REDIS_URL: "redis://redis:6379"
+  # Endpoint S3 PUBLIC (proxifié par Caddy), pas l'adresse interne du
+  # cluster : les URLs signées générées par le backend doivent être
+  # résolvables directement par le navigateur du client (voir
+  # backend/internal/handler/product_handler.go, Cover/Preview/Delivery).
+  S3_ENDPOINT: "https://s3.diarra.abmcy.com"
+  S3_BUCKET: "diarra-files"
+  S3_REGION: "us-east-1"
+  PAWAPAY_BASE_URL: "https://api.sandbox.pawapay.io"
+  SMTP_PORT: "587"

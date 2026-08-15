@@ -1,0 +1,66 @@
+# Reproduit les règles du Caddyfile du VPS : /api, /ws, /p, /r, /feed,
+# /sitemap.xml vers le backend ; tout le reste vers le frontend statique.
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: diarra
+  namespace: diarra
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "50m" # upload produit jusqu'à 50 Mo, voir ProductHandler.Upload
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600" # WebSocket temps réel (commandes, modération)
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: diarra.abmcy.com
+      http:
+        paths:
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8080
+          - path: /ws
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8080
+          - path: /p
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8080
+          - path: /r
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8080
+          - path: /feed
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8080
+          - path: /sitemap.xml
+            pathType: Exact
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8080
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend
+                port:
+                  number: 80

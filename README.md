@@ -310,6 +310,42 @@ frontend** sur un VPS. Deux options :
 5. Ajouter les enregistrements DNS (A) des deux domaines vers l'IP du VPS avant
    l'étape 4, sinon Caddy ne pourra pas obtenir les certificats.
 
+### Déploiement Kubernetes (k3s) — alternative à Docker Compose
+
+Le dossier `k8s/` contient une stack Kubernetes complète pour DIARRA (k3s à
+un seul noeud, ingress nginx, tout en interne — Caddy reste l'unique point
+d'entrée TLS du VPS, partagé avec les autres apps). **Mailcow et
+miadtalent ne sont pas concernés** : ils continuent de tourner en Docker
+Compose, inchangés.
+
+1. Installer k3s (Traefik désactivé, Caddy garde les ports 80/443) :
+   `curl -sfL https://get.k3s.io | sh -s - --disable traefik --write-kubeconfig-mode 644`
+2. Installer l'ingress nginx en NodePort (jamais en LoadBalancer/80/443,
+   pour ne pas entrer en conflit avec Caddy) :
+   ```bash
+   helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx
+   helm install ingress-nginx ingress-nginx/ingress-nginx \
+     --namespace ingress-nginx --create-namespace \
+     --set controller.service.type=NodePort \
+     --set controller.service.nodePorts.http=30080 \
+     --set controller.service.nodePorts.https=30443
+   ```
+3. `sh k8s/create-secret.sh` — crée le Secret `diarra-secrets` à partir du
+   `.env` déjà présent à la racine (jamais commité, jamais affiché).
+4. `sh k8s/deploy.sh` — build les images, les importe dans containerd (pas
+   de registre, cluster à un seul noeud) et applique tous les manifests.
+5. `sh k8s/migrate-data.sh` — copie les données de la stack Docker Compose
+   existante (Postgres + MinIO) vers la nouvelle stack k3s, **sans jamais
+   modifier la source**. À ne lancer qu'une fois la stack k3s vérifiée
+   saine (`kubectl -n diarra get pods`).
+6. Bascule : modifier le Caddyfile pour pointer `diarra.abmcy.com` vers
+   `127.0.0.1:30080` (le NodePort nginx) au lieu des ports Docker Compose —
+   même méthode que d'habitude (sauvegarde, `diff`, `caddy validate`,
+   `reload`).
+7. **Garder l'ancienne stack Docker Compose arrêtée mais pas supprimée**
+   (`docker compose stop`, jamais `down -v`) pendant la période
+   d'observation : retour arrière en une commande si besoin.
+
 > Notes Docker :
 > - `frontend/Dockerfile` reçoit `NEXT_PUBLIC_API_URL` **et** `NEXT_PUBLIC_WS_URL`
 >   en build arg (embarqués au build, donc tout changement d'URL impose un rebuild).

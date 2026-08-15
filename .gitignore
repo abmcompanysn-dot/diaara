@@ -2,6 +2,7 @@
 .env
 .env.local
 .env.*.local
+k8s/secret.yaml
 
 # Builds
 *.exe
@@ -21,3 +22,4 @@ build/
 
 # Logs
 *.log
+.gstack/
