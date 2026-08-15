@@ -243,7 +243,7 @@ frontend** sur un VPS. Deux options :
      par défaut.
    - `BACKEND_HOST_PORT` / `BACKEND2_HOST_PORT` / `FRONTEND_HOST_PORT` /
      `MINIO_API_HOST_PORT` / `MINIO_CONSOLE_HOST_PORT` : uniquement si les
-     ports par défaut (`8080`, `8081`, `3000`, `9000`, `9001`) sont déjà pris
+     ports par défaut (`8080`, `8082`, `3000`, `9000`, `9001`) sont déjà pris
      par une autre app sur le même VPS.
    - `MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD` (identifiants MinIO, générés
      aléatoirement) + `S3_ENDPOINT=https://<sous-domaine-stockage>`,
@@ -276,7 +276,7 @@ frontend** sur un VPS. Deux options :
    # bascule automatique : si l'une échoue son /health, Caddy arrête de lui
    # envoyer du trafic jusqu'à ce qu'elle redevienne saine.
    (backend_lb) {
-       reverse_proxy 127.0.0.1:8080 127.0.0.1:8081 {
+       reverse_proxy 127.0.0.1:8080 127.0.0.1:8082 {
            lb_policy round_robin
            health_uri /health
            health_interval 10s
