@@ -77,3 +77,23 @@ spec:
     - name: console
       port: 9001
       targetPort: 9001
+---
+# Service séparé, NodePort fixe : Caddy (hors cluster) reverse-proxy
+# s3.diarra.abmcy.com vers ce port pour que les URLs signées générées par
+# le backend restent résolvables par le navigateur du client (voir
+# S3_ENDPOINT dans configmap.yaml). Le service ClusterIP `minio` ci-dessus
+# reste l'accès interne normal.
+apiVersion: v1
+kind: Service
+metadata:
+  name: minio-nodeport
+  namespace: diarra
+spec:
+  type: NodePort
+  selector:
+    app: minio
+  ports:
+    - name: api
+      port: 9000
+      targetPort: 9000
+      nodePort: 30900
