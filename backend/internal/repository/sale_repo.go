@@ -89,6 +89,20 @@ func (r *SaleRepo) ListByVendor(ctx context.Context, vendorID string) ([]*Vendor
 	return views, rows.Err()
 }
 
+// TotalEarnedByVendor — somme du vendor_amount_cfa de toutes les ventes
+// payées/livrées d'un vendeur (chiffre d'affaires cumulé depuis toujours),
+// pour le niveau/trophée affiché sur sa boutique.
+func (r *SaleRepo) TotalEarnedByVendor(ctx context.Context, vendorID string) (int, error) {
+	var total int
+	err := r.pool.QueryRow(ctx,
+		`SELECT COALESCE(SUM(s.vendor_amount_cfa), 0)
+		 FROM sales s
+		 JOIN products p ON p.id = s.product_id
+		 WHERE p.vendor_id = $1 AND s.status IN ('paid', 'delivered')`,
+		vendorID).Scan(&total)
+	return total, err
+}
+
 func (r *SaleRepo) FindByID(ctx context.Context, id string) (*model.Sale, error) {
 	return scanSale(r.pool.QueryRow(ctx,
 		`SELECT `+saleColumns+` FROM sales WHERE id = $1`, id))

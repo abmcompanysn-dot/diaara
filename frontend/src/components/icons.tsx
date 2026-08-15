@@ -259,6 +259,17 @@ export const StarIcon = (props: IconProps) => (
   </svg>
 );
 
+export const TrophyIcon = (props: IconProps) => (
+  <svg {...base(props)}>
+    <path d="M7 4h10v5a5 5 0 0 1-10 0z" />
+    <path d="M7 5H4a3 3 0 0 0 3 5" />
+    <path d="M17 5h3a3 3 0 0 1-3 5" />
+    <path d="M12 14v3" />
+    <path d="M9 20.5h6" />
+    <path d="M9.5 17.5h5l.5 3h-6z" />
+  </svg>
+);
+
 export const MoreVerticalIcon = (props: IconProps) => (
   <svg {...base(props)}>
     <circle cx="12" cy="5" r="1.2" fill="currentColor" stroke="none" />

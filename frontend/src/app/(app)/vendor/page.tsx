@@ -4,9 +4,10 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth';
-import { formatPrice } from '@/lib/constants';
+import { formatPrice, VENDOR_TIERS } from '@/lib/constants';
 import { PageLoader } from '@/components/page-loader';
 import { ShopShareCard } from '@/components/shop-share-card';
+import { VendorTierBadge } from '@/components/vendor-tier-badge';
 import {
   StoreIcon,
   PackageIcon,
@@ -43,6 +44,8 @@ const SHORTCUTS = [
 export default function VendorHomePage() {
   const { user } = useAuth();
   const [available, setAvailable] = useState(0);
+  const [totalEarned, setTotalEarned] = useState(0);
+  const [tier, setTier] = useState('');
   const [hideBalance, setHideBalance] = useState(false);
   const [activity, setActivity] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
@@ -52,6 +55,8 @@ export default function VendorHomePage() {
       try {
         const [earnings, notifs] = await Promise.all([api.getVendorEarnings(), api.getNotifications()]);
         setAvailable(earnings.available);
+        setTotalEarned(earnings.total_earned);
+        setTier(earnings.tier || '');
         setActivity(notifs.notifications.slice(0, 5));
       } catch {
         // Le tableau de bord reste utilisable même si une des deux requêtes échoue.
@@ -86,6 +91,16 @@ export default function VendorHomePage() {
 
           <div className="text-center mt-2">
             <p className="text-white font-bold text-[15px]">{shopTitle}</p>
+            {tier && (
+              <div className="flex flex-col items-center gap-1 mt-1.5">
+                <VendorTierBadge tier={tier} />
+                {VENDOR_TIERS[tier]?.next && (
+                  <p className="text-[11px] text-white/60">
+                    {formatPrice(Math.max(0, VENDOR_TIERS[tier].threshold - totalEarned))} avant {VENDOR_TIERS[tier].next}
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="text-center mt-4">

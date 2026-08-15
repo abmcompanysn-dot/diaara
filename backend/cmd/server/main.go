@@ -187,7 +187,7 @@ func main() {
 	// Handlers
 	healthHandler := handler.NewHealthHandler(pool)
 	authHandler := handler.NewAuthHandler(authService, firebaseVerifier)
-	productHandler := handler.NewProductHandler(productRepo, userRepo, storageService, os.Getenv("FRONTEND_URL"))
+	productHandler := handler.NewProductHandler(productRepo, userRepo, saleRepo, storageService, os.Getenv("FRONTEND_URL"))
 	saleHandler := handler.NewSaleHandler(saleRepo, productRepo, referralRepo, userRepo, settingsRepo, pawapay, notifications, os.Getenv("FRONTEND_URL"))
 	closerHandler := handler.NewCloserHandler(referralRepo, productRepo, os.Getenv("FRONTEND_URL"))
 	bundleHandler := handler.NewBundleHandler(bundleRepo, productRepo)

@@ -81,3 +81,11 @@ export const ROLE_LABELS: Record<string, string> = {
 export function formatPrice(price: number): string {
   return `${price.toLocaleString('fr-FR')} FCFA`;
 }
+
+// Trophées vendeur (voir backend/internal/model/vendor_tier.go) — même clés
+// que model.VendorTier ("bronze" | "or" | "diamant" | "").
+export const VENDOR_TIERS: Record<string, { label: string; color: string; bg: string; next?: string; threshold: number }> = {
+  bronze: { label: 'Bronze', color: '#8C5A2B', bg: '#F5E3D3', next: 'Or', threshold: 500_000 },
+  or: { label: 'Or', color: '#8A6300', bg: '#FFF3D6', next: 'Diamant', threshold: 5_000_000 },
+  diamant: { label: 'Diamant', color: '#0E6B8C', bg: '#E0F7FA', threshold: 5_000_000 },
+};

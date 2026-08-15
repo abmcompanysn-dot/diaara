@@ -126,10 +126,10 @@ export const api = {
 
   // Boutique publique d'un vendeur (partageable via QR code)
   getVendorShop: (vendorId: string) =>
-    fetchApi<{ vendor: { id: string; display_name: string | null; shop_name: string | null }; products: any[] }>(
-      `/api/vendors/${vendorId}/shop`,
-      { skipAuth: true }
-    ),
+    fetchApi<{
+      vendor: { id: string; display_name: string | null; shop_name: string | null; tier?: string };
+      products: any[];
+    }>(`/api/vendors/${vendorId}/shop`, { skipAuth: true }),
 
   createProduct: (data: {
     title: string;
@@ -250,7 +250,9 @@ export const api = {
     }),
 
   getVendorEarnings: () =>
-    fetchApi<{ total_earned: number; available: number; pending: number; history: any[] }>('/api/vendor/earnings'),
+    fetchApi<{ total_earned: number; available: number; pending: number; history: any[]; tier?: string }>(
+      '/api/vendor/earnings'
+    ),
 
   // Limites min/max réelles par opérateur PawaPay pour les versements
   // (source : Active Configuration PawaPay, mis en cache côté serveur).

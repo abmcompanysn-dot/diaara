@@ -9,6 +9,7 @@ import { ProductImage } from '@/components/product-image';
 import { EmptyState } from '@/components/empty-state';
 import { PageLoader } from '@/components/page-loader';
 import { StoreIcon } from '@/components/icons';
+import { VendorTierBadge } from '@/components/vendor-tier-badge';
 import { CATEGORY_LABELS, formatPrice } from '@/lib/constants';
 import { friendlyError } from '@/lib/error-messages';
 
@@ -27,6 +28,7 @@ interface Vendor {
   id: string;
   display_name: string | null;
   shop_name: string | null;
+  tier?: string;
 }
 
 export default function BoutiqueView() {
@@ -81,6 +83,11 @@ export default function BoutiqueView() {
           </span>
           <p className="font-mono text-sm text-green-300 mb-2 uppercase tracking-widest">// boutique DIARRA</p>
           <h1 className="font-display text-3xl sm:text-4xl font-bold">{shopTitle}</h1>
+          {vendor.tier && (
+            <div className="flex justify-center mt-2">
+              <VendorTierBadge tier={vendor.tier} />
+            </div>
+          )}
           <p className="mt-2 text-white/70 text-sm">{products.length} produit(s) disponible(s)</p>
         </div>
       </section>

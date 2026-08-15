@@ -173,6 +173,7 @@ func (h *PayoutHandler) Earnings(w http.ResponseWriter, r *http.Request) {
 		"available":    available,
 		"pending":      requested,
 		"history":      payouts,
+		"tier":         model.VendorTier(totalEarned),
 	})
 }
 

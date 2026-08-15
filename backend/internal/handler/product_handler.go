@@ -24,6 +24,7 @@ import (
 type ProductHandler struct {
 	productRepo *repository.ProductRepo
 	userRepo    *repository.UserRepo
+	saleRepo    *repository.SaleRepo
 	storage     StorageService
 	frontendURL string
 }
@@ -35,8 +36,8 @@ type StorageService interface {
 	GenerateSignedURL(ctx context.Context, key string, expiry time.Duration) (string, error)
 }
 
-func NewProductHandler(productRepo *repository.ProductRepo, userRepo *repository.UserRepo, storage StorageService, frontendURL string) *ProductHandler {
-	return &ProductHandler{productRepo: productRepo, userRepo: userRepo, storage: storage, frontendURL: frontendURL}
+func NewProductHandler(productRepo *repository.ProductRepo, userRepo *repository.UserRepo, saleRepo *repository.SaleRepo, storage StorageService, frontendURL string) *ProductHandler {
+	return &ProductHandler{productRepo: productRepo, userRepo: userRepo, saleRepo: saleRepo, storage: storage, frontendURL: frontendURL}
 }
 
 // Shop — GET /api/vendors/{id}/shop (public). Boutique publique d'un
@@ -57,12 +58,20 @@ func (h *ProductHandler) Shop(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Niveau/trophée basé sur le chiffre d'affaires cumulé — seul le palier
+	// est exposé publiquement, jamais le montant exact.
+	tier := ""
+	if totalEarned, err := h.saleRepo.TotalEarnedByVendor(r.Context(), id); err == nil {
+		tier = model.VendorTier(totalEarned)
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"vendor": map[string]interface{}{
 			"id":           vendor.ID,
 			"display_name": vendor.DisplayName,
 			"shop_name":    vendor.ShopName,
+			"tier":         tier,
 		},
 		"products": products,
 	})
