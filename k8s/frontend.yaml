@@ -15,22 +15,31 @@ spec:
     spec:
       containers:
         - name: frontend
+          # SSR (Next.js standalone) depuis la migration k8s — plus un
+          # export statique, voir generateMetadata dans
+          # frontend/src/app/product/page.tsx pour l'Open Graph par produit.
           image: diarra-frontend:latest
           imagePullPolicy: Never
           ports:
-            - containerPort: 80
+            - containerPort: 3000
+          env:
+            - name: INTERNAL_API_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: diarra-config
+                  key: INTERNAL_API_URL
           readinessProbe:
             httpGet:
               path: /
-              port: 80
+              port: 3000
             periodSeconds: 10
           resources:
             requests:
-              cpu: "100m"
-              memory: "128Mi"
+              cpu: "150m"
+              memory: "192Mi"
             limits:
               cpu: "500m"
-              memory: "256Mi"
+              memory: "384Mi"
 ---
 apiVersion: v1
 kind: Service
@@ -42,4 +51,4 @@ spec:
     app: frontend
   ports:
     - port: 80
-      targetPort: 80
+      targetPort: 3000

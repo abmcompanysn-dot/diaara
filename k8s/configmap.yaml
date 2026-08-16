@@ -19,3 +19,9 @@ data:
   S3_REGION: "us-east-1"
   PAWAPAY_BASE_URL: "https://api.sandbox.pawapay.io"
   SMTP_PORT: "587"
+  # Utilisée par le frontend (SSR) pour appeler le backend en interne au
+  # cluster — voir generateMetadata dans frontend/src/app/product/page.tsx.
+  # Ne PAS injecter tout ce ConfigMap dans le frontend via envFrom : PORT
+  # ci-dessus (8080, pour le backend) entrerait en conflit avec le port
+  # d'écoute du serveur Next standalone (3000).
+  INTERNAL_API_URL: "http://backend:8080"
