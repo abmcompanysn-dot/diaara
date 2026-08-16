@@ -43,10 +43,13 @@ jobs:
             --exclude='.wrangler/' \
             ./ "$VPS_USER@$VPS_HOST:$VPS_PATH/"
 
-      # Rebuild + redémarre uniquement les conteneurs applicatifs.
-      # Jamais de `docker compose down -v` : les volumes Postgres/MinIO
-      # (donc les données) ne sont jamais touchés par ce script.
-      - name: Build & redémarrage des conteneurs
+      # DIARRA tourne sur k3s depuis cette session (voir README section
+      # "Déploiement Kubernetes") — l'ancienne stack Docker Compose a été
+      # entièrement supprimée (conteneurs + volumes). k8s/deploy.sh build
+      # les images, les importe dans containerd et réapplique les
+      # manifests ; le rollout Kubernetes ne coupe jamais le trafic
+      # (anciens pods servent jusqu'à ce que les nouveaux soient prêts).
+      - name: Build & déploiement k3s
         run: |
           ssh "$VPS_USER@$VPS_HOST" bash -euo pipefail <<EOF
             cd "$VPS_PATH"
@@ -57,8 +60,7 @@ jobs:
               exit 1
             fi
 
-            docker compose build backend backend2 frontend
-            docker compose up -d --remove-orphans backend backend2 frontend postgres minio redis
+            sh k8s/deploy.sh
             docker image prune -f
           EOF
 
