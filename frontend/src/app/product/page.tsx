@@ -7,6 +7,7 @@ interface ProductForMeta {
   description: string | null;
   price_cfa: number;
   cover_image_key?: string | null;
+  slug?: string;
 }
 
 // Génère les balises Open Graph par produit côté serveur, pour que
@@ -34,11 +35,17 @@ export async function generateMetadata({
       ? `${price} — ${product.description}`.slice(0, 200)
       : `${price} — produit numérique sur DIARRA`;
 
+    const canonicalId = product.slug || id;
+
     return {
       title: product.title,
       description,
+      alternates: {
+        canonical: `${process.env.NEXT_PUBLIC_SITE_URL}/product/?id=${canonicalId}`,
+      },
       openGraph: {
         type: 'website',
+        url: `${process.env.NEXT_PUBLIC_SITE_URL}/product/?id=${canonicalId}`,
         title: product.title,
         description,
         images: product.cover_image_key
