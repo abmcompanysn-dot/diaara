@@ -21,7 +21,13 @@ data:
   S3_ENDPOINT: "https://s3.diarra.abmcy.com"
   S3_BUCKET: "diarra-files"
   S3_REGION: "us-east-1"
-  PAWAPAY_BASE_URL: "https://api.sandbox.pawapay.io"
+  # Production, pas sandbox — la clé API configurée (PAWAPAY_API_KEY, dans
+  # le Secret) est une clé de production. Cette valeur était figée en dur
+  # ici sur l'ancienne URL sandbox lors de la migration k8s, alors que le
+  # .env du VPS avait déjà la bonne (docker-compose la lisait depuis .env,
+  # ce ConfigMap ne le faisait pas) — la clé prod se faisait rejeter par
+  # l'API sandbox, d'où les 401/502 sur /api/orders.
+  PAWAPAY_BASE_URL: "https://api.pawapay.io"
   SMTP_PORT: "587"
   # Utilisée par le frontend (SSR) pour appeler le backend en interne au
   # cluster — voir generateMetadata dans frontend/src/app/product/page.tsx.
