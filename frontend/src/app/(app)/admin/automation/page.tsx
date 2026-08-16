@@ -153,7 +153,32 @@ export default function AdminAutomationPage() {
           </div>
 
           <div>
-            <p className="text-sm font-semibold text-green-900 mb-1">3. Modération</p>
+            <p className="text-sm font-semibold text-green-900 mb-1">3. Modifier un produit existant</p>
+            <p className="text-sm text-green-900/70 mb-2">
+              Titre, description, prix, catégorie... — un produit déjà approuvé repasse
+              automatiquement "en attente" (le contenu a changé, il doit être revalidé).
+            </p>
+            <CodeBlock>{`curl -X PUT https://diarra.abmcy.com/api/automation/products/{id} \\
+  -H "X-Automation-Key: ${key || '<votre_cle>'}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"title": "Nouveau titre", "price_cfa": 6000}'`}</CodeBlock>
+          </div>
+
+          <div>
+            <p className="text-sm font-semibold text-green-900 mb-1">
+              4. Changer juste l'image de couverture
+            </p>
+            <p className="text-sm text-green-900/70 mb-2">
+              Indépendant du fichier livré à l'acheteur (étape 2) — pour remplacer le visuel
+              marketing sans toucher au fichier vendu.
+            </p>
+            <CodeBlock>{`curl -X PUT https://diarra.abmcy.com/api/automation/products/{id}/cover \\
+  -H "X-Automation-Key: ${key || '<votre_cle>'}" \\
+  -F "file=@/chemin/vers/nouvelle-cover.png"`}</CodeBlock>
+          </div>
+
+          <div>
+            <p className="text-sm font-semibold text-green-900 mb-1">5. Modération</p>
             <p className="text-sm text-green-900/70">
               Le produit reste "en attente" comme n'importe quel produit créé depuis le site.
               Retrouvez-le dans{' '}

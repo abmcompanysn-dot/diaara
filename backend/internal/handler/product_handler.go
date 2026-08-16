@@ -609,6 +609,117 @@ func (h *ProductHandler) AttachFile(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"product": updated})
 }
 
+// UpdateAutomation — PUT /api/automation/products/{id}. Modifie les champs
+// d'un produit déjà créé via l'automatisation (titre, prix, description,
+// catégorie...) — mêmes règles qu'une modification vendeur normale : un
+// produit déjà approuvé repasse en attente (le contenu a changé, il doit
+// être revalidé avant de redevenir visible).
+func (h *ProductHandler) UpdateAutomation(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	product, err := h.productRepo.FindByID(r.Context(), id)
+	if err != nil {
+		http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
+		return
+	}
+
+	var input model.UpdateProductInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+
+	if input.PriceMode != nil && *input.PriceMode == "flexible" {
+		minVal := product.MinPriceCFA
+		if input.MinPriceCFA != nil {
+			minVal = input.MinPriceCFA
+		}
+		if minVal == nil || *minVal <= 0 {
+			http.Error(w, `{"error":"min_price_required_for_flexible_pricing"}`, http.StatusBadRequest)
+			return
+		}
+	}
+
+	updated, err := h.productRepo.Update(r.Context(), id, input)
+	if err != nil {
+		http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	if product.ModerationStatus == "approved" {
+		if err := h.productRepo.UpdateModerationStatus(r.Context(), id, "pending", nil); err != nil {
+			http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
+			return
+		}
+		updated.ModerationStatus = "pending"
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"product": updated})
+}
+
+// UpdateAutomationCover — PUT /api/automation/products/{id}/cover. Change
+// l'image de couverture indépendamment du fichier livré à l'acheteur
+// (contrairement à AttachFile, qui définit les deux depuis le même upload) —
+// utile pour remplacer juste le visuel marketing sans toucher au fichier vendu.
+func (h *ProductHandler) UpdateAutomationCover(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	if h.storage == nil {
+		http.Error(w, `{"error":"storage_not_configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	product, err := h.productRepo.FindByID(r.Context(), id)
+	if err != nil {
+		http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
+		return
+	}
+
+	if err := r.ParseMultipartForm(50 << 20); err != nil { // 50MB max
+		http.Error(w, `{"error":"file_too_large"}`, http.StatusBadRequest)
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, `{"error":"file_required"}`, http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(file)
+	if err != nil {
+		http.Error(w, `{"error":"read_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	coverKey := "covers/" + storage.NewFileKey(product.VendorID, header.Filename)
+	if err := h.storage.Upload(r.Context(), coverKey, data); err != nil {
+		http.Error(w, `{"error":"upload_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	updated, err := h.productRepo.Update(r.Context(), id, model.UpdateProductInput{
+		CoverImageKey: &coverKey,
+	})
+	if err != nil {
+		http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	if product.ModerationStatus == "approved" {
+		if err := h.productRepo.UpdateModerationStatus(r.Context(), id, "pending", nil); err != nil {
+			http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
+			return
+		}
+		updated.ModerationStatus = "pending"
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"product": updated})
+}
+
 // generatePreview construit les aperçus filigranés en tâche de fond (peut
 // prendre de quelques secondes à ~1 min selon le fichier) puis enregistre
 // le résultat. Appelé après la réponse HTTP, sans bloquer le vendeur.

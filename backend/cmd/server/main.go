@@ -466,6 +466,8 @@ func main() {
 		}))
 		r.Post("/", productHandler.AutoCreate)
 		r.Put("/{id}/file", productHandler.AttachFile)
+		r.Put("/{id}", productHandler.UpdateAutomation)
+		r.Put("/{id}/cover", productHandler.UpdateAutomationCover)
 	})
 
 	// Support tickets (utilisateur connecté, admin pour tous)
