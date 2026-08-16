@@ -11,8 +11,9 @@ import { Badge } from '@/components/ui/badge';
 import { ProductImage } from '@/components/product-image';
 import { VendorChat } from '@/components/vendor-chat';
 import { firebaseEnabled } from '@/lib/firebase';
-import { ArrowLeftIcon, CheckIcon, LockIcon, ZapIcon, LinkIcon, CopyIcon } from '@/components/icons';
+import { ArrowLeftIcon, CheckIcon, LockIcon, ZapIcon, LinkIcon, CopyIcon, DownloadIcon } from '@/components/icons';
 import { CATEGORY_LABELS, PAYMENT_LOGOS } from '@/lib/constants';
+import { generateProductPoster } from '@/lib/generate-poster';
 
 interface Product {
   id: string;
@@ -43,6 +44,7 @@ export default function ProductDetailPage() {
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
   const [qrDataUrl, setQrDataUrl] = useState('');
+  const [generatingPoster, setGeneratingPoster] = useState(false);
 
   // Lien de partage (copie + QR code) : /p/:id, servi dynamiquement par le
   // backend (ProductHandler.Share) — carte Open Graph pour les robots des
@@ -59,6 +61,24 @@ export default function ProductDetailPage() {
       setTimeout(() => setCopied(false), 2000);
     } catch {
       window.prompt('Copiez ce lien :', productUrl);
+    }
+  };
+
+  const handleDownloadPoster = async () => {
+    if (!product || !qrDataUrl || generatingPoster) return;
+    setGeneratingPoster(true);
+    try {
+      const blob = await generateProductPoster(product, qrDataUrl);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `diarra-${product.id}.png`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      // Pas bloquant : l'utilisateur garde le QR code + le lien copiable.
+    } finally {
+      setGeneratingPoster(false);
     }
   };
 
@@ -298,14 +318,25 @@ export default function ProductDetailPage() {
                 <p className="text-xs text-green-900/60 mt-0.5">
                   Retrouvez cette fiche et payez en scannant ce code.
                 </p>
-                <button
-                  type="button"
-                  onClick={handleShare}
-                  className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-green-700 hover:underline"
-                >
-                  <CopyIcon size={12} />
-                  {copied ? 'Lien copié !' : 'Copier le lien'}
-                </button>
+                <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1.5">
+                  <button
+                    type="button"
+                    onClick={handleShare}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-green-700 hover:underline"
+                  >
+                    <CopyIcon size={12} />
+                    {copied ? 'Lien copié !' : 'Copier le lien'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleDownloadPoster}
+                    disabled={generatingPoster || !qrDataUrl}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium text-green-700 hover:underline disabled:opacity-50"
+                  >
+                    <DownloadIcon size={12} />
+                    {generatingPoster ? 'Génération…' : "Télécharger l'affiche"}
+                  </button>
+                </div>
               </div>
             </div>
 
