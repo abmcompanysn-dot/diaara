@@ -9,6 +9,10 @@ data:
   # URL publique du site — inchangée, sert aussi de base pour les liens
   # produits/boutiques générés côté backend (sitemap, flux, partage).
   FRONTEND_URL: "https://diarra.abmcy.com"
+  # Manquait depuis la migration k8s (présente dans le .env VPS mais jamais
+  # portée ici) — sans elle le backend retombe sur son défaut
+  # http://localhost:3000 (backend/cmd/server/main.go).
+  CORS_ALLOWED_ORIGINS: "https://diarra.abmcy.com"
   REDIS_URL: "redis://redis:6379"
   # Endpoint S3 PUBLIC (proxifié par Caddy), pas l'adresse interne du
   # cluster : les URLs signées générées par le backend doivent être
