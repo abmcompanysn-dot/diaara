@@ -29,6 +29,14 @@ kubectl apply -f k8s/backend.yaml
 kubectl apply -f k8s/frontend.yaml
 kubectl apply -f k8s/ingress.yaml
 
+# Le tag d'image reste toujours `:latest` (pas de registre, pas de digest
+# par déploiement) : si seul le CODE a changé (pas le fichier YAML), `apply`
+# ne voit aucune différence sur le Deployment et ne redémarre rien tout
+# seul — on force donc explicitement un rollout à chaque déploiement.
+echo "== Redémarrage forcé (nouvelle image, même tag) =="
+kubectl -n diarra rollout restart deployment/backend
+kubectl -n diarra rollout restart deployment/frontend
+
 echo "== Attente que tout soit prêt =="
 kubectl -n diarra rollout status statefulset/postgres --timeout=120s
 kubectl -n diarra rollout status statefulset/minio --timeout=120s
