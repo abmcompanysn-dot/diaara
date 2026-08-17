@@ -85,7 +85,10 @@ export const PAYOUT_COUNTRIES: PayoutCountry[] = [
     code: 'BEN',
     name: 'Bénin',
     dialCode: '229',
-    phoneLength: 8,
+    // Depuis la réforme de numérotation 2021, le "01" initial fait partie
+    // intégrante du numéro béninois (pas un préfixe à retirer) : 10 chiffres
+    // au total, ex "01 90 01 02 03" -> +229 01 90 01 02 03.
+    phoneLength: 10,
     operators: [
       { label: 'MTN MoMo', provider: 'MTN_MOMO_BEN', logo: 'mtn-momo.png' },
       { label: 'Moov Money', provider: 'MOOV_BEN', logo: 'moov-money.png' },

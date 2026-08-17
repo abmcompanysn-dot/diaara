@@ -74,10 +74,15 @@ export function PayoutMethodForm({
   };
 
   const handlePhoneChange = (raw: string) => {
-    const digits = raw
-      .replace(/\D/g, '')
-      .replace(/^0+/, '')
-      .slice(0, countryConfig.phoneLength);
+    // Bénin (229) : depuis la réforme 2021, le "01" initial fait partie du
+    // numéro (pas un préfixe de tri à retirer comme ailleurs) — ex "01 90 01
+    // 02 03" reste tel quel, contrairement aux autres pays où un "0" de tête
+    // est un simple préfixe national à enlever avant l'indicatif.
+    let digits = raw.replace(/\D/g, '');
+    if (country !== 'BEN') {
+      digits = digits.replace(/^0+/, '');
+    }
+    digits = digits.slice(0, countryConfig.phoneLength);
     setPhoneDigits(digits);
   };
 
@@ -165,7 +170,11 @@ export function PayoutMethodForm({
         {phoneError ? (
           <p className="text-xs text-red-600">{phoneError}</p>
         ) : (
-          <p className="text-xs text-green-900/50">{countryConfig.phoneLength} chiffres, sans le 0 initial.</p>
+          <p className="text-xs text-green-900/50">
+            {country === 'BEN'
+              ? `${countryConfig.phoneLength} chiffres, avec le 01 initial (ex: +229 01 xx xx xx xx).`
+              : `${countryConfig.phoneLength} chiffres, sans le 0 initial.`}
+          </p>
         )}
       </div>
 

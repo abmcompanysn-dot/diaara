@@ -742,7 +742,12 @@ func NormalizePhone(dialCode, phone string) (string, error) {
 		return digits, nil
 	}
 	// Numéro local commençant par 0 : on retire le 0 puis on préfixe l'indicatif.
-	digits = strings.TrimPrefix(digits, "0")
+	// Exception Bénin (229) : depuis la réforme de numérotation 2021, le "01"
+	// initial fait partie intégrante du numéro (pas un préfixe de tri à
+	// retirer) — ex "01 90 01 02 03" -> +229 01 90 01 02 03, pas +229 1 90...
+	if dialCode != "229" {
+		digits = strings.TrimPrefix(digits, "0")
+	}
 	if len(digits) < 6 {
 		return "", errors.New("numéro de téléphone invalide")
 	}
