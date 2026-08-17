@@ -13,6 +13,15 @@ spec:
       labels:
         app: backend
     spec:
+      # Le VPS résout son propre hostname vers 127.0.1.1 (config cloud-init),
+      # ce qui casse la connexion SMTP sortante vers le serveur mail depuis
+      # ce pod — même contournement que docker-compose.yml (extra_hosts),
+      # jamais porté ici lors de la migration k8s (cause des emails qui ne
+      # partent pas).
+      hostAliases:
+        - ip: "187.77.178.170"
+          hostnames:
+            - "srv1790747.hstgr.cloud"
       containers:
         - name: backend
           # Construite localement puis importée dans containerd via
