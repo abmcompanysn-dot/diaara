@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"crypto/hmac"
 	"net/http"
 	"strings"
 
@@ -135,7 +136,10 @@ func RequireAutomation(jwtManager *auth.JWTManager, getKey func(ctx context.Cont
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if key := r.Header.Get("X-Automation-Key"); key != "" {
 				stored := getKey(r.Context())
-				if stored == "" || key != stored {
+				// Comparaison en temps constant : une comparaison directe
+				// (==) sur un secret statique fuit sa longueur/son préfixe
+				// via le temps de réponse (timing attack).
+				if stored == "" || !hmac.Equal([]byte(key), []byte(stored)) {
 					http.Error(w, `{"error":"invalid_automation_key"}`, http.StatusUnauthorized)
 					return
 				}

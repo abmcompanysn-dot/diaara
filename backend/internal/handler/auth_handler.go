@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"net/http"
+	"net/mail"
 	"os"
 
 	"github.com/diarra/backend/internal/auth"
@@ -11,6 +12,12 @@ import (
 	"github.com/diarra/backend/internal/otp"
 	"github.com/diarra/backend/internal/service"
 )
+
+// minPasswordLength — seuil minimal appliqué à l'inscription et à la
+// réinitialisation de mot de passe. Ni l'un ni l'autre chemin ne vérifiait
+// de longueur minimale auparavant (bcrypt accepte n'importe quelle longueur
+// non nulle, y compris un seul caractère).
+const minPasswordLength = 8
 
 type AuthHandler struct {
 	authService *service.AuthService
@@ -57,6 +64,14 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	if input.Email == "" || input.Password == "" {
 		http.Error(w, `{"error":"email_and_password_required"}`, http.StatusBadRequest)
+		return
+	}
+	if _, err := mail.ParseAddress(input.Email); err != nil {
+		http.Error(w, `{"error":"invalid_email"}`, http.StatusBadRequest)
+		return
+	}
+	if len(input.Password) < minPasswordLength {
+		http.Error(w, `{"error":"password_too_short"}`, http.StatusBadRequest)
 		return
 	}
 
@@ -440,6 +455,10 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	if input.Token == "" || input.NewPassword == "" {
 		http.Error(w, `{"error":"token_and_password_required"}`, http.StatusBadRequest)
+		return
+	}
+	if len(input.NewPassword) < minPasswordLength {
+		http.Error(w, `{"error":"password_too_short"}`, http.StatusBadRequest)
 		return
 	}
 

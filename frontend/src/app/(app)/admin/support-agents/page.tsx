@@ -19,6 +19,8 @@ interface SupportAgent {
   id: string;
   name: string;
   email: string;
+  phone?: string;
+  callmebot_apikey?: string;
   active: boolean;
 }
 
@@ -42,6 +44,8 @@ export default function AdminSupportAgentsPage() {
   const [savingAgent, setSavingAgent] = useState(false);
   const [agentName, setAgentName] = useState('');
   const [agentEmail, setAgentEmail] = useState('');
+  const [agentPhone, setAgentPhone] = useState('');
+  const [agentApiKey, setAgentApiKey] = useState('');
   const [agentError, setAgentError] = useState('');
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
@@ -65,9 +69,16 @@ export default function AdminSupportAgentsPage() {
     setAgentError('');
     setSavingAgent(true);
     try {
-      await api.createSupportAgent({ name: agentName.trim(), email: agentEmail.trim() });
+      await api.createSupportAgent({
+        name: agentName.trim(),
+        email: agentEmail.trim(),
+        phone: agentPhone.trim() || undefined,
+        callmebot_apikey: agentApiKey.trim() || undefined,
+      });
       setAgentName('');
       setAgentEmail('');
+      setAgentPhone('');
+      setAgentApiKey('');
       setAddingAgent(false);
       load();
     } catch (err: any) {
@@ -144,6 +155,9 @@ export default function AdminSupportAgentsPage() {
                 <div className="min-w-0">
                   <p className="text-sm font-semibold truncate">{agent.name}</p>
                   <p className="text-xs text-muted-foreground truncate">{agent.email}</p>
+                  {agent.phone && agent.callmebot_apikey && (
+                    <Badge className="bg-green-100 text-green-700 mt-1">WhatsApp actif</Badge>
+                  )}
                 </div>
                 <div className="flex items-center gap-3 shrink-0">
                   <label className="flex items-center gap-1.5 text-xs cursor-pointer">
@@ -182,6 +196,39 @@ export default function AdminSupportAgentsPage() {
                     onChange={(e) => setAgentEmail(e.target.value)}
                     placeholder="awa@diarra.com"
                   />
+                </div>
+                <div className="pt-2 border-t border-border space-y-3">
+                  <p className="text-xs text-muted-foreground">
+                    Optionnel : notification WhatsApp automatique via{' '}
+                    <a
+                      href="https://www.callmebot.com/blog/free-api-whatsapp-messages/"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="underline"
+                    >
+                      CallMeBot
+                    </a>
+                    . Chaque agent envoie « I allow callmebot to send me messages » au numéro CallMeBot depuis son
+                    propre WhatsApp pour recevoir sa clé API.
+                  </p>
+                  <div className="space-y-2">
+                    <Label htmlFor="agent-phone">Numéro WhatsApp (avec indicatif)</Label>
+                    <Input
+                      id="agent-phone"
+                      value={agentPhone}
+                      onChange={(e) => setAgentPhone(e.target.value)}
+                      placeholder="Ex: +221771234567"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="agent-apikey">Clé API CallMeBot</Label>
+                    <Input
+                      id="agent-apikey"
+                      value={agentApiKey}
+                      onChange={(e) => setAgentApiKey(e.target.value)}
+                      placeholder="Ex: 123456"
+                    />
+                  </div>
                 </div>
                 {agentError && <p className="text-xs text-red-600">{agentError}</p>}
                 <div className="flex gap-2">

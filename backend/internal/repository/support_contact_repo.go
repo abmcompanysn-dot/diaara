@@ -21,11 +21,14 @@ func NewSupportContactRepo(pool *pgxpool.Pool) *SupportContactRepo {
 
 // --- Agents support ---
 
-const supportAgentColumns = `id, name, email, active, created_at`
+// COALESCE : phone/callmebot_apikey sont NULL pour un agent qui n'a pas
+// configuré CallMeBot — convertis en chaîne vide côté SQL pour garder le
+// scan Go simple (pas de sql.NullString à propager partout).
+const supportAgentColumns = `id, name, email, COALESCE(phone, ''), COALESCE(callmebot_apikey, ''), active, created_at`
 
 func scanSupportAgent(row pgx.Row) (*model.SupportAgent, error) {
 	a := &model.SupportAgent{}
-	err := row.Scan(&a.ID, &a.Name, &a.Email, &a.Active, &a.CreatedAt)
+	err := row.Scan(&a.ID, &a.Name, &a.Email, &a.Phone, &a.CallMeBotAPIKey, &a.Active, &a.CreatedAt)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, ErrSupportAgentNotFound
@@ -35,10 +38,11 @@ func scanSupportAgent(row pgx.Row) (*model.SupportAgent, error) {
 	return a, nil
 }
 
-func (r *SupportContactRepo) CreateAgent(ctx context.Context, name, email string) (*model.SupportAgent, error) {
+func (r *SupportContactRepo) CreateAgent(ctx context.Context, name, email, phone, callmebotAPIKey string) (*model.SupportAgent, error) {
 	return scanSupportAgent(r.pool.QueryRow(ctx,
-		`INSERT INTO support_agents (name, email) VALUES ($1, $2) RETURNING `+supportAgentColumns,
-		name, email))
+		`INSERT INTO support_agents (name, email, phone, callmebot_apikey) VALUES ($1, $2, NULLIF($3, ''), NULLIF($4, ''))
+		 RETURNING `+supportAgentColumns,
+		name, email, phone, callmebotAPIKey))
 }
 
 func (r *SupportContactRepo) ListAgents(ctx context.Context) ([]*model.SupportAgent, error) {
@@ -96,6 +100,16 @@ func (r *SupportContactRepo) UpdateAgent(ctx context.Context, id string, input m
 	if input.Email != nil {
 		sets = append(sets, `email = $`+itoa(argIdx))
 		args = append(args, *input.Email)
+		argIdx++
+	}
+	if input.Phone != nil {
+		sets = append(sets, `phone = NULLIF($`+itoa(argIdx)+`, '')`)
+		args = append(args, *input.Phone)
+		argIdx++
+	}
+	if input.CallMeBotAPIKey != nil {
+		sets = append(sets, `callmebot_apikey = NULLIF($`+itoa(argIdx)+`, '')`)
+		args = append(args, *input.CallMeBotAPIKey)
 		argIdx++
 	}
 	if input.Active != nil {

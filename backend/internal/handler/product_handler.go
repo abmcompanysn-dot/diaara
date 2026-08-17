@@ -186,6 +186,10 @@ func (h *ProductHandler) Upload(w http.ResponseWriter, r *http.Request) {
 	key := storage.NewFileKey(userID, header.Filename)
 	// Champ "type" : "cover" → image de couverture (préfixe covers/), sinon fichier vendu.
 	if r.FormValue("type") == "cover" {
+		if !validCoverImage(data) {
+			http.Error(w, `{"error":"invalid_cover_image_type"}`, http.StatusBadRequest)
+			return
+		}
 		key = "covers/" + key
 	}
 	if err := h.storage.Upload(r.Context(), key, data); err != nil {
@@ -244,6 +248,26 @@ func imageContentType(key string, data []byte) string {
 		return ct
 	}
 	return http.DetectContentType(data)
+}
+
+// allowedCoverImageTypes — liste blanche appliquée à tout upload servant de
+// couverture produit. SVG exclu volontairement : un SVG peut embarquer du
+// <script>, exécuté si l'image est ouverte en navigation directe ou via
+// <object>/<iframe> (le Content-Type est déterminé par imageContentType à
+// partir de l'extension du fichier stocké — un SVG téléversé serait donc
+// resservi en image/svg+xml et son script exécuté dans l'origine DIARRA).
+var allowedCoverImageTypes = map[string]bool{
+	"image/jpeg": true,
+	"image/png":  true,
+	"image/webp": true,
+	"image/gif":  true,
+}
+
+// validCoverImage sniffe le contenu réel du fichier (pas l'extension ni le
+// Content-Type déclaré par le client) et rejette tout ce qui n'est pas un
+// des formats raster autorisés.
+func validCoverImage(data []byte) bool {
+	return allowedCoverImageTypes[http.DetectContentType(data)]
 }
 
 // Preview — public (produits approuvés) ou vendeur/admin (produit en
@@ -583,6 +607,14 @@ func (h *ProductHandler) AttachFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// AttachFile ne sert que la seconde étape du flux image_prompt (voir
+	// commentaire de fonction) : le fichier envoyé est toujours censé être
+	// l'image générée, jamais un livrable arbitraire — validation appliquée.
+	if !validCoverImage(data) {
+		http.Error(w, `{"error":"invalid_cover_image_type"}`, http.StatusBadRequest)
+		return
+	}
+
 	key := storage.NewFileKey(product.VendorID, header.Filename)
 	if err := h.storage.Upload(r.Context(), key, data); err != nil {
 		http.Error(w, `{"error":"upload_failed"}`, http.StatusInternalServerError)
@@ -691,6 +723,11 @@ func (h *ProductHandler) UpdateAutomationCover(w http.ResponseWriter, r *http.Re
 	data, err := io.ReadAll(file)
 	if err != nil {
 		http.Error(w, `{"error":"read_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	if !validCoverImage(data) {
+		http.Error(w, `{"error":"invalid_cover_image_type"}`, http.StatusBadRequest)
 		return
 	}
 

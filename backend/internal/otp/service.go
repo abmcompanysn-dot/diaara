@@ -4,6 +4,7 @@ package otp
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
 	"errors"
 	"fmt"
@@ -88,7 +89,7 @@ func (s *Service) Verify(ctx context.Context, userID, channel, purpose, code str
 	if c.Attempts >= maxAttempts {
 		return ErrTooManyAttempts
 	}
-	if auth.HashToken(code) != c.CodeHash {
+	if !hmac.Equal([]byte(auth.HashToken(code)), []byte(c.CodeHash)) {
 		att, _ := s.repo.IncAttempts(ctx, c.ID)
 		if att >= maxAttempts {
 			return ErrTooManyAttempts

@@ -3,11 +3,13 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/diarra/backend/internal/email"
 	"github.com/diarra/backend/internal/model"
+	"github.com/diarra/backend/internal/notify"
 	"github.com/diarra/backend/internal/repository"
 	"github.com/go-chi/chi/v5"
 )
@@ -80,8 +82,12 @@ func (h *SupportContactHandler) notifyAgents(ctx context.Context, req *model.Sup
 	if err != nil {
 		return
 	}
+	waText := fmt.Sprintf("Nouveau message support de %s (%s : %s) :\n%s", req.Name, req.ContactMethod, req.ContactValue, req.Message)
 	for _, agent := range agents {
 		_ = h.notifications.SendSupportContact(ctx, agent.Email, req.Name, req.ContactMethod, req.ContactValue, req.Message)
+		if agent.Phone != "" && agent.CallMeBotAPIKey != "" {
+			_ = notify.SendCallMeBotWhatsApp(ctx, agent.Phone, agent.CallMeBotAPIKey, waText)
+		}
 	}
 }
 
@@ -107,12 +113,14 @@ func (h *SupportContactHandler) CreateAgent(w http.ResponseWriter, r *http.Reque
 	}
 	input.Name = strings.TrimSpace(input.Name)
 	input.Email = strings.TrimSpace(input.Email)
+	input.Phone = strings.TrimSpace(input.Phone)
+	input.CallMeBotAPIKey = strings.TrimSpace(input.CallMeBotAPIKey)
 	if input.Name == "" || input.Email == "" || !strings.Contains(input.Email, "@") {
 		http.Error(w, `{"error":"name_and_email_required"}`, http.StatusBadRequest)
 		return
 	}
 
-	agent, err := h.repo.CreateAgent(r.Context(), input.Name, input.Email)
+	agent, err := h.repo.CreateAgent(r.Context(), input.Name, input.Email, input.Phone, input.CallMeBotAPIKey)
 	if err != nil {
 		http.Error(w, `{"error":"creation_failed"}`, http.StatusInternalServerError)
 		return

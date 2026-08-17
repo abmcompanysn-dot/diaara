@@ -14,7 +14,46 @@ class ApiError extends Error {
   }
 }
 
-async function fetchApi<T>(endpoint: string, options: FetchOptions = {}): Promise<T> {
+// Endpoints exclus de la logique de refresh/déconnexion automatique : y
+// appliquer le refresh créerait une boucle (refresh qui échoue en 401
+// déclenche un nouveau refresh...).
+const AUTH_ENDPOINTS = ['/api/auth/refresh', '/api/auth/login', '/api/auth/register', '/api/auth/logout'];
+
+// Un seul refresh en vol à la fois : si plusieurs requêtes expirent en même
+// temps, elles partagent la même tentative de refresh au lieu d'en déclencher
+// une chacune.
+let refreshInFlight: Promise<string | null> | null = null;
+
+async function refreshAccessToken(): Promise<string | null> {
+  if (!refreshInFlight) {
+    refreshInFlight = (async () => {
+      try {
+        const res = await fetch(`${API_BASE}/api/auth/refresh`, { method: 'POST', credentials: 'include' });
+        if (!res.ok) return null;
+        const data = await res.json();
+        localStorage.setItem('access_token', data.access_token);
+        return data.access_token as string;
+      } catch {
+        return null;
+      } finally {
+        refreshInFlight = null;
+      }
+    })();
+  }
+  return refreshInFlight;
+}
+
+// Session expirée et non récupérable : déconnexion réelle (pas juste un
+// message affiché pendant que l'utilisateur reste "connecté" côté client).
+// Redirection dure (pas de router.push) pour repartir d'un état React propre.
+function forceLogout() {
+  localStorage.removeItem('access_token');
+  if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/auth/')) {
+    window.location.href = '/auth/login';
+  }
+}
+
+async function fetchApi<T>(endpoint: string, options: FetchOptions = {}, isRetry = false): Promise<T> {
   const { skipAuth = false, ...fetchOptions } = options;
 
   const isFormData = typeof FormData !== 'undefined' && fetchOptions.body instanceof FormData;
@@ -38,6 +77,13 @@ async function fetchApi<T>(endpoint: string, options: FetchOptions = {}): Promis
   });
 
   if (!response.ok) {
+    if (response.status === 401 && !skipAuth && !isRetry && !AUTH_ENDPOINTS.includes(endpoint)) {
+      const newToken = await refreshAccessToken();
+      if (newToken) {
+        return fetchApi<T>(endpoint, options, true);
+      }
+      forceLogout();
+    }
     const error = await response.json().catch(() => ({ error: 'Unknown error' }));
     throw new ApiError(response.status, error.error || 'Request failed');
   }
@@ -472,17 +518,28 @@ export const api = {
 
   // Agents support (admin, tout admin)
   getSupportAgents: () =>
-    fetchApi<{ agents: { id: string; name: string; email: string; active: boolean; created_at: string }[] }>(
-      '/api/admin/support-agents'
-    ),
+    fetchApi<{
+      agents: {
+        id: string;
+        name: string;
+        email: string;
+        phone?: string;
+        callmebot_apikey?: string;
+        active: boolean;
+        created_at: string;
+      }[];
+    }>('/api/admin/support-agents'),
 
-  createSupportAgent: (input: { name: string; email: string }) =>
+  createSupportAgent: (input: { name: string; email: string; phone?: string; callmebot_apikey?: string }) =>
     fetchApi<{ agent: any }>('/api/admin/support-agents', {
       method: 'POST',
       body: JSON.stringify(input),
     }),
 
-  updateSupportAgent: (id: string, input: { name?: string; email?: string; active?: boolean }) =>
+  updateSupportAgent: (
+    id: string,
+    input: { name?: string; email?: string; phone?: string; callmebot_apikey?: string; active?: boolean }
+  ) =>
     fetchApi<{ agent: any }>(`/api/admin/support-agents/${id}`, {
       method: 'PUT',
       body: JSON.stringify(input),

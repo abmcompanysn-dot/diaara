@@ -252,8 +252,15 @@ func main() {
 
 	r.Get("/health", healthHandler.ServeHTTP)
 
-	// Auth routes
+	// Auth routes. authRateLimiter est volontairement bien plus strict que la
+	// limite globale (10 req/s) : le brute-force sur mot de passe/OTP se
+	// mesure en tentatives par minute, pas par seconde — 0.2 req/s (1 toutes
+	// les 5s en régime soutenu) avec une rafale de 8 laisse une marge pour un
+	// utilisateur qui se trompe plusieurs fois de suite, sans laisser un
+	// script tenter des centaines de mots de passe par minute.
+	authRateLimiter := middleware.NewRateLimiter(0.2, 8)
 	r.Route("/api/auth", func(r chi.Router) {
+		r.Use(authRateLimiter.Middleware)
 		r.Post("/register", authHandler.Register)
 		r.Post("/login", authHandler.Login)
 		r.Post("/google", authHandler.GoogleLogin)
