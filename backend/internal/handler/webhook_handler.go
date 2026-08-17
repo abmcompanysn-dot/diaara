@@ -28,6 +28,7 @@ type WebhookHandler struct {
 	payoutRepo       *repository.PayoutRepo
 	pawapay          *payment.PawaPayClient
 	commissionSvc    *service.CommissionService
+	donationSvc      *service.DonationService
 	notifications    *email.NotificationService
 	notificationRepo *repository.NotificationRepo
 	storage          *storage.S3Storage
@@ -40,6 +41,7 @@ func NewWebhookHandler(
 	productRepo *repository.ProductRepo,
 	payoutRepo *repository.PayoutRepo,
 	pawapay *payment.PawaPayClient,
+	donationSvc *service.DonationService,
 	notifications *email.NotificationService,
 	notificationRepo *repository.NotificationRepo,
 	storage *storage.S3Storage,
@@ -56,6 +58,7 @@ func NewWebhookHandler(
 		payoutRepo:       payoutRepo,
 		pawapay:          pawapay,
 		commissionSvc:    service.NewCommissionService(),
+		donationSvc:      donationSvc,
 		notifications:    notifications,
 		notificationRepo: notificationRepo,
 		storage:          storage,
@@ -282,6 +285,9 @@ func (h *WebhookHandler) PawaPayWebhook(w http.ResponseWriter, r *http.Request) 
 		}
 		if h.notifications != nil {
 			go h.notifyPaid(context.Background(), sale)
+		}
+		if h.donationSvc != nil {
+			go h.donationSvc.Accumulate(context.Background(), sale.PlatformFeeCFA)
 		}
 		h.notify(r.Context(), sale.BuyerID, "order_paid", "Commande confirmée",
 			fmt.Sprintf("Votre paiement de %d FCFA a été confirmé.", sale.AmountCFA), "/orders")

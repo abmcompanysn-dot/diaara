@@ -184,6 +184,13 @@ func main() {
 	notificationRepo := repository.NewNotificationRepo(pool)
 	notificationHandler := handler.NewNotificationHandler(notificationRepo)
 
+	// Programme de reversement automatique ("Fidélisation") — voir
+	// service.DonationService pour la logique (cagnotte alimentée par une
+	// part de la commission sur chaque vente, distribution PawaPay au-delà
+	// d'un seuil configurable).
+	donationRepo := repository.NewDonationRepo(pool)
+	donationService := service.NewDonationService(donationRepo, settingsRepo, notificationRepo, userRepo, pawapay)
+
 	// Handlers
 	healthHandler := handler.NewHealthHandler(pool)
 	authHandler := handler.NewAuthHandler(authService, firebaseVerifier)
@@ -191,8 +198,9 @@ func main() {
 	saleHandler := handler.NewSaleHandler(saleRepo, productRepo, referralRepo, userRepo, settingsRepo, pawapay, notifications, os.Getenv("FRONTEND_URL"))
 	closerHandler := handler.NewCloserHandler(referralRepo, productRepo, os.Getenv("FRONTEND_URL"))
 	bundleHandler := handler.NewBundleHandler(bundleRepo, productRepo)
-	webhookHandler := handler.NewWebhookHandler(saleRepo, userRepo, productRepo, payoutRepo, pawapay, notifications, notificationRepo, s3, allowedIPs)
+	webhookHandler := handler.NewWebhookHandler(saleRepo, userRepo, productRepo, payoutRepo, pawapay, donationService, notifications, notificationRepo, s3, allowedIPs)
 	feedHandler := handler.NewFeedHandler(productRepo, os.Getenv("FRONTEND_URL"))
+	donationHandler := handler.NewDonationHandler(donationRepo, settingsRepo, donationService)
 
 	// Temps réel (LISTEN/NOTIFY + WebSocket)
 	hub := realtime.NewHub(pool)
@@ -430,6 +438,14 @@ func main() {
 			// Clé pour la création de produit automatisée (voir /api/automation/products ci-dessous).
 			r.Get("/automation/key", adminHandler.GetAutomationKey)
 			r.Post("/automation/key/regenerate", adminHandler.RegenerateAutomationKey)
+
+			// Programme de reversement automatique ("Fidélisation") — cagnotte,
+			// destinataires, historique des versements.
+			r.Get("/donations", donationHandler.Get)
+			r.Post("/donations/recipients", donationHandler.CreateRecipient)
+			r.Put("/donations/recipients/{id}", donationHandler.UpdateRecipient)
+			r.Delete("/donations/recipients/{id}", donationHandler.DeleteRecipient)
+			r.Post("/donations/payouts/{id}/retry", donationHandler.RetryPayout)
 		})
 
 		// Notifications : accessible à tout admin (même restreint), pour que

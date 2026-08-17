@@ -365,6 +365,27 @@ func (r *UserRepo) SetAdminStatus(ctx context.Context, userID string, isAdmin bo
 	return err
 }
 
+// ListAdminIDs — identifiants de tous les administrateurs, pour les
+// notifications qui concernent l'équipe admin dans son ensemble (ex: échec
+// d'un versement de don, voir DonationService.notifyAdmins).
+func (r *UserRepo) ListAdminIDs(ctx context.Context) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `SELECT id FROM users WHERE is_admin = true`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // UserRoleCounts — répartition des utilisateurs par rôle (un compte peut
 // cumuler plusieurs rôles, donc la somme peut dépasser le total).
 type UserRoleCounts struct {

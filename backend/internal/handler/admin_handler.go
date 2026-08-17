@@ -332,6 +332,24 @@ func (h *AdminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if pct, ok := input[model.SettingDonationSharePct]; ok {
+		if f, err := parseRate(pct); err != nil || f < 0 || f > 100 {
+			http.Error(w, `{"error":"invalid_donation_share_pct"}`, http.StatusBadRequest)
+			return
+		}
+	}
+	if threshold, ok := input[model.SettingDonationThresholdCFA]; ok {
+		if f, err := parseRate(threshold); err != nil || f < 0 {
+			http.Error(w, `{"error":"invalid_donation_threshold"}`, http.StatusBadRequest)
+			return
+		}
+	}
+	if enabled, ok := input[model.SettingDonationEnabled]; ok {
+		if enabled != "true" && enabled != "false" {
+			http.Error(w, `{"error":"invalid_donation_enabled"}`, http.StatusBadRequest)
+			return
+		}
+	}
 	if err := h.settingsRepo.SetMany(r.Context(), input); err != nil {
 		http.Error(w, `{"error":"settings_update_failed"}`, http.StatusInternalServerError)
 		return

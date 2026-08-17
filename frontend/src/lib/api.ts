@@ -419,6 +419,50 @@ export const api = {
   retryPayout: (id: string) =>
     fetchApi<{ status: string }>(`/api/admin/payouts/${id}/retry`, { method: 'POST' }),
 
+  // Programme de reversement automatique ("Fidélisation")
+  getDonations: () =>
+    fetchApi<{
+      pool: { balance_cfa: number; updated_at: string };
+      recipients: {
+        id: string;
+        name: string;
+        phone_number: string;
+        operator: string;
+        country: string;
+        active: boolean;
+      }[];
+      payouts: {
+        id: string;
+        recipient_id: string;
+        recipient_name: string;
+        recipient_phone: string;
+        amount_cfa: number;
+        status: string;
+        failure_reason?: string;
+        requested_at: string;
+        paid_at?: string;
+      }[];
+      settings: { share_pct: number; threshold_cfa: number; enabled: boolean };
+    }>('/api/admin/donations'),
+
+  createDonationRecipient: (input: { name: string; phone: string; operator: string; country: string }) =>
+    fetchApi<{ recipient: any }>('/api/admin/donations/recipients', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  updateDonationRecipient: (id: string, input: { name?: string; active?: boolean }) =>
+    fetchApi<{ recipient: any }>(`/api/admin/donations/recipients/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }),
+
+  deleteDonationRecipient: (id: string) =>
+    fetchApi<void>(`/api/admin/donations/recipients/${id}`, { method: 'DELETE' }),
+
+  retryDonationPayout: (id: string) =>
+    fetchApi<{ ok: boolean }>(`/api/admin/donations/payouts/${id}/retry`, { method: 'POST' }),
+
   getActivityFeed: () =>
     fetchApi<{ activity: { kind: string; id: string; at: string; data: any }[] }>(
       '/api/admin/activity'

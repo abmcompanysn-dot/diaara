@@ -12,6 +12,11 @@ const (
 	// SettingAutomationAPIKey : clé secrète pour l'endpoint de création de
 	// produit automatisée (voir middleware.RequireAutomation).
 	SettingAutomationAPIKey = "automation_api_key"
+	// Programme de reversement automatique ("Fidélisation") — voir
+	// service.DonationService pour les valeurs par défaut et la logique.
+	SettingDonationSharePct     = "donation_share_pct"
+	SettingDonationThresholdCFA = "donation_threshold_cfa"
+	SettingDonationEnabled      = "donation_program_enabled"
 )
 
 // UpdateSettingsInput — mise à jour partielle (seules les clés présentes sont modifiées).
