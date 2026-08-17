@@ -3,6 +3,7 @@ import { AuthProvider } from '@/lib/auth';
 import { MobileMenuProvider } from '@/lib/mobile-menu-context';
 import { Header } from '@/components/header';
 import { Footer } from '@/components/footer';
+import { SupportContactWidget } from '@/components/support-contact-widget';
 import './globals.css';
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://diarra.abmcy.com';
@@ -77,6 +78,7 @@ export default function RootLayout({
             <Header />
             <div className="flex-1">{children}</div>
             <Footer />
+            <SupportContactWidget />
           </MobileMenuProvider>
         </AuthProvider>
       </body>

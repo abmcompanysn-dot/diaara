@@ -3,6 +3,9 @@ package email
 import (
 	"context"
 	"fmt"
+	"html"
+	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 )
@@ -219,6 +222,36 @@ func (n *NotificationService) SendPayoutConfirmed(ctx context.Context, to string
 	inner := contentHTML("Versement effectué", body, "Voir mes revenus", n.frontendURL+"/vendor/earnings")
 	return n.client.Send(ctx, to, "Versement confirmé", n.renderEmail(inner))
 }
+
+// SendSupportContact notifie un agent support d'un nouveau message envoyé
+// depuis le widget de contact public du site (visiteur non authentifié).
+// Le bouton d'action pointe directement vers une réponse par email (mailto:)
+// ou WhatsApp (wa.me) selon le canal choisi par le visiteur. name/message/
+// contactValue sont fournis par un visiteur anonyme : échappés avant
+// insertion dans le HTML pour éviter toute injection dans l'email.
+func (n *NotificationService) SendSupportContact(ctx context.Context, to, name, contactMethod, contactValue, message string) error {
+	safeName := html.EscapeString(name)
+	safeMessage := strings.ReplaceAll(html.EscapeString(message), "\n", "<br>")
+	safeContactValue := html.EscapeString(contactValue)
+
+	var ctaLabel, ctaURL string
+	if contactMethod == "whatsapp" {
+		ctaLabel = "Répondre sur WhatsApp"
+		ctaURL = "https://wa.me/" + nonDigits.ReplaceAllString(contactValue, "") +
+			"?text=" + url.QueryEscape("Bonjour "+name+", ici le support DIARRA. ")
+	} else {
+		ctaLabel = "Répondre par email"
+		ctaURL = "mailto:" + contactValue + "?subject=" + url.QueryEscape("Re: votre message à DIARRA")
+	}
+
+	body := fmt.Sprintf(`<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Nouveau message depuis le site, de <strong>%s</strong> (%s : %s).</p>
+<div style="margin:16px 0 0;padding:16px 18px;background-color:#f2f7f4;border-left:4px solid #0f7a50;border-radius:8px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#0a3225;">%s</div>`,
+		safeName, contactMethod, safeContactValue, safeMessage)
+	inner := contentHTML("Nouveau contact support", body, ctaLabel, ctaURL)
+	return n.client.Send(ctx, to, "Nouveau message support : "+name, n.renderEmail(inner))
+}
+
+var nonDigits = regexp.MustCompile(`\D`)
 
 func (n *NotificationService) SendOTP(ctx context.Context, to, code, purpose string) error {
 	subject := "Votre code de vérification DIARRA"

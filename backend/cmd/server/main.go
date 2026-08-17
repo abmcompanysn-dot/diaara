@@ -222,6 +222,11 @@ func main() {
 	ticketRepo := repository.NewTicketRepo(pool)
 	ticketHandler := handler.NewTicketHandler(ticketRepo, adminPermRepo)
 
+	// Widget de contact support public (visiteur non authentifié) + registre
+	// des agents notifiés par email à chaque nouveau message.
+	supportContactRepo := repository.NewSupportContactRepo(pool)
+	supportContactHandler := handler.NewSupportContactHandler(supportContactRepo, notifications)
+
 	// Administration
 	adminHandler := handler.NewAdminHandler(productRepo, saleRepo, userRepo, referralRepo, adminPermRepo, payoutRepo, settingsRepo, ticketRepo, pool, storageHealthPinger, startTime, pawapay, notifications)
 
@@ -458,6 +463,14 @@ func main() {
 		r.Put("/tickets/{id}/assign", ticketHandler.Assign)
 		r.Get("/tickets/assignees", ticketHandler.Assignees)
 
+		// Widget de contact support public : registre des agents notifiés +
+		// historique des demandes. Même accès que les tickets (tout admin).
+		r.Get("/support-agents", supportContactHandler.ListAgents)
+		r.Post("/support-agents", supportContactHandler.CreateAgent)
+		r.Put("/support-agents/{id}", supportContactHandler.UpdateAgent)
+		r.Delete("/support-agents/{id}", supportContactHandler.DeleteAgent)
+		r.Get("/support-contacts", supportContactHandler.ListContacts)
+
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAdminScope(model.AdminPermInfra))
 			r.Get("/system/health", adminHandler.SystemHealth)
@@ -485,6 +498,10 @@ func main() {
 		r.Put("/{id}", productHandler.UpdateAutomation)
 		r.Put("/{id}/cover", productHandler.UpdateAutomationCover)
 	})
+
+	// Widget de contact support public (visiteur non authentifié, sans compte
+	// requis) — soumis à la limite de débit globale par IP (voir plus haut).
+	r.Post("/api/support/contact", supportContactHandler.Contact)
 
 	// Support tickets (utilisateur connecté, admin pour tous)
 	r.Route("/api/tickets", func(r chi.Router) {

@@ -463,6 +463,39 @@ export const api = {
   retryDonationPayout: (id: string) =>
     fetchApi<{ ok: boolean }>(`/api/admin/donations/payouts/${id}/retry`, { method: 'POST' }),
 
+  // Widget de contact support public (visiteur non authentifié)
+  submitSupportContact: (input: { name: string; contact_method: 'email' | 'whatsapp'; contact_value: string; message: string }) =>
+    fetchApi<{ ok: boolean }>('/api/support/contact', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  // Agents support (admin, tout admin)
+  getSupportAgents: () =>
+    fetchApi<{ agents: { id: string; name: string; email: string; active: boolean; created_at: string }[] }>(
+      '/api/admin/support-agents'
+    ),
+
+  createSupportAgent: (input: { name: string; email: string }) =>
+    fetchApi<{ agent: any }>('/api/admin/support-agents', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  updateSupportAgent: (id: string, input: { name?: string; email?: string; active?: boolean }) =>
+    fetchApi<{ agent: any }>(`/api/admin/support-agents/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify(input),
+    }),
+
+  deleteSupportAgent: (id: string) =>
+    fetchApi<void>(`/api/admin/support-agents/${id}`, { method: 'DELETE' }),
+
+  getSupportContacts: () =>
+    fetchApi<{
+      requests: { id: string; name: string; contact_method: string; contact_value: string; message: string; created_at: string }[];
+    }>('/api/admin/support-contacts'),
+
   getActivityFeed: () =>
     fetchApi<{ activity: { kind: string; id: string; at: string; data: any }[] }>(
       '/api/admin/activity'

@@ -84,6 +84,7 @@ export function Header() {
             { href: '/admin/permissions', label: 'Droits admin', Icon: ShieldIcon },
             { href: '/admin/automation', label: 'Automatisation', Icon: ZapIcon },
             { href: '/admin/donations', label: 'Fidélisation', Icon: WalletIcon },
+            { href: '/admin/support-agents', label: 'Contact support', Icon: HeadsetIcon },
           ]
         : [],
     },
