@@ -28,6 +28,15 @@ MINIO_ROOT_PASSWORD=$(env_value MINIO_ROOT_PASSWORD)
 S3_ACCESS_KEY_ID=$(env_value S3_ACCESS_KEY_ID)
 S3_SECRET_ACCESS_KEY=$(env_value S3_SECRET_ACCESS_KEY)
 
+# SMTP_HOST/USER/PASS/FROM (Mailcow) sont volontairement absents ici : le
+# pod backend ne peut pas atteindre Mailcow depuis le réseau k3s (isolation
+# réseau imposée par kube-router, pas un problème de configuration —
+# vérifié : le trafic sortant du pod est bloqué vers n'importe quelle
+# adresse locale au VPS, y compris la passerelle Docker et l'IP publique).
+# Le backend bascule sur Resend (ou Mailtrap) — SMTP_HOST reste dans le
+# .env pour un éventuel usage local/Docker Compose, mais n'est plus porté
+# dans le Secret k3s : sa présence ferait passer le switch email de
+# main.go sur la branche SMTP avant même de regarder RESEND_API_KEY.
 kubectl create secret generic diarra-secrets \
   --namespace diarra \
   --from-literal=JWT_SECRET="$(env_value JWT_SECRET)" \
@@ -40,10 +49,6 @@ kubectl create secret generic diarra-secrets \
   --from-literal=S3_SECRET_ACCESS_KEY="${S3_SECRET_ACCESS_KEY:-$MINIO_ROOT_PASSWORD}" \
   --from-literal=RESEND_API_KEY="$(env_value RESEND_API_KEY)" \
   --from-literal=RESEND_FROM="$(env_value RESEND_FROM)" \
-  --from-literal=SMTP_HOST="$(env_value SMTP_HOST)" \
-  --from-literal=SMTP_USER="$(env_value SMTP_USER)" \
-  --from-literal=SMTP_PASS="$(env_value SMTP_PASS)" \
-  --from-literal=SMTP_FROM="$(env_value SMTP_FROM)" \
   --from-literal=MAILTRAP_API_KEY="$(env_value MAILTRAP_API_KEY)" \
   --from-literal=MAILTRAP_FROM="$(env_value MAILTRAP_FROM)" \
   --from-literal=MAILTRAP_SANDBOX_ID="$(env_value MAILTRAP_SANDBOX_ID)" \
