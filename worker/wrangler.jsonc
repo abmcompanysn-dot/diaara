@@ -15,17 +15,18 @@
   },
 
   "vars": {
-    // Backend Go sur le VPS, atteint via un sous-domaine dédié NON proxifié
-    // par Cloudflare (DNS-only) — diarra.abmcy.com est le Worker lui-même
-    // une fois la route branchée, l'utiliser ici créerait une boucle infinie.
-    "BACKEND_URL": "https://origin.abmcy.com"
+    // Backend Go, toujours sur le VPS à son adresse actuelle. Le nouveau
+    // domaine du frontend (diarra.app, ci-dessous) est distinct de
+    // diarra.abmcy.com : pas de boucle, pas besoin de sous-domaine dédié.
+    "BACKEND_URL": "https://diarra.abmcy.com"
   },
 
-  // Route de production — à activer une fois le DNS de abmcy.com basculé
-  // sur Cloudflare (voir plan de migration). Avant ça, déployer et tester
-  // sur le sous-domaine *.workers.dev par défaut.
+  // Route de production — nouveau domaine dédié à l'application (distinct
+  // de diarra.abmcy.com, qui reste géré chez Hostinger sans changement,
+  // donc aucun risque pour le mail Mailcow hébergé sur le même domaine).
+  // Avant ça, déployer et tester sur le sous-domaine *.workers.dev par défaut.
   // "routes": [
-  //   { "pattern": "diarra.abmcy.com/*", "zone_name": "abmcy.com" }
+  //   { "pattern": "diarra.app/*", "zone_name": "diarra.app" }
   // ],
 
   "kv_namespaces": [

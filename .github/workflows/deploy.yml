@@ -78,9 +78,13 @@ jobs:
         if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
         working-directory: ./frontend
         env:
-          NEXT_PUBLIC_API_URL: https://diarra.abmcy.com
-          NEXT_PUBLIC_WS_URL: wss://diarra.abmcy.com
-          NEXT_PUBLIC_SITE_URL: https://diarra.abmcy.com
+          # Même origine que le domaine servi par le Worker (diarra.app) :
+          # le navigateur appelle /api/* en same-origin, le Worker fait le
+          # proxy vers le vrai backend (diarra.abmcy.com) côté serveur —
+          # aucun souci de CORS, pas besoin de toucher CORS_ALLOWED_ORIGINS.
+          NEXT_PUBLIC_API_URL: https://diarra.app
+          NEXT_PUBLIC_WS_URL: wss://diarra.app
+          NEXT_PUBLIC_SITE_URL: https://diarra.app
         run: |
           npm ci
           npm run build
