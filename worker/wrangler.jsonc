@@ -15,10 +15,10 @@
   },
 
   "vars": {
-    // Backend Go, toujours sur le VPS à son adresse actuelle. Le nouveau
-    // domaine du frontend (diarra.app, ci-dessous) est distinct de
-    // diarra.abmcy.com : pas de boucle, pas besoin de sous-domaine dédié.
-    "BACKEND_URL": "https://diarra.abmcy.com"
+    // Backend Go sur le VPS. diarra.abmcy.com devient une simple
+    // redirection vers diarra.app (le frontend, servi par ce Worker) — le
+    // backend a donc sa propre adresse dédiée pour rester joignable.
+    "BACKEND_URL": "https://origin.abmcy.com"
   },
 
   // Route de production — nouveau domaine dédié à l'application (distinct

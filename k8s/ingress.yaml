@@ -64,3 +64,16 @@ spec:
                 name: frontend
                 port:
                   number: 80
+    # Adresse dédiée au backend seul — diarra.abmcy.com devient à terme une
+    # redirection vers diarra.app (frontend, servi par Cloudflare Worker),
+    # qui proxy /api/* etc. vers ce host pour joindre le backend.
+    - host: origin.abmcy.com
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: backend
+                port:
+                  number: 8080
