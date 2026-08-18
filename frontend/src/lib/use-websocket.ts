@@ -2,7 +2,17 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-const WS_BASE = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8080';
+// Repli sur l'origine réelle du navigateur (même logique que apiOrigin dans
+// lib/api.ts) : nginx/le Worker Cloudflare proxient déjà /ws/* same-origin,
+// pas besoin de connaître l'URL finale au moment du build.
+function getWsBase(): string {
+  if (process.env.NEXT_PUBLIC_WS_URL) return process.env.NEXT_PUBLIC_WS_URL;
+  if (typeof window !== 'undefined') {
+    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${window.location.host}`;
+  }
+  return 'ws://localhost:8080';
+}
 
 /**
  * useWebSocket — se connecte au canal temps réel d'une commande
@@ -21,7 +31,7 @@ export function useWebSocket<T = any>(path: string, onUpdate?: (data: T) => void
       const token = localStorage.getItem('access_token');
       if (!token) return;
 
-      const base = WS_BASE.replace(/\/$/, '');
+      const base = getWsBase().replace(/\/$/, '');
       const separator = path.includes('?') ? '&' : '?';
       const ws = new WebSocket(`${base}${path}${separator}token=${encodeURIComponent(token)}`);
       socketRef.current = ws;

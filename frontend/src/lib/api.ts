@@ -1,7 +1,14 @@
-const API_BASE = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080';
+// Vide par défaut (donc relatif/same-origin) : nginx (VPS) et le Worker
+// Cloudflare (worker/src/index.ts) proxient déjà /api/* vers le backend sur
+// le même domaine que sert la page — pas besoin de connaître l'URL finale
+// (workers.dev en test, diarra.app en prod) au moment du build.
+const API_BASE = process.env.NEXT_PUBLIC_API_URL || '';
 
-// Origine de l'API : sert à construire les liens de partage /r/{slug} côté closer.
-export const apiOrigin = API_BASE;
+// Origine absolue : sert à construire les liens partagés hors-page (ex.
+// /r/{slug} envoyé par WhatsApp/SMS), où une URL relative ne veut rien dire.
+// Repli sur l'origine réelle du navigateur si non fournie au build.
+export const apiOrigin =
+  process.env.NEXT_PUBLIC_API_URL || (typeof window !== 'undefined' ? window.location.origin : '');
 
 interface FetchOptions extends RequestInit {
   skipAuth?: boolean;
