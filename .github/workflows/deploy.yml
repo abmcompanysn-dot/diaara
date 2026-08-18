@@ -93,6 +93,14 @@ jobs:
           npm ci
           npm run build
 
+      # wrangler.jsonc pointe assets.directory vers ./out (dans worker/,
+      # pas ../frontend/out) — voir le commentaire dans wrangler.jsonc.
+      - name: Copier le build frontend dans worker/out
+        if: ${{ env.HAS_CLOUDFLARE_TOKEN == 'true' }}
+        run: |
+          rm -rf worker/out
+          cp -r frontend/out worker/out
+
       - name: Déploiement Cloudflare Worker (frontend)
         if: ${{ env.HAS_CLOUDFLARE_TOKEN == 'true' }}
         env:

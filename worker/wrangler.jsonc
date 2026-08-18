@@ -7,8 +7,16 @@
   // Frontend statique exporté (Next.js output: export), servi par env.ASSETS.
   // run_worker_first: le Worker gère TOUTES les requêtes (proxy API/WS + /r/,
   // rate-limit) puis sert les assets via env.ASSETS.fetch.
+  //
+  // "./out" (et non "../frontend/out") : le build Cloudflare (Workers
+  // Builds, dashboard Git-connecté) exécute la commande de build et la
+  // commande de déploiement dans deux phases qui ne partagent pas forcément
+  // les fichiers écrits EN DEHORS du répertoire racine configuré — la
+  // commande de build copie donc le résultat du build Next.js ici, à
+  // l'intérieur de worker/, pour que ce soit fiable quelle que soit la
+  // sémantique exacte du "Root directory" côté Cloudflare.
   "assets": {
-    "directory": "../frontend/out",
+    "directory": "./out",
     "binding": "ASSETS",
     "run_worker_first": true,
     "not_found_handling": "404-page"
