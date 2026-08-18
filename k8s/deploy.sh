@@ -7,20 +7,29 @@ set -eu
 
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
-echo "== Build backend =="
-# timeout : un build Docker qui reste accroché (observé plusieurs fois sur
-# ce VPS partagé, typiquement sur l'installation de paquets système via
-# apk sous forte charge disque/réseau) sature le nœud pendant des dizaines
-# de minutes et fait planter tout le cluster (CoreDNS, ingress, etc.) en
-# cascade. Un échec propre au bout de 8 min vaut largement mieux qu'un
-# blocage silencieux qui coupe le site.
-timeout 480 docker build -t diarra-backend:latest ./backend
+# BACKEND_CHANGED=false (passé par deploy.yml quand backend/ n'a pas bougé
+# dans le push, ex. un changement k8s/ seul) : saute le build, inutile ET
+# risqué — timeout 480 protège déjà des blocages apk sous charge (voir plus
+# bas), mais chaque build est une nouvelle occasion d'y retomber, pour rien
+# si aucun code n'a changé. Par défaut (non fixé) on construit, par sécurité.
+if [ "${BACKEND_CHANGED:-true}" = "true" ]; then
+  echo "== Build backend =="
+  # timeout : un build Docker qui reste accroché (observé plusieurs fois sur
+  # ce VPS partagé, typiquement sur l'installation de paquets système via
+  # apk sous forte charge disque/réseau) sature le nœud pendant des dizaines
+  # de minutes et fait planter tout le cluster (CoreDNS, ingress, etc.) en
+  # cascade. Un échec propre au bout de 8 min vaut largement mieux qu'un
+  # blocage silencieux qui coupe le site.
+  timeout 480 docker build -t diarra-backend:latest ./backend
+
+  echo "== Import dans containerd (k3s) =="
+  docker save diarra-backend:latest | k3s ctr images import -
+else
+  echo "== Build backend ignoré (backend/ inchangé) =="
+fi
 
 # Le frontend n'est plus construit/servi ici : il est déployé sur Cloudflare
 # Worker (voir worker/), déclenché séparément par le build Git Cloudflare.
-echo "== Import dans containerd (k3s) =="
-docker save diarra-backend:latest | k3s ctr images import -
-
 echo "== Application des manifests =="
 kubectl apply -f k8s/namespace.yaml
 kubectl apply -f k8s/configmap.yaml

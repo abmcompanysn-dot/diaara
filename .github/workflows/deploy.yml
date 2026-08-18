@@ -22,10 +22,6 @@ env:
   VPS_HOST: srv1790747.hstgr.cloud
   VPS_USER: root
   VPS_PATH: /home/president/apps/diarra
-  # GitHub Actions interdit de référencer `secrets` directement dans un
-  # `if:` (le workflow entier est rejeté avant même de démarrer, sans
-  # aucun job créé) — passage obligé par `env` puis `env.X` dans les `if:`.
-  HAS_CLOUDFLARE_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
 
 jobs:
   deploy:
@@ -33,6 +29,22 @@ jobs:
     steps:
       - name: Checkout du code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2 # nécessaire pour comparer HEAD^ vs HEAD juste après
+
+      # Le VPS a montré des blocages répétés (paquets apk sous charge) sur
+      # `docker build backend` — le rebuilder pour un déploiement qui ne
+      # touche QUE k8s/ (ex. un Ingress) n'a aucune utilité (aucun nouveau
+      # code) et ne fait que multiplier les occasions de tomber sur ce
+      # blocage. On ne le construit donc que si backend/ a réellement changé.
+      - name: Détecter si le backend a changé
+        id: backend_changed
+        run: |
+          if git diff --quiet HEAD^ HEAD -- backend/ 2>/dev/null; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Configurer la clé SSH
         uses: webfactory/ssh-agent@v0.9.0
@@ -63,6 +75,8 @@ jobs:
       # manifests ; le rollout Kubernetes ne coupe jamais le trafic
       # (anciens pods servent jusqu'à ce que les nouveaux soient prêts).
       - name: Build & déploiement k3s
+        env:
+          BACKEND_CHANGED: ${{ steps.backend_changed.outputs.changed }}
         run: |
           ssh "$VPS_USER@$VPS_HOST" bash -euo pipefail <<EOF
             cd "$VPS_PATH"
@@ -73,7 +87,7 @@ jobs:
               exit 1
             fi
 
-            sh k8s/deploy.sh
+            BACKEND_CHANGED="$BACKEND_CHANGED" sh k8s/deploy.sh
             docker image prune -f
           EOF
 
@@ -84,37 +98,7 @@ jobs:
             && echo "OK : le backend répond" \
             || (echo "ÉCHEC du health check après déploiement" && exit 1)
 
-      # Déploie le frontend statique sur Cloudflare (voir worker/) — n'agit
-      # que si le secret est configuré, pour ne jamais casser le déploiement
-      # VPS existant tant que la migration Cloudflare n'est pas activée.
-      - name: Build du frontend pour Cloudflare
-        if: ${{ env.HAS_CLOUDFLARE_TOKEN == 'true' }}
-        working-directory: ./frontend
-        env:
-          # Même origine que le domaine servi par le Worker (diarra.app) :
-          # le navigateur appelle /api/* en same-origin, le Worker fait le
-          # proxy vers le vrai backend (diarra.abmcy.com) côté serveur —
-          # aucun souci de CORS, pas besoin de toucher CORS_ALLOWED_ORIGINS.
-          NEXT_PUBLIC_API_URL: https://diarra.app
-          NEXT_PUBLIC_WS_URL: wss://diarra.app
-          NEXT_PUBLIC_SITE_URL: https://diarra.app
-        run: |
-          npm ci
-          npm run build
-
-      # wrangler.jsonc pointe assets.directory vers ./out (dans worker/,
-      # pas ../frontend/out) — voir le commentaire dans wrangler.jsonc.
-      - name: Copier le build frontend dans worker/out
-        if: ${{ env.HAS_CLOUDFLARE_TOKEN == 'true' }}
-        run: |
-          rm -rf worker/out
-          cp -r frontend/out worker/out
-
-      - name: Déploiement Cloudflare Worker (frontend)
-        if: ${{ env.HAS_CLOUDFLARE_TOKEN == 'true' }}
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-        working-directory: ./worker
-        run: |
-          npm ci
-          npx wrangler deploy
+      # Le frontend est déployé par le build Git natif de Cloudflare
+      # (Workers Builds, connecté directement au dépôt) — pas par ce
+      # workflow. Les anciennes étapes qui dupliquaient ce déploiement ici
+      # (build + wrangler deploy) ont été retirées.
