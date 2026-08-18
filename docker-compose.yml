@@ -63,6 +63,13 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    # cpu_shares : poids RELATIF (défaut Docker = 1024) utilisé par le noyau
+    # pour arbitrer le CPU entre TOUS les conteneurs du VPS quand ça sature —
+    # contrairement à deploy.resources.limits (un plafond individuel), ceci
+    # priorise Diarra face aux autres projets du même serveur (miadtalen,
+    # mahu-app) sans rien changer à leurs plafonds. Valeur choisie pour que
+    # Diarra passe après miadtalen mais avant mahu-app en cas de contention.
+    cpu_shares: 512
     deploy:
       resources:
         limits:
@@ -81,6 +88,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    cpu_shares: 512
     deploy:
       resources:
         limits:
@@ -101,6 +109,7 @@ services:
     environment: *backend-env
     depends_on: *backend-depends-on
     healthcheck: *backend-healthcheck
+    cpu_shares: 512
     deploy:
       resources:
         limits:
@@ -118,6 +127,7 @@ services:
     environment: *backend-env
     depends_on: *backend-depends-on
     healthcheck: *backend-healthcheck
+    cpu_shares: 512
     deploy:
       resources:
         limits:
@@ -142,6 +152,7 @@ services:
       - "127.0.0.1:${FRONTEND_HOST_PORT:-3000}:80"
     depends_on:
       - backend
+    cpu_shares: 512
     deploy:
       resources:
         limits:
@@ -165,6 +176,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    cpu_shares: 512
     deploy:
       resources:
         limits:
