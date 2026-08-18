@@ -3,6 +3,15 @@ name: Déploiement VPS
 on:
   push:
     branches: [master]
+    # Le VPS ne sert plus le frontend une fois Cloudflare en place — pas
+    # besoin de rebuild ses images Docker pour des changements qui ne
+    # touchent que le frontend/worker (Cloudflare a son propre build,
+    # indépendant). Réduit aussi le nombre de builds Docker déclenchés sur
+    # le VPS, qui a montré des signes de fragilité sous charge répétée.
+    paths:
+      - 'backend/**'
+      - 'k8s/**'
+      - '.github/workflows/deploy.yml'
   workflow_dispatch: {}
 
 concurrency:
