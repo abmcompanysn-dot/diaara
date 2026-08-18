@@ -1,6 +1,9 @@
 {
   "$schema": "./node_modules/wrangler/config-schema.json",
-  "name": "diarra-worker",
+  // Doit correspondre au Worker déjà créé/connecté sur le dashboard
+  // Cloudflare (sinon wrangler tente de créer un second Worker au lieu de
+  // mettre à jour l'existant).
+  "name": "diaara",
   "compatibility_date": "2026-01-01",
   "main": "src/index.ts",
 

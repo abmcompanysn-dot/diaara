@@ -21,12 +21,7 @@ ENV NEXT_PUBLIC_FIREBASE_APP_ID=$NEXT_PUBLIC_FIREBASE_APP_ID
 ENV NEXT_PUBLIC_TIKTOK_URL=$NEXT_PUBLIC_TIKTOK_URL
 RUN npm run build
 
-FROM node:20-alpine AS runner
-WORKDIR /app
-RUN adduser -D -u 1001 app
-COPY --from=builder /src/.next/standalone ./
-COPY --from=builder /src/.next/static ./.next/static
-COPY --from=builder /src/public ./public
-USER app
-EXPOSE 3000
-CMD ["node", "server.js"]
+FROM nginx:alpine AS runner
+COPY --from=builder /src/out /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+EXPOSE 80

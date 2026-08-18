@@ -1,10 +1,11 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // SSR (via k3s, plus un export statique) : nécessaire pour générer des
-  // balises Open Graph par produit (voir generateMetadata dans
-  // src/app/product/page.tsx) — un export statique sert le même HTML à
-  // tout le monde, impossible d'y injecter des données par produit.
-  output: 'standalone',
+  // Export statique : servi par nginx sur le VPS ET par Cloudflare Worker
+  // (env.ASSETS) pour diarra.app. L'Open Graph par produit passe par la
+  // route backend /p/{id} (ProductHandler.Share) plutôt que par du SSR
+  // Next.js — un export statique ne peut pas générer de métadonnées par
+  // requête (voir historique git pour la tentative SSR abandonnée ici).
+  output: 'export',
   images: {
     unoptimized: true,
   },
