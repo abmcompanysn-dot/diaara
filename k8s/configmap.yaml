@@ -6,13 +6,14 @@ metadata:
 data:
   APP_ENV: "production"
   PORT: "8080"
-  # URL publique du site — inchangée, sert aussi de base pour les liens
-  # produits/boutiques générés côté backend (sitemap, flux, partage).
-  FRONTEND_URL: "https://diarra.abmcy.com"
-  # Manquait depuis la migration k8s (présente dans le .env VPS mais jamais
-  # portée ici) — sans elle le backend retombe sur son défaut
-  # http://localhost:3000 (backend/cmd/server/main.go).
-  CORS_ALLOWED_ORIGINS: "https://diarra.abmcy.com"
+  # URL publique du site — sert de base pour les liens générés côté backend
+  # (sitemap, flux, partage, ET le returnUrl PawaPay post-paiement, voir
+  # sale_handler.go). Le frontend vit maintenant sur diarra.app (Cloudflare
+  # Worker) ; diarra.abmcy.com n'est plus qu'une redirection Caddy vers ce
+  # domaine (voir /etc/caddy/Caddyfile sur le VPS) — pointer directement ici
+  # évite l'aller-retour par la redirection.
+  FRONTEND_URL: "https://diarra.app"
+  CORS_ALLOWED_ORIGINS: "https://diarra.app"
   REDIS_URL: "redis://redis:6379"
   # Endpoint S3 PUBLIC (proxifié par Caddy), pas l'adresse interne du
   # cluster : les URLs signées générées par le backend doivent être
@@ -29,9 +30,3 @@ data:
   # l'API sandbox, d'où les 401/502 sur /api/orders.
   PAWAPAY_BASE_URL: "https://api.pawapay.io"
   SMTP_PORT: "587"
-  # Utilisée par le frontend (SSR) pour appeler le backend en interne au
-  # cluster — voir generateMetadata dans frontend/src/app/product/page.tsx.
-  # Ne PAS injecter tout ce ConfigMap dans le frontend via envFrom : PORT
-  # ci-dessus (8080, pour le backend) entrerait en conflit avec le port
-  # d'écoute du serveur Next standalone (3000).
-  INTERNAL_API_URL: "http://backend:8080"
