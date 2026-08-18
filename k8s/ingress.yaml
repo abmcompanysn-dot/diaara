@@ -1,5 +1,8 @@
 # Reproduit les règles du Caddyfile du VPS : /api, /ws, /p, /r, /feed,
-# /sitemap.xml vers le backend ; tout le reste vers le frontend statique.
+# /sitemap.xml vers le backend. Le frontend n'est plus servi par le VPS
+# (déplacé sur Cloudflare Worker, voir worker/) — diarra.abmcy.com ne sert
+# donc plus que l'API ; la racine "/" devient à terme une redirection vers
+# diarra.app (gérée côté utilisateur, hors de ce fichier).
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -57,13 +60,6 @@ spec:
                 name: backend
                 port:
                   number: 8080
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: frontend
-                port:
-                  number: 80
     # Adresse dédiée au backend seul — diarra.abmcy.com devient à terme une
     # redirection vers diarra.app (frontend, servi par Cloudflare Worker),
     # qui proxy /api/* etc. vers ce host pour joindre le backend.
