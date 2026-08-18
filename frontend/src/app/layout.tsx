@@ -6,7 +6,7 @@ import { Footer } from '@/components/footer';
 import { SupportContactWidget } from '@/components/support-contact-widget';
 import './globals.css';
 
-const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://diarra.abmcy.com';
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://diarra.app';
 const SITE_DESCRIPTION =
   'Achetez et vendez des produits numériques en Afrique : clés d\'abonnement, comptes, ebooks, PDF. Paiement sécurisé par mobile money.';
 

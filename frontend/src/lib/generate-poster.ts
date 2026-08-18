@@ -151,7 +151,7 @@ export async function generateProductPoster(product: PosterProduct, qrDataUrl: s
   ctx.fillText('Scannez pour acheter', 48 + qrSize + 32, footerY + footerHeight / 2 - 8);
   ctx.fillStyle = GREEN_900;
   ctx.font = '500 26px Manrope, sans-serif';
-  ctx.fillText('diarra.abmcy.com', 48 + qrSize + 32, footerY + footerHeight / 2 + 32);
+  ctx.fillText('diarra.app', 48 + qrSize + 32, footerY + footerHeight / 2 + 32);
 
   return new Promise((resolve, reject) => {
     canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('poster_export_failed'))), 'image/png');

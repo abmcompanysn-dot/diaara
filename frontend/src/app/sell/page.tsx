@@ -1,6 +1,12 @@
 import Link from 'next/link';
 import { KeyIcon, BookIcon, BriefcaseIcon, CheckIcon } from '@/components/icons';
 
+export const metadata = {
+  title: 'Vendre',
+  description:
+    'Vendez vos biens numériques en Afrique : commission unique de 15 %, paiement mobile money intégré, versement sous 48h. Aucun frais d\'inscription.',
+};
+
 const FEATURES = [
   {
     title: 'Commission unique de 15 %',

@@ -132,7 +132,7 @@ export default function AdminAutomationPage() {
                 attaché plus tard (étape 2) avant approbation.
               </li>
             </ul>
-            <CodeBlock>{`curl -X POST https://diarra.abmcy.com/api/automation/products \\
+            <CodeBlock>{`curl -X POST https://origin.abmcy.com/api/automation/products \\
   -H "X-Automation-Key: ${key || '<votre_cle>'}" \\
   -F "title=Mon super template" \\
   -F "description=Un template prêt à l'emploi" \\
@@ -147,7 +147,7 @@ export default function AdminAutomationPage() {
 
           <div>
             <p className="text-sm font-semibold text-green-900 mb-1">2. Attacher le fichier (si envoyé plus tard)</p>
-            <CodeBlock>{`curl -X PUT https://diarra.abmcy.com/api/automation/products/{id}/file \\
+            <CodeBlock>{`curl -X PUT https://origin.abmcy.com/api/automation/products/{id}/file \\
   -H "X-Automation-Key: ${key || '<votre_cle>'}" \\
   -F "file=@/chemin/vers/image.png"`}</CodeBlock>
           </div>
@@ -158,7 +158,7 @@ export default function AdminAutomationPage() {
               Titre, description, prix, catégorie... — un produit déjà approuvé repasse
               automatiquement "en attente" (le contenu a changé, il doit être revalidé).
             </p>
-            <CodeBlock>{`curl -X PUT https://diarra.abmcy.com/api/automation/products/{id} \\
+            <CodeBlock>{`curl -X PUT https://origin.abmcy.com/api/automation/products/{id} \\
   -H "X-Automation-Key: ${key || '<votre_cle>'}" \\
   -H "Content-Type: application/json" \\
   -d '{"title": "Nouveau titre", "price_cfa": 6000}'`}</CodeBlock>
@@ -172,7 +172,7 @@ export default function AdminAutomationPage() {
               Indépendant du fichier livré à l'acheteur (étape 2) — pour remplacer le visuel
               marketing sans toucher au fichier vendu.
             </p>
-            <CodeBlock>{`curl -X PUT https://diarra.abmcy.com/api/automation/products/{id}/cover \\
+            <CodeBlock>{`curl -X PUT https://origin.abmcy.com/api/automation/products/{id}/cover \\
   -H "X-Automation-Key: ${key || '<votre_cle>'}" \\
   -F "file=@/chemin/vers/nouvelle-cover.png"`}</CodeBlock>
           </div>

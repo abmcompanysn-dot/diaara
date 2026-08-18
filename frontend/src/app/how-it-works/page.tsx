@@ -1,6 +1,12 @@
 import Link from 'next/link';
 import { CheckIcon } from '@/components/icons';
 
+export const metadata = {
+  title: 'Comment ça marche',
+  description:
+    'Achat, vente, paiement mobile money, livraison sécurisée : le fonctionnement de DIARRA expliqué étape par étape, côté acheteur comme côté vendeur.',
+};
+
 const BUYER_STEPS = [
   {
     num: '01',

@@ -19,7 +19,7 @@ export default function MentionsLegalesPage() {
         <div>
           <h2 className="font-display font-bold text-xl text-green-950 mb-2">Éditeur du site</h2>
           <p>
-            Le site DIARRA (diarra.abmcy.com) est édité par <strong>ATEKOSSI BRUNEL MAHUZONSOU</strong>,
+            Le site DIARRA (diarra.app) est édité par <strong>ATEKOSSI BRUNEL MAHUZONSOU</strong>,
             entreprise individuelle immatriculée au Sénégal.
           </p>
           <ul className="mt-3 space-y-1">

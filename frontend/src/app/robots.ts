@@ -4,7 +4,7 @@ import type { MetadataRoute } from 'next';
 // donc être générée au build plutôt qu'à la demande.
 export const dynamic = 'force-static';
 
-const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || 'https://diarra.abmcy.com').replace(/\/$/, '');
+const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || 'https://diarra.app').replace(/\/$/, '');
 
 export default function robots(): MetadataRoute.Robots {
   return {
