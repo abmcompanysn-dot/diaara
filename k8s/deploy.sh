@@ -7,10 +7,16 @@ set -eu
 export KUBECONFIG=/etc/rancher/k3s/k3s.yaml
 
 echo "== Build backend =="
-docker build -t diarra-backend:latest ./backend
+# timeout : un build Docker qui reste accroché (observé plusieurs fois sur
+# ce VPS partagé, typiquement sur l'installation de paquets système via
+# apk sous forte charge disque/réseau) sature le nœud pendant des dizaines
+# de minutes et fait planter tout le cluster (CoreDNS, ingress, etc.) en
+# cascade. Un échec propre au bout de 8 min vaut largement mieux qu'un
+# blocage silencieux qui coupe le site.
+timeout 480 docker build -t diarra-backend:latest ./backend
 
 echo "== Build frontend =="
-docker build -t diarra-frontend:latest ./frontend \
+timeout 300 docker build -t diarra-frontend:latest ./frontend \
   --build-arg NEXT_PUBLIC_API_URL="${NEXT_PUBLIC_API_URL:-https://diarra.abmcy.com}" \
   --build-arg NEXT_PUBLIC_WS_URL="${NEXT_PUBLIC_WS_URL:-wss://diarra.abmcy.com}" \
   --build-arg NEXT_PUBLIC_SITE_URL="${NEXT_PUBLIC_SITE_URL:-https://diarra.abmcy.com}"
