@@ -17,9 +17,11 @@ metadata:
     # X-Forwarded-Proto à partir de SA PROPRE connexion (http), donc le
     # backend croit être servi en HTTP et construit des URLs d'image
     # http:// dans sitemap.xml/flux Google Merchant (voir requestOrigin,
-    # feed_handler.go) au lieu de https://.
-    nginx.ingress.kubernetes.io/configuration-snippet: |
-      proxy_set_header X-Forwarded-Proto "https";
+    # feed_handler.go) au lieu de https://. configuration-snippet est
+    # désactivé sur ce contrôleur (durcissement sécurité) — proxy-set-headers
+    # (référence un ConfigMap dédié, voir headers-configmap.yaml) reste
+    # disponible et n'a pas cette restriction.
+    nginx.ingress.kubernetes.io/proxy-set-headers: "diarra/backend-proxy-headers"
 spec:
   ingressClassName: nginx
   rules:

@@ -24,6 +24,7 @@ docker save diarra-backend:latest | k3s ctr images import -
 echo "== Application des manifests =="
 kubectl apply -f k8s/namespace.yaml
 kubectl apply -f k8s/configmap.yaml
+kubectl apply -f k8s/headers-configmap.yaml
 kubectl apply -f k8s/postgres.yaml
 kubectl apply -f k8s/redis.yaml
 kubectl apply -f k8s/minio.yaml

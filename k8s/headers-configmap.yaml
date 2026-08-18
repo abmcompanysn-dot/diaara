@@ -1,0 +1,11 @@
+# Référencé par l'annotation nginx.ingress.kubernetes.io/proxy-set-headers
+# de ingress.yaml — configuration-snippet est désactivé sur ce contrôleur
+# (durcissement sécurité), ce ConfigMap est le mécanisme prévu à la place
+# pour forcer des en-têtes vers le backend.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: backend-proxy-headers
+  namespace: diarra
+data:
+  X-Forwarded-Proto: "https"
