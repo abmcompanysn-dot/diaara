@@ -15,21 +15,20 @@
   },
 
   "vars": {
-    // URL du backend Go hébergé sur Render (free tier).
-    "BACKEND_URL": "https://diarra-backend.onrender.com"
+    // Backend Go sur le VPS, atteint via un sous-domaine dédié NON proxifié
+    // par Cloudflare (DNS-only) — diarra.abmcy.com est le Worker lui-même
+    // une fois la route branchée, l'utiliser ici créerait une boucle infinie.
+    "BACKEND_URL": "https://origin.abmcy.com"
   },
 
-  // Domaines personnalisés — à configurer au déploiement (ex. diarra.sn).
+  // Route de production — à activer une fois le DNS de abmcy.com basculé
+  // sur Cloudflare (voir plan de migration). Avant ça, déployer et tester
+  // sur le sous-domaine *.workers.dev par défaut.
   // "routes": [
-  //   { "pattern": "diarra.sn", "zone_name": "diarra.sn" }
+  //   { "pattern": "diarra.abmcy.com/*", "zone_name": "abmcy.com" }
   // ],
 
   "kv_namespaces": [
     { "binding": "RATE_LIMITS", "id": "a07ad8fee1694782af048ca6eb17981f" }
-  ],
-
-  // Cron toutes les 5 min : garde l'instance Render (free tier) éveillée.
-  "triggers": {
-    "crons": ["*/5 * * * *"]
-  }
+  ]
 }

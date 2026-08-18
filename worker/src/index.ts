@@ -9,8 +9,17 @@ export default {
     const url = new URL(request.url);
 
     const isReferral = url.pathname.startsWith('/r/');
-    const isApi = url.pathname.startsWith('/api/') || url.pathname.startsWith('/ws/');
-    if (isApi || isReferral) {
+    // /p/ (partage Open Graph par produit), /feed/ et /sitemap.xml sont
+    // générés dynamiquement par le backend Go (voir Caddyfile du VPS) —
+    // sans ça ils tombent sur env.ASSETS.fetch et cassent silencieusement
+    // le partage produit + le sitemap une fois le Worker en place.
+    const isBackendRoute =
+      url.pathname.startsWith('/api/') ||
+      url.pathname.startsWith('/ws/') ||
+      url.pathname.startsWith('/p/') ||
+      url.pathname.startsWith('/feed/') ||
+      url.pathname === '/sitemap.xml';
+    if (isBackendRoute || isReferral) {
       const isRateLimited = await checkRateLimit(request, env);
       if (isRateLimited) {
         return new Response(JSON.stringify({ error: 'rate_limited' }), {
