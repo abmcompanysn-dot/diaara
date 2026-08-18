@@ -41,6 +41,6 @@
   // ],
 
   "kv_namespaces": [
-    { "binding": "RATE_LIMITS", "id": "a07ad8fee1694782af048ca6eb17981f" }
+    { "binding": "RATE_LIMITS", "id": "7a5a5deb1c6744c2a9740c4c10b52a25" }
   ]
 }
