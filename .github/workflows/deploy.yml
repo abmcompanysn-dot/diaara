@@ -13,6 +13,10 @@ env:
   VPS_HOST: srv1790747.hstgr.cloud
   VPS_USER: root
   VPS_PATH: /home/president/apps/diarra
+  # GitHub Actions interdit de référencer `secrets` directement dans un
+  # `if:` (le workflow entier est rejeté avant même de démarrer, sans
+  # aucun job créé) — passage obligé par `env` puis `env.X` dans les `if:`.
+  HAS_CLOUDFLARE_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
 
 jobs:
   deploy:
@@ -75,7 +79,7 @@ jobs:
       # que si le secret est configuré, pour ne jamais casser le déploiement
       # VPS existant tant que la migration Cloudflare n'est pas activée.
       - name: Build du frontend pour Cloudflare
-        if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+        if: ${{ env.HAS_CLOUDFLARE_TOKEN == 'true' }}
         working-directory: ./frontend
         env:
           # Même origine que le domaine servi par le Worker (diarra.app) :
@@ -90,7 +94,7 @@ jobs:
           npm run build
 
       - name: Déploiement Cloudflare Worker (frontend)
-        if: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
+        if: ${{ env.HAS_CLOUDFLARE_TOKEN == 'true' }}
         env:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
         working-directory: ./worker
