@@ -199,6 +199,7 @@ func (h *FeedHandler) Sitemap(w http.ResponseWriter, r *http.Request) {
 		{Loc: base + "/catalog", ChangeFreq: "daily", Priority: "0.9"},
 		{Loc: base + "/how-it-works", ChangeFreq: "monthly", Priority: "0.5"},
 		{Loc: base + "/sell", ChangeFreq: "monthly", Priority: "0.6"},
+		{Loc: base + "/faq", ChangeFreq: "monthly", Priority: "0.5"},
 		{Loc: base + "/mentions-legales", ChangeFreq: "yearly", Priority: "0.1"},
 		{Loc: base + "/confidentialite", ChangeFreq: "yearly", Priority: "0.1"},
 		{Loc: base + "/cgu", ChangeFreq: "yearly", Priority: "0.1"},

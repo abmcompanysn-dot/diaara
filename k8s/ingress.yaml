@@ -12,6 +12,14 @@ metadata:
     nginx.ingress.kubernetes.io/proxy-body-size: "50m" # upload produit jusqu'à 50 Mo, voir ProductHandler.Upload
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600" # WebSocket temps réel (commandes, modération)
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    # Caddy (devant, TLS auto) parle à ce NodePort en clair (127.0.0.1:30080,
+    # trafic local à la VM) — sans ceci, ingress-nginx régénère
+    # X-Forwarded-Proto à partir de SA PROPRE connexion (http), donc le
+    # backend croit être servi en HTTP et construit des URLs d'image
+    # http:// dans sitemap.xml/flux Google Merchant (voir requestOrigin,
+    # feed_handler.go) au lieu de https://.
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header X-Forwarded-Proto "https";
 spec:
   ingressClassName: nginx
   rules:
