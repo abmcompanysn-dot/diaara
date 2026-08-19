@@ -21,6 +21,15 @@ export function Footer() {
               Le marché des biens numériques en Afrique. Payez en mobile money, recevez
               instantanément.
             </p>
+            <a
+              href="https://www.google.com/maps/search/?api=1&query=M%C3%A9dina%2C+Rue+13+x+12%2C+Dakar%2C+S%C3%A9n%C3%A9gal"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-4 flex items-start gap-1.5 text-xs text-white/50 hover:text-green-300 transition-colors"
+            >
+              <span aria-hidden>📍</span>
+              <span>Médina, Rue 13 x 12, Dakar, Sénégal — voir l&apos;itinéraire</span>
+            </a>
           </div>
           <div>
             <p className="font-semibold text-green-300 mb-3 text-sm">Acheter</p>

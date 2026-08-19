@@ -40,6 +40,16 @@ const organizationJsonLd = {
   alternateName: 'Diarra',
   url: SITE_URL,
   description: SITE_DESCRIPTION,
+  // Siège de l'éditeur (MAHU, voir mentions-legales) — DIARRA reste une
+  // marketplace 100 % en ligne, pas un commerce physique : on garde le
+  // type Organization (LocalBusiness impliquerait un lieu que les clients
+  // visitent, ce qui ne correspond pas à l'activité).
+  address: {
+    '@type': 'PostalAddress',
+    streetAddress: 'Médina, Rue 13 x 12',
+    addressLocality: 'Dakar',
+    addressCountry: 'SN',
+  },
 };
 
 const websiteJsonLd = {
