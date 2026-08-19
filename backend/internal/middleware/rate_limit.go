@@ -57,6 +57,16 @@ func (l *RateLimiter) allow(ctx context.Context, key string) bool {
 
 func (l *RateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// kubelet sonde /health en continu (liveness + readiness, sur les 2
+		// pods) — un 429 ici fait échouer la liveness probe et tue le pod,
+		// provoquant un CrashLoopBackOff (observé en prod le 19/08 : les deux
+		// pods backend tombaient en boucle car /health finissait par
+		// dépasser le quota partagé avec le reste du trafic). La santé du
+		// pod ne doit jamais dépendre de la charge du reste du trafic.
+		if r.URL.Path == "/health" {
+			next.ServeHTTP(w, r)
+			return
+		}
 		ip := clientIP(r)
 		if !l.allow(r.Context(), ip) {
 			w.Header().Set("X-RateLimit-Limit", "40")
