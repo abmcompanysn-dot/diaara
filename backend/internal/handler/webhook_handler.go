@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/diarra/backend/internal/cache"
 	"github.com/diarra/backend/internal/email"
 	"github.com/diarra/backend/internal/model"
 	"github.com/diarra/backend/internal/payment"
@@ -33,6 +34,7 @@ type WebhookHandler struct {
 	notificationRepo *repository.NotificationRepo
 	storage          *storage.S3Storage
 	allowedIPs       map[string]bool
+	cache            *cache.Client
 }
 
 func NewWebhookHandler(
@@ -46,6 +48,7 @@ func NewWebhookHandler(
 	notificationRepo *repository.NotificationRepo,
 	storage *storage.S3Storage,
 	allowedIPs []string,
+	cacheClient *cache.Client,
 ) *WebhookHandler {
 	ips := make(map[string]bool, len(allowedIPs))
 	for _, ip := range allowedIPs {
@@ -63,6 +66,7 @@ func NewWebhookHandler(
 		notificationRepo: notificationRepo,
 		storage:          storage,
 		allowedIPs:       ips,
+		cache:            cacheClient,
 	}
 }
 
@@ -294,6 +298,10 @@ func (h *WebhookHandler) PawaPayWebhook(w http.ResponseWriter, r *http.Request) 
 		if product, err := h.productRepo.FindByID(r.Context(), sale.ProductID); err == nil {
 			h.notify(r.Context(), product.VendorID, "sale", "Nouvelle vente",
 				fmt.Sprintf("%s vient d'acheter « %s » pour %d FCFA.", sale.BuyerName, product.Title, sale.VendorAmountCFA), "/vendor/sales")
+			// La vente vient de créditer ce vendeur : le solde caché
+			// (PayoutHandler.Earnings) serait sinon obsolète jusqu'à
+			// expiration de son TTL (30s).
+			h.cache.Del(r.Context(), vendorBalanceCacheKey(product.VendorID))
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "paid"})

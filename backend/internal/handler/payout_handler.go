@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/diarra/backend/internal/cache"
 	"github.com/diarra/backend/internal/middleware"
 	"github.com/diarra/backend/internal/model"
 	"github.com/diarra/backend/internal/payment"
@@ -21,6 +22,7 @@ type PayoutHandler struct {
 	userRepo     *repository.UserRepo
 	settingsRepo *repository.SettingsRepo
 	pawapay      *payment.PawaPayClient
+	cache        *cache.Client
 
 	// Cache en mémoire des limites de versement par opérateur (PawaPay
 	// Active Configuration) : ces valeurs changent rarement, on évite un
@@ -37,6 +39,7 @@ func NewPayoutHandler(
 	userRepo *repository.UserRepo,
 	settingsRepo *repository.SettingsRepo,
 	pawapay *payment.PawaPayClient,
+	cacheClient *cache.Client,
 ) *PayoutHandler {
 	return &PayoutHandler{
 		payoutRepo:   payoutRepo,
@@ -45,7 +48,15 @@ func NewPayoutHandler(
 		userRepo:     userRepo,
 		settingsRepo: settingsRepo,
 		pawapay:      pawapay,
+		cache:        cacheClient,
 	}
+}
+
+// vendorBalanceCacheKey — même package que webhook_handler.go, qui invalide
+// cette clé quand une vente passe "paid" (voir Earnings, qui l'alimente, et
+// Create, qui l'invalide aussi après un versement).
+func vendorBalanceCacheKey(vendorID string) string {
+	return "vendor:balance:" + vendorID
 }
 
 // GetPayoutMethod — GET /api/vendor/payout-method
@@ -141,6 +152,18 @@ func (h *PayoutHandler) Earnings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Endpoint d'affichage seulement — la demande de versement elle-même
+	// (Create, plus bas) recalcule toujours totalEarned() en direct sur la
+	// base, donc un solde caché ici ne peut jamais permettre un retrait
+	// au-delà du solde réel.
+	cacheKey := vendorBalanceCacheKey(userID)
+	var cached map[string]interface{}
+	if hit, _ := h.cache.GetJSON(r.Context(), cacheKey, &cached); hit {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(cached)
+		return
+	}
+
 	// Total gagné par le vendeur (somme des vendor_amount_cfa sur les ventes payées)
 	totalEarned, err := h.totalEarned(r.Context(), userID)
 	if err != nil {
@@ -167,14 +190,17 @@ func (h *PayoutHandler) Earnings(w http.ResponseWriter, r *http.Request) {
 		available = 0
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	earnings := map[string]interface{}{
 		"total_earned": totalEarned,
 		"available":    available,
 		"pending":      requested,
 		"history":      payouts,
 		"tier":         model.VendorTier(totalEarned),
-	})
+	}
+	h.cache.SetJSON(r.Context(), cacheKey, earnings, 30*time.Second)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(earnings)
 }
 
 // Limits — GET /api/vendor/payout-limits
@@ -277,6 +303,7 @@ func (h *PayoutHandler) Create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"payout_creation_failed"}`, http.StatusInternalServerError)
 		return
 	}
+	h.cache.Del(r.Context(), vendorBalanceCacheKey(userID))
 
 	// Déclenche le versement mobile money PawaPay (asynchrone, comme le checkout).
 	if h.pawapay != nil {

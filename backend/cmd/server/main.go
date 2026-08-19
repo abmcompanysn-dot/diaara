@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/diarra/backend/internal/auth"
+	"github.com/diarra/backend/internal/cache"
 	"github.com/diarra/backend/internal/email"
 	"github.com/diarra/backend/internal/handler"
 	"github.com/diarra/backend/internal/middleware"
@@ -81,6 +82,18 @@ func main() {
 	var storageHealthPinger interface{ Ping(context.Context) error }
 	if s3 != nil {
 		storageHealthPinger = s3
+	}
+
+	// Cache Redis (catalogue, stats admin, solde vendeur, rate limiting) —
+	// optionnel comme le stockage S3 ci-dessus : sans REDIS_URL, redisCache
+	// reste un client no-op (voir internal/cache), tout continue de
+	// fonctionner directement sur la base de données, juste sans mise en cache.
+	redisCache, err := cache.New(os.Getenv("REDIS_URL"))
+	if err != nil {
+		log.Fatalf("REDIS_URL invalide: %v", err)
+	}
+	if os.Getenv("REDIS_URL") == "" {
+		log.Println("WARNING: cache Redis non configuré, fonctionne sans mise en cache")
 	}
 
 	// Repositories
@@ -194,11 +207,11 @@ func main() {
 	// Handlers
 	healthHandler := handler.NewHealthHandler(pool)
 	authHandler := handler.NewAuthHandler(authService, firebaseVerifier)
-	productHandler := handler.NewProductHandler(productRepo, userRepo, saleRepo, storageService, os.Getenv("FRONTEND_URL"))
+	productHandler := handler.NewProductHandler(productRepo, userRepo, saleRepo, storageService, os.Getenv("FRONTEND_URL"), redisCache)
 	saleHandler := handler.NewSaleHandler(saleRepo, productRepo, referralRepo, userRepo, settingsRepo, pawapay, notifications, os.Getenv("FRONTEND_URL"))
 	closerHandler := handler.NewCloserHandler(referralRepo, productRepo, os.Getenv("FRONTEND_URL"))
 	bundleHandler := handler.NewBundleHandler(bundleRepo, productRepo)
-	webhookHandler := handler.NewWebhookHandler(saleRepo, userRepo, productRepo, payoutRepo, pawapay, donationService, notifications, notificationRepo, s3, allowedIPs)
+	webhookHandler := handler.NewWebhookHandler(saleRepo, userRepo, productRepo, payoutRepo, pawapay, donationService, notifications, notificationRepo, s3, allowedIPs, redisCache)
 	feedHandler := handler.NewFeedHandler(productRepo, os.Getenv("FRONTEND_URL"))
 	donationHandler := handler.NewDonationHandler(donationRepo, settingsRepo, donationService)
 
@@ -216,7 +229,7 @@ func main() {
 	}
 
 	// Versements & revenus vendeur
-	payoutHandler := handler.NewPayoutHandler(payoutRepo, saleRepo, productRepo, userRepo, settingsRepo, pawapay)
+	payoutHandler := handler.NewPayoutHandler(payoutRepo, saleRepo, productRepo, userRepo, settingsRepo, pawapay, redisCache)
 
 	// Support tickets
 	ticketRepo := repository.NewTicketRepo(pool)
@@ -228,13 +241,13 @@ func main() {
 	supportContactHandler := handler.NewSupportContactHandler(supportContactRepo, notifications)
 
 	// Administration
-	adminHandler := handler.NewAdminHandler(productRepo, saleRepo, userRepo, referralRepo, adminPermRepo, payoutRepo, settingsRepo, ticketRepo, pool, storageHealthPinger, startTime, pawapay, notifications)
+	adminHandler := handler.NewAdminHandler(productRepo, saleRepo, userRepo, referralRepo, adminPermRepo, payoutRepo, settingsRepo, ticketRepo, pool, storageHealthPinger, startTime, pawapay, notifications, redisCache)
 
 	r := chi.NewRouter()
 
 	r.Use(chimw.Logger)
 	r.Use(chimw.Recoverer)
-	r.Use(middleware.NewRateLimiter(10, 40).Middleware)
+	r.Use(middleware.NewRateLimiter(redisCache, 10, 40).Middleware)
 	r.Use(middleware.SecurityHeaders)
 
 	// CORS restrictif (ne plus utiliser "*" avec credentials)
@@ -258,7 +271,7 @@ func main() {
 	// les 5s en régime soutenu) avec une rafale de 8 laisse une marge pour un
 	// utilisateur qui se trompe plusieurs fois de suite, sans laisser un
 	// script tenter des centaines de mots de passe par minute.
-	authRateLimiter := middleware.NewRateLimiter(0.2, 8)
+	authRateLimiter := middleware.NewRateLimiter(redisCache, 0.2, 8)
 	r.Route("/api/auth", func(r chi.Router) {
 		r.Use(authRateLimiter.Middleware)
 		r.Post("/register", authHandler.Register)

@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/diarra/backend/internal/cache"
 	"github.com/diarra/backend/internal/middleware"
 	"github.com/diarra/backend/internal/model"
 	"github.com/diarra/backend/internal/preview"
@@ -29,6 +30,7 @@ type ProductHandler struct {
 	saleRepo    *repository.SaleRepo
 	storage     StorageService
 	frontendURL string
+	cache       *cache.Client
 }
 
 // StorageService est l'interface minimale dont le handler a besoin.
@@ -38,8 +40,8 @@ type StorageService interface {
 	GenerateSignedURL(ctx context.Context, key string, expiry time.Duration) (string, error)
 }
 
-func NewProductHandler(productRepo *repository.ProductRepo, userRepo *repository.UserRepo, saleRepo *repository.SaleRepo, storage StorageService, frontendURL string) *ProductHandler {
-	return &ProductHandler{productRepo: productRepo, userRepo: userRepo, saleRepo: saleRepo, storage: storage, frontendURL: frontendURL}
+func NewProductHandler(productRepo *repository.ProductRepo, userRepo *repository.UserRepo, saleRepo *repository.SaleRepo, storage StorageService, frontendURL string, cacheClient *cache.Client) *ProductHandler {
+	return &ProductHandler{productRepo: productRepo, userRepo: userRepo, saleRepo: saleRepo, storage: storage, frontendURL: frontendURL, cache: cacheClient}
 }
 
 // Shop — GET /api/vendors/{id}/shop (public). Boutique publique d'un
@@ -97,10 +99,20 @@ func (h *ProductHandler) List(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	products, err := h.productRepo.ListApproved(r.Context(), category, search, limit, offset)
-	if err != nil {
-		http.Error(w, `{"error":"list_failed"}`, http.StatusInternalServerError)
-		return
+	// Page la plus visitée du site : mise en cache 60s. Pas d'invalidation à
+	// l'approbation d'un nouveau produit — délai volontairement accepté pour
+	// rester simple, le catalogue n'est pas temps-réel critique.
+	cacheKey := fmt.Sprintf("catalog:%s:%s:%d:%d", category, search, limit, offset)
+	var products []*model.Product
+	hit, _ := h.cache.GetJSON(r.Context(), cacheKey, &products)
+	if !hit {
+		var err error
+		products, err = h.productRepo.ListApproved(r.Context(), category, search, limit, offset)
+		if err != nil {
+			http.Error(w, `{"error":"list_failed"}`, http.StatusInternalServerError)
+			return
+		}
+		h.cache.SetJSON(r.Context(), cacheKey, products, 60*time.Second)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -190,6 +202,7 @@ func (h *ProductHandler) Upload(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"invalid_cover_image_type"}`, http.StatusBadRequest)
 			return
 		}
+		data = compressCoverImage(data)
 		key = "covers/" + key
 	}
 	if err := h.storage.Upload(r.Context(), key, data); err != nil {
@@ -542,7 +555,7 @@ func (h *ProductHandler) AutoCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		coverKey := "covers/" + key
-		if err := h.storage.Upload(r.Context(), coverKey, data); err != nil {
+		if err := h.storage.Upload(r.Context(), coverKey, compressCoverImage(data)); err != nil {
 			http.Error(w, `{"error":"upload_failed"}`, http.StatusInternalServerError)
 			return
 		}
@@ -621,7 +634,7 @@ func (h *ProductHandler) AttachFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	coverKey := "covers/" + key
-	if err := h.storage.Upload(r.Context(), coverKey, data); err != nil {
+	if err := h.storage.Upload(r.Context(), coverKey, compressCoverImage(data)); err != nil {
 		http.Error(w, `{"error":"upload_failed"}`, http.StatusInternalServerError)
 		return
 	}
@@ -732,7 +745,7 @@ func (h *ProductHandler) UpdateAutomationCover(w http.ResponseWriter, r *http.Re
 	}
 
 	coverKey := "covers/" + storage.NewFileKey(product.VendorID, header.Filename)
-	if err := h.storage.Upload(r.Context(), coverKey, data); err != nil {
+	if err := h.storage.Upload(r.Context(), coverKey, compressCoverImage(data)); err != nil {
 		http.Error(w, `{"error":"upload_failed"}`, http.StatusInternalServerError)
 		return
 	}

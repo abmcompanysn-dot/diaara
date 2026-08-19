@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/diarra/backend/internal/auth"
+	"github.com/diarra/backend/internal/cache"
 	"github.com/diarra/backend/internal/email"
 	"github.com/diarra/backend/internal/middleware"
 	"github.com/diarra/backend/internal/model"
@@ -38,6 +39,7 @@ type AdminHandler struct {
 	startTime     time.Time
 	pawapay       *payment.PawaPayClient
 	notifications *email.NotificationService // nil si aucun fournisseur email configuré
+	cache         *cache.Client
 }
 
 func NewAdminHandler(
@@ -54,6 +56,7 @@ func NewAdminHandler(
 	startTime time.Time,
 	pawapay *payment.PawaPayClient,
 	notifications *email.NotificationService,
+	cacheClient *cache.Client,
 ) *AdminHandler {
 	return &AdminHandler{
 		productRepo:   productRepo,
@@ -69,6 +72,7 @@ func NewAdminHandler(
 		startTime:     startTime,
 		pawapay:       pawapay,
 		notifications: notifications,
+		cache:         cacheClient,
 	}
 }
 
@@ -242,6 +246,14 @@ func (h *AdminHandler) ReactivateUser(w http.ResponseWriter, r *http.Request) {
 
 // Stats — GET /api/admin/stats
 func (h *AdminHandler) Stats(w http.ResponseWriter, r *http.Request) {
+	const cacheKey = "admin:stats"
+	var cached map[string]interface{}
+	if hit, _ := h.cache.GetJSON(r.Context(), cacheKey, &cached); hit {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(cached)
+		return
+	}
+
 	totalSales, err := h.saleRepo.Count(r.Context())
 	if err != nil {
 		http.Error(w, `{"error":"stats_failed"}`, http.StatusInternalServerError)
@@ -290,8 +302,7 @@ func (h *AdminHandler) Stats(w http.ResponseWriter, r *http.Request) {
 		growthPct = 100
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	stats := map[string]interface{}{
 		"total_sales":        totalSales,
 		"total_products":     totalProducts,
 		"pending_moderation": pendingCount,
@@ -305,7 +316,11 @@ func (h *AdminHandler) Stats(w http.ResponseWriter, r *http.Request) {
 		"revenue_this_month": revenueThisMonth,
 		"revenue_last_month": revenueLastMonth,
 		"revenue_growth_pct": growthPct,
-	})
+	}
+	h.cache.SetJSON(r.Context(), cacheKey, stats, 30*time.Second)
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(stats)
 }
 
 // GetSettings — GET /api/admin/settings (scope "finance")

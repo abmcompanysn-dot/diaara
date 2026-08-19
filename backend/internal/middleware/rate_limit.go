@@ -1,55 +1,64 @@
 package middleware
 
 import (
+	"context"
+	"log"
 	"net"
 	"net/http"
-	"sync"
 	"time"
+
+	"github.com/diarra/backend/internal/cache"
 )
 
-type bucket struct {
-	tokens float64
-	last   time.Time
-}
-
+// RateLimiter — compteur à fenêtre fixe dans Redis (INCR + EXPIRE au premier
+// coup), plutôt qu'un token-bucket en mémoire du process : indispensable
+// pour rester valable si le backend tourne un jour sur plusieurs instances
+// (voir DIARRA_CLAUDE.md §5.11, "jamais en mémoire locale du process").
+//
+// Sans REDIS_URL configuré (cacheClient no-op, voir internal/cache), la
+// limitation est simplement désactivée plutôt que de retomber sur un
+// comportement local incohérent entre instances — comme le reste des
+// intégrations optionnelles du projet (S3, email...).
+//
+// Fail-open explicite : si Redis répond une erreur (indisponible, timeout),
+// la requête passe quand même — la disponibilité du site prime sur la
+// stricte limitation en cas de panne du cache.
 type RateLimiter struct {
-	mu      sync.Mutex
-	buckets map[string]*bucket
-	rate    float64
-	burst   float64
+	cache *cache.Client
+	rate  float64
+	burst float64
+	// window — durée sur laquelle "burst" requêtes sont autorisées, dérivée
+	// de rate/burst pour approximer le même débit soutenu qu'un token-bucket
+	// continu (ex. 0.2 req/s, burst 8 -> fenêtre de 40s).
+	window time.Duration
 }
 
-func NewRateLimiter(rate, burst float64) *RateLimiter {
+func NewRateLimiter(cacheClient *cache.Client, rate, burst float64) *RateLimiter {
 	return &RateLimiter{
-		buckets: make(map[string]*bucket),
-		rate:    rate,
-		burst:   burst,
+		cache:  cacheClient,
+		rate:   rate,
+		burst:  burst,
+		window: time.Duration(burst / rate * float64(time.Second)),
 	}
 }
 
-func (l *RateLimiter) allow(key string) bool {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	now := time.Now()
-	b, ok := l.buckets[key]
-	if !ok {
-		b = &bucket{tokens: l.burst, last: now}
-		l.buckets[key] = b
+func (l *RateLimiter) allow(ctx context.Context, key string) bool {
+	count, err := l.cache.IncrWithExpire(ctx, "ratelimit:"+key, l.window)
+	if err != nil {
+		log.Printf("WARNING: rate limiter Redis indisponible, requête laissée passer: %v", err)
+		return true
 	}
-	elapsed := now.Sub(b.last).Seconds()
-	b.tokens = min(b.tokens+elapsed*l.rate, l.burst)
-	b.last = now
-	if b.tokens < 1 {
-		return false
+	// count == 0 : cache no-op (REDIS_URL absent) — limitation désactivée.
+	if count == 0 {
+		return true
 	}
-	b.tokens--
-	return true
+	return count <= int64(l.burst)
 }
 
 func (l *RateLimiter) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		ip := clientIP(r)
-		if !l.allow(ip) {
+		if !l.allow(r.Context(), ip) {
 			w.Header().Set("X-RateLimit-Limit", "40")
 			http.Error(w, `{"error":"too_many_requests"}`, http.StatusTooManyRequests)
 			return
