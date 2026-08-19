@@ -162,6 +162,19 @@ export default function AdminAutomationPage() {
   -H "X-Automation-Key: ${key || '<votre_cle>'}" \\
   -H "Content-Type: application/json" \\
   -d '{"title": "Nouveau titre", "price_cfa": 6000}'`}</CodeBlock>
+            <p className="text-sm text-green-900/70 mt-3 mb-2">
+              Pour tout changer en un seul appel — champs texte, fichier livré et couverture —
+              utilisez plutôt cette même route en <code>multipart/form-data</code> :
+            </p>
+            <CodeBlock>{`curl -X PUT https://origin.abmcy.com/api/automation/products/{id} \\
+  -H "X-Automation-Key: ${key || '<votre_cle>'}" \\
+  -F "title=Nouveau titre" \\
+  -F "price_cfa=6000" \\
+  -F "file=@/chemin/vers/nouveau-fichier.pdf" \\
+  -F "cover=@/chemin/vers/nouvelle-cover.png"`}</CodeBlock>
+            <p className="text-xs text-green-900/50 mt-2">
+              Tous les champs sont optionnels et indépendants : n&apos;envoyez que ceux à changer.
+            </p>
           </div>
 
           <div>

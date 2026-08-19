@@ -661,9 +661,17 @@ func (h *ProductHandler) AttachFile(w http.ResponseWriter, r *http.Request) {
 
 // UpdateAutomation — PUT /api/automation/products/{id}. Modifie les champs
 // d'un produit déjà créé via l'automatisation (titre, prix, description,
-// catégorie...) — mêmes règles qu'une modification vendeur normale : un
-// produit déjà approuvé repasse en attente (le contenu a changé, il doit
-// être revalidé avant de redevenir visible).
+// catégorie, fichier livré, couverture...) — mêmes règles qu'une
+// modification vendeur normale : un produit déjà approuvé repasse en
+// attente (le contenu a changé, il doit être revalidé avant de redevenir
+// visible).
+//
+// Accepte deux formats de requête :
+//   - application/json : uniquement les champs texte (comme avant).
+//   - multipart/form-data : les mêmes champs texte EN PLUS d'un fichier
+//     "file" (le livrable, remplace FileKey) et/ou "cover" (l'image de
+//     couverture, remplace CoverImageKey) — pour tout changer en un seul
+//     appel plutôt que d'enchaîner cet endpoint puis /file puis /cover.
 func (h *ProductHandler) UpdateAutomation(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
@@ -674,7 +682,72 @@ func (h *ProductHandler) UpdateAutomation(w http.ResponseWriter, r *http.Request
 	}
 
 	var input model.UpdateProductInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+	fileChanged := false
+
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") {
+		if err := r.ParseMultipartForm(50 << 20); err != nil { // 50MB max
+			http.Error(w, `{"error":"file_too_large"}`, http.StatusBadRequest)
+			return
+		}
+		if v := r.FormValue("title"); v != "" {
+			input.Title = &v
+		}
+		if v := r.FormValue("description"); v != "" {
+			input.Description = &v
+		}
+		if v := r.FormValue("category"); v != "" {
+			input.Category = &v
+		}
+		if v := r.FormValue("price_cfa"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				input.PriceCFA = &n
+			}
+		}
+		if v := r.FormValue("price_mode"); v != "" {
+			input.PriceMode = &v
+		}
+		if v := r.FormValue("min_price_cfa"); v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				input.MinPriceCFA = &n
+			}
+		}
+
+		if h.storage != nil {
+			if file, header, err := r.FormFile("file"); err == nil {
+				defer file.Close()
+				data, err := io.ReadAll(file)
+				if err != nil {
+					http.Error(w, `{"error":"read_failed"}`, http.StatusInternalServerError)
+					return
+				}
+				key := storage.NewFileKey(product.VendorID, header.Filename)
+				if err := h.storage.Upload(r.Context(), key, data); err != nil {
+					http.Error(w, `{"error":"upload_failed"}`, http.StatusInternalServerError)
+					return
+				}
+				input.FileKey = &key
+				fileChanged = true
+			}
+			if file, header, err := r.FormFile("cover"); err == nil {
+				defer file.Close()
+				data, err := io.ReadAll(file)
+				if err != nil {
+					http.Error(w, `{"error":"read_failed"}`, http.StatusInternalServerError)
+					return
+				}
+				if !validCoverImage(data) {
+					http.Error(w, `{"error":"invalid_cover_image_type"}`, http.StatusBadRequest)
+					return
+				}
+				coverKey := "covers/" + storage.NewFileKey(product.VendorID, header.Filename)
+				if err := h.storage.Upload(r.Context(), coverKey, compressCoverImage(data)); err != nil {
+					http.Error(w, `{"error":"upload_failed"}`, http.StatusInternalServerError)
+					return
+				}
+				input.CoverImageKey = &coverKey
+			}
+		}
+	} else if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
 		return
 	}
@@ -702,6 +775,10 @@ func (h *ProductHandler) UpdateAutomation(w http.ResponseWriter, r *http.Request
 			return
 		}
 		updated.ModerationStatus = "pending"
+	}
+
+	if fileChanged {
+		go h.generatePreview(product.VendorID, id, *input.FileKey)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
