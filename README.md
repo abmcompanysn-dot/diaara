@@ -4,6 +4,11 @@ Plateforme de vente de fichiers numériques (PDF, formations, templates…) avec
 achat en mobile money (PawaPay), affiliation (« closer »), modération admin et
 livraison sécurisée par URL signée.
 
+**Domaines** : `diarra.app` (frontend, Cloudflare Worker) et `abmcy.com` /
+`diarra.abmcy.com` / `origin.abmcy.com` (backend + mail Mailcow, VPS) sont
+des propriétés de l'entreprise **MAHU** — à ne pas confondre avec `mahu.app`,
+un autre produit de la même entreprise, dans un dépôt séparé.
+
 ## Architecture
 
 **Déploiement actuel : 100 % auto-hébergé sur VPS (Docker + Caddy), sans Cloudflare.**
