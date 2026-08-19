@@ -374,7 +374,12 @@ func (h *ProductHandler) Share(w http.ResponseWriter, r *http.Request) {
 	} else if r.TLS == nil {
 		scheme = "http"
 	}
-	shareURL := fmt.Sprintf("%s://%s/p/%s", scheme, r.Host, id)
+	// og:url doit être l'adresse publique canonique (diarra.app) — pas
+	// r.Host, qui reflète l'hôte interne ayant reçu la requête
+	// (origin.abmcy.com quand le Worker Cloudflare proxifie /p/*), sans
+	// quoi la carte de partage affiche une URL différente de celle
+	// réellement partagée par l'utilisateur.
+	shareURL := fmt.Sprintf("%s/p/%s", strings.TrimSuffix(h.frontendURL, "/"), id)
 
 	// WhatsApp/Facebook n'ont pas d'emplacement dédié pour product:price:*
 	// dans un aperçu de lien classique (ces balises servent à leurs systèmes

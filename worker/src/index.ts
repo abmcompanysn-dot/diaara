@@ -8,7 +8,14 @@ export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
 
-    const isReferral = url.pathname.startsWith('/r/');
+    // /p/{id} (ProductHandler.Share) redirige les navigateurs réels vers
+    // FRONTEND_URL/product?id=... — qui vaut désormais diarra.app, cette
+    // MÊME zone Worker. En mode redirect:'follow' (utilisé plus bas pour
+    // les autres routes), le Worker essaierait de suivre lui-même cette
+    // redirection en se re-fetchant, ce qui échoue systématiquement en 522
+    // (timeout). Comme /r/ (déjà en 'manual'), /p/ doit juste relayer la
+    // 3xx telle quelle au navigateur, jamais la suivre côté serveur.
+    const isRedirectToBrowser = url.pathname.startsWith('/r/') || url.pathname.startsWith('/p/');
     // /p/ (partage Open Graph par produit), /feed/ et /sitemap.xml sont
     // générés dynamiquement par le backend Go (voir Caddyfile du VPS) —
     // sans ça ils tombent sur env.ASSETS.fetch et cassent silencieusement
@@ -19,7 +26,7 @@ export default {
       url.pathname.startsWith('/p/') ||
       url.pathname.startsWith('/feed/') ||
       url.pathname === '/sitemap.xml';
-    if (isBackendRoute || isReferral) {
+    if (isBackendRoute || isRedirectToBrowser) {
       const isRateLimited = await checkRateLimit(request, env);
       if (isRateLimited) {
         return new Response(JSON.stringify({ error: 'rate_limited' }), {
@@ -36,13 +43,13 @@ export default {
       headers.delete('CF-Connecting-IP');
 
       try {
-        // Pour /r/ on transmet la 302 au navigateur (pas de suivi côté Worker)
-        // afin que l'utilisateur atterrisse sur le produit du frontend.
+        // Pour /r/ et /p/ on transmet la 3xx au navigateur (pas de suivi
+        // côté Worker) — voir le commentaire sur isRedirectToBrowser plus haut.
         const response = await fetch(targetUrl, {
           method: request.method,
           headers,
           body: request.body,
-          redirect: isReferral ? 'manual' : 'follow',
+          redirect: isRedirectToBrowser ? 'manual' : 'follow',
         });
 
         // WebSocket (101 Switching Protocols) : renvoyer la réponse telle quelle,
