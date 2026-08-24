@@ -448,6 +448,12 @@ func (s *AuthService) UpdateProfile(ctx context.Context, userID string, input mo
 	return s.userRepo.SetProfile(ctx, userID, input.DisplayName, input.ShopName)
 }
 
+// UpdateAdTracking enregistre le Facebook Pixel / Google Tag du vendeur
+// (publicité gérée par le vendeur lui-même sur sa boutique DIARRA).
+func (s *AuthService) UpdateAdTracking(ctx context.Context, userID string, input model.UpdateAdTrackingInput) error {
+	return s.userRepo.SetAdTracking(ctx, userID, input)
+}
+
 // AddRole attribue un rôle cumulable (vendeur/closer) à un compte déjà
 // existant — libre-service, sans validation admin (ex: bouton "devenir
 // vendeur" depuis l'espace client).

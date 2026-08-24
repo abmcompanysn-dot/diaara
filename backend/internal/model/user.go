@@ -19,6 +19,8 @@ type User struct {
 	Phone               *string    `json:"phone,omitempty"`
 	DisplayName         *string    `json:"display_name,omitempty"`
 	ShopName            *string    `json:"shop_name,omitempty"`
+	FacebookPixelID     *string    `json:"facebook_pixel_id,omitempty"`
+	GoogleTagID         *string    `json:"google_tag_id,omitempty"`
 	PasswordHash        string     `json:"-"`
 	EmailVerifiedAt     *time.Time `json:"email_verified_at,omitempty"`
 	PhoneVerifiedAt     *time.Time `json:"phone_verified_at,omitempty"`
@@ -46,6 +48,16 @@ type RegisterInput struct {
 type UpdateProfileInput struct {
 	DisplayName *string `json:"display_name,omitempty"`
 	ShopName    *string `json:"shop_name,omitempty"`
+}
+
+// UpdateAdTrackingInput — PUT /api/account/ad-tracking. Chaque vendeur gère
+// sa propre publicité (Facebook Ads, Google Ads) : ces identifiants sont
+// injectés côté frontend sur sa boutique et ses pages produit, pour qu'il
+// voie ses propres visites/conversions dans ses outils pub. Champs vides
+// (chaîne vide) effacent l'identifiant enregistré.
+type UpdateAdTrackingInput struct {
+	FacebookPixelID *string `json:"facebook_pixel_id,omitempty"`
+	GoogleTagID     *string `json:"google_tag_id,omitempty"`
 }
 
 type LoginInput struct {

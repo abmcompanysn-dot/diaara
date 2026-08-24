@@ -9,6 +9,8 @@ export interface User {
   phone?: string | null;
   display_name?: string | null;
   shop_name?: string | null;
+  facebook_pixel_id?: string | null;
+  google_tag_id?: string | null;
   is_admin: boolean;
   roles?: string[];
   email_verified_at?: string | null;

@@ -77,14 +77,43 @@ func (r *UserRepo) SetPayoutMethod(ctx context.Context, userID, phone, operator,
 func (r *UserRepo) FindByID(ctx context.Context, id string) (*model.User, error) {
 	user := &model.User{}
 	err := r.pool.QueryRow(ctx,
-		`SELECT id, email, phone, display_name, shop_name, password_hash, is_admin, email_verified_at, phone_verified_at, failed_login_attempts, locked_until, created_at, updated_at
+		`SELECT id, email, phone, display_name, shop_name, facebook_pixel_id, google_tag_id, password_hash, is_admin, email_verified_at, phone_verified_at, failed_login_attempts, locked_until, created_at, updated_at
 		 FROM users WHERE id = $1`,
 		id,
-	).Scan(&user.ID, &user.Email, &user.Phone, &user.DisplayName, &user.ShopName, &user.PasswordHash, &user.IsAdmin, &user.EmailVerifiedAt, &user.PhoneVerifiedAt, &user.FailedLoginAttempts, &user.LockedUntil, &user.CreatedAt, &user.UpdatedAt)
+	).Scan(&user.ID, &user.Email, &user.Phone, &user.DisplayName, &user.ShopName, &user.FacebookPixelID, &user.GoogleTagID, &user.PasswordHash, &user.IsAdmin, &user.EmailVerifiedAt, &user.PhoneVerifiedAt, &user.FailedLoginAttempts, &user.LockedUntil, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		return nil, ErrUserNotFound
 	}
 	return user, nil
+}
+
+// SetAdTracking enregistre le Facebook Pixel / Google Tag propres au
+// vendeur (publicité qu'il gère lui-même). Mise à jour partielle : un champ
+// nil dans l'input n'écrase pas la valeur existante (contrairement à
+// SetProfile, qui remplace toujours les deux colonnes).
+func (r *UserRepo) SetAdTracking(ctx context.Context, userID string, input model.UpdateAdTrackingInput) error {
+	sets := []string{}
+	args := []interface{}{}
+	argIdx := 1
+
+	if input.FacebookPixelID != nil {
+		sets = append(sets, `facebook_pixel_id = NULLIF($`+itoa(argIdx)+`, '')`)
+		args = append(args, *input.FacebookPixelID)
+		argIdx++
+	}
+	if input.GoogleTagID != nil {
+		sets = append(sets, `google_tag_id = NULLIF($`+itoa(argIdx)+`, '')`)
+		args = append(args, *input.GoogleTagID)
+		argIdx++
+	}
+	if len(sets) == 0 {
+		return nil
+	}
+
+	query := `UPDATE users SET ` + join(sets, ", ") + ` WHERE id = $` + itoa(argIdx)
+	args = append(args, userID)
+	_, err := r.pool.Exec(ctx, query, args...)
+	return err
 }
 
 func (r *UserRepo) IncrementFailedAttempts(ctx context.Context, userID string) error {

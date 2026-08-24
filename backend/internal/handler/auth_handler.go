@@ -236,6 +236,37 @@ func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"user": user})
 }
 
+// UpdateAdTracking — PUT /api/account/ad-tracking. Le vendeur renseigne son
+// propre Facebook Pixel / Google Tag pour suivre ses visites/conversions sur
+// sa boutique et ses pages produit (publicité qu'il gère lui-même).
+func (h *AuthHandler) UpdateAdTracking(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	var input model.UpdateAdTrackingInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+
+	if err := h.authService.UpdateAdTracking(r.Context(), userID, input); err != nil {
+		http.Error(w, `{"error":"ad_tracking_update_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	user, err := h.authService.Me(r.Context(), userID)
+	if err != nil {
+		http.Error(w, `{"error":"me_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"user": user})
+}
+
 // GoogleLogin — POST /api/auth/google. Le frontend authentifie l'utilisateur
 // avec Firebase Auth (bouton "Continuer avec Google") et envoie ici l'ID
 // token obtenu ; le backend le vérifie puis émet une session DIARRA classique

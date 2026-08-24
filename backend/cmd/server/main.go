@@ -292,6 +292,7 @@ func main() {
 		r.Use(middleware.RequireAuth(jwtManager))
 		r.Post("/roles", authHandler.AddRole)
 		r.Put("/profile", authHandler.UpdateProfile)
+		r.Put("/ad-tracking", authHandler.UpdateAdTracking)
 		// Moyen de versement/retrait — ouvert à tout utilisateur connecté (pas
 		// seulement les vendeurs), ex: un client enregistre un numéro pour
 		// recevoir un remboursement. Pas de vérification téléphone requise ici

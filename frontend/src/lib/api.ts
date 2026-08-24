@@ -175,12 +175,23 @@ export const api = {
     return fetchApi<{ products: any[] }>(`/api/products${query ? `?${query}` : ''}`);
   },
 
-  getProduct: (id: string) => fetchApi<{ product: any }>(`/api/products/${id}`),
+  getProduct: (id: string) =>
+    fetchApi<{
+      product: any;
+      vendor_tracking?: { facebook_pixel_id?: string | null; google_tag_id?: string | null };
+    }>(`/api/products/${id}`),
 
   // Boutique publique d'un vendeur (partageable via QR code)
   getVendorShop: (vendorId: string) =>
     fetchApi<{
-      vendor: { id: string; display_name: string | null; shop_name: string | null; tier?: string };
+      vendor: {
+        id: string;
+        display_name: string | null;
+        shop_name: string | null;
+        tier?: string;
+        facebook_pixel_id?: string | null;
+        google_tag_id?: string | null;
+      };
       products: any[];
     }>(`/api/vendors/${vendorId}/shop`, { skipAuth: true }),
 
@@ -338,6 +349,12 @@ export const api = {
 
   updateProfile: (data: { display_name?: string; shop_name?: string }) =>
     fetchApi<{ user: any }>('/api/account/profile', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  updateAdTracking: (data: { facebook_pixel_id?: string; google_tag_id?: string }) =>
+    fetchApi<{ user: any }>('/api/account/ad-tracking', {
       method: 'PUT',
       body: JSON.stringify(data),
     }),

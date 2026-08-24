@@ -31,10 +31,15 @@ export default function VendorAccountPage() {
   const [displayName, setDisplayName] = useState('');
   const [saving, setSaving] = useState(false);
   const [payoutMethod, setPayoutMethod] = useState<PayoutMethod | null>(null);
+  const [facebookPixelId, setFacebookPixelId] = useState('');
+  const [googleTagId, setGoogleTagId] = useState('');
+  const [savingTracking, setSavingTracking] = useState(false);
 
   useEffect(() => {
     setDisplayName(user?.display_name || '');
     setShopName(user?.shop_name || '');
+    setFacebookPixelId(user?.facebook_pixel_id || '');
+    setGoogleTagId(user?.google_tag_id || '');
   }, [user]);
 
   useEffect(() => {
@@ -51,6 +56,19 @@ export default function VendorAccountPage() {
       toast({ variant: 'error', title: 'Échec', description: friendlyError(err) });
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSaveTracking = async () => {
+    setSavingTracking(true);
+    try {
+      await api.updateAdTracking({ facebook_pixel_id: facebookPixelId, google_tag_id: googleTagId });
+      await refresh();
+      toast({ variant: 'success', title: 'Suivi publicitaire mis à jour' });
+    } catch (err: any) {
+      toast({ variant: 'error', title: 'Échec', description: friendlyError(err) });
+    } finally {
+      setSavingTracking(false);
     }
   };
 
@@ -96,6 +114,37 @@ export default function VendorAccountPage() {
             </div>
             <Button size="sm" onClick={handleSaveShop} disabled={saving} className="w-full">
               {saving ? 'Enregistrement…' : 'Enregistrer'}
+            </Button>
+          </div>
+        </div>
+
+        <div>
+          <p className="text-[11px] font-extrabold text-[#4C6459] uppercase tracking-wider mb-2">Publicité</p>
+          <div className="bg-white rounded-2xl border border-green-900/10 p-4 space-y-3">
+            <p className="text-xs text-[#4C6459]">
+              Renseignez vos identifiants pour suivre vos propres visites/conversions sur votre boutique et vos
+              fiches produit dans Facebook Ads et Google Ads.
+            </p>
+            <div className="space-y-1.5">
+              <Label htmlFor="fb-pixel">Facebook Pixel ID</Label>
+              <Input
+                id="fb-pixel"
+                value={facebookPixelId}
+                onChange={(e) => setFacebookPixelId(e.target.value)}
+                placeholder="Ex: 1234567890123456"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="google-tag">Google Tag ID</Label>
+              <Input
+                id="google-tag"
+                value={googleTagId}
+                onChange={(e) => setGoogleTagId(e.target.value)}
+                placeholder="Ex: AW-1234567890 ou G-XXXXXXXXXX"
+              />
+            </div>
+            <Button size="sm" onClick={handleSaveTracking} disabled={savingTracking} className="w-full">
+              {savingTracking ? 'Enregistrement…' : 'Enregistrer'}
             </Button>
           </div>
         </div>

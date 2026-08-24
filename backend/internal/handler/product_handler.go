@@ -72,10 +72,12 @@ func (h *ProductHandler) Shop(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"vendor": map[string]interface{}{
-			"id":           vendor.ID,
-			"display_name": vendor.DisplayName,
-			"shop_name":    vendor.ShopName,
-			"tier":         tier,
+			"id":                vendor.ID,
+			"display_name":      vendor.DisplayName,
+			"shop_name":         vendor.ShopName,
+			"tier":              tier,
+			"facebook_pixel_id": vendor.FacebookPixelID,
+			"google_tag_id":     vendor.GoogleTagID,
 		},
 		"products": products,
 	})
@@ -160,8 +162,16 @@ func (h *ProductHandler) Get(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Pixel/tag pub du vendeur (facultatif, géré par le vendeur lui-même) —
+	// injecté côté frontend sur la page produit, comme sur sa boutique.
+	vendorTracking := map[string]interface{}{}
+	if vendor, err := h.userRepo.FindByID(r.Context(), product.VendorID); err == nil {
+		vendorTracking["facebook_pixel_id"] = vendor.FacebookPixelID
+		vendorTracking["google_tag_id"] = vendor.GoogleTagID
+	}
+
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"product": product})
+	json.NewEncoder(w).Encode(map[string]interface{}{"product": product, "vendor_tracking": vendorTracking})
 }
 
 // Upload — vendeur authentifié, fichier multipart → R2

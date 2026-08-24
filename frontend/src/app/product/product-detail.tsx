@@ -14,6 +14,7 @@ import { firebaseEnabled } from '@/lib/firebase';
 import { ArrowLeftIcon, CheckIcon, LockIcon, ZapIcon, LinkIcon, CopyIcon, DownloadIcon } from '@/components/icons';
 import { CATEGORY_LABELS, PAYMENT_LOGOS } from '@/lib/constants';
 import { generateProductPoster } from '@/lib/generate-poster';
+import { VendorAdPixels } from '@/components/vendor-ad-pixels';
 
 interface Product {
   id: string;
@@ -40,6 +41,10 @@ export default function ProductDetailPage() {
   const id = searchParams.get('id') || '';
   const { user } = useAuth();
   const [product, setProduct] = useState<Product | null>(null);
+  const [vendorTracking, setVendorTracking] = useState<{
+    facebook_pixel_id?: string | null;
+    google_tag_id?: string | null;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
@@ -97,6 +102,7 @@ export default function ProductDetailPage() {
     try {
       const result = await api.getProduct(id);
       setProduct(result.product);
+      setVendorTracking(result.vendor_tracking || null);
     } catch (err) {
       setError('Produit introuvable');
     } finally {
@@ -127,6 +133,10 @@ export default function ProductDetailPage() {
 
   return (
     <main className="bg-paper pb-24 sm:pb-0">
+      <VendorAdPixels
+        facebookPixelId={vendorTracking?.facebook_pixel_id}
+        googleTagId={vendorTracking?.google_tag_id}
+      />
       {/* Bande produit */}
       <section className="gradient-green text-white relative overflow-hidden">
         <div className="grid-pattern absolute inset-0" aria-hidden />

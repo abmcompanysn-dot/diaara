@@ -10,6 +10,7 @@ import { EmptyState } from '@/components/empty-state';
 import { PageLoader } from '@/components/page-loader';
 import { StoreIcon } from '@/components/icons';
 import { VendorTierBadge } from '@/components/vendor-tier-badge';
+import { VendorAdPixels } from '@/components/vendor-ad-pixels';
 import { CATEGORY_LABELS, formatPrice } from '@/lib/constants';
 import { friendlyError } from '@/lib/error-messages';
 
@@ -30,6 +31,8 @@ interface Vendor {
   display_name: string | null;
   shop_name: string | null;
   tier?: string;
+  facebook_pixel_id?: string | null;
+  google_tag_id?: string | null;
 }
 
 export default function BoutiqueView() {
@@ -76,6 +79,7 @@ export default function BoutiqueView() {
 
   return (
     <main className="min-h-screen">
+      <VendorAdPixels facebookPixelId={vendor.facebook_pixel_id} googleTagId={vendor.google_tag_id} />
       <section className="gradient-green text-white relative overflow-hidden">
         <div className="wax-pattern absolute inset-0" aria-hidden />
         <div className="relative max-w-6xl mx-auto px-4 py-10 sm:py-14 text-center">
