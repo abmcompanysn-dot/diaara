@@ -170,6 +170,19 @@ export function Header() {
 
         {/* E-mail + déconnexion : uniquement desktop, le mobile les retrouve dans le tiroir */}
         <div className="flex items-center gap-3">
+          {user && (
+            <Link
+              href={mySpaceHref}
+              aria-label="Mon espace"
+              aria-current={isActive(mySpaceHref) ? 'page' : undefined}
+              className={cn(
+                'md:hidden flex items-center justify-center w-9 h-9 rounded-lg text-white/80 hover:text-green-300 hover:bg-white/10 transition-colors',
+                isActive(mySpaceHref) && 'text-green-300'
+              )}
+            >
+              <HomeIcon size={18} />
+            </Link>
+          )}
           {user && <NotificationBell />}
           {user ? (
             <>
