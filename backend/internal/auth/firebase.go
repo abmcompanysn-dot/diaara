@@ -40,6 +40,10 @@ type FirebaseClaims struct {
 	Email         string `json:"email"`
 	EmailVerified bool   `json:"email_verified"`
 	Name          string `json:"name"`
+	// PhoneNumber — présent (format E.164, ex "+221771234567") quand l'ID
+	// token vient d'une connexion par téléphone (signInWithPhoneNumber côté
+	// frontend), absent pour les autres méthodes (Google, etc.).
+	PhoneNumber string `json:"phone_number"`
 	jwt.RegisteredClaims
 }
 

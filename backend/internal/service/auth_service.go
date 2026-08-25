@@ -325,6 +325,18 @@ func (s *AuthService) VerifyOTP(ctx context.Context, userID, channel, purpose, c
 	}
 }
 
+// VerifyPhoneWithFirebase marque le téléphone de l'utilisateur vérifié à
+// partir d'un numéro confirmé par Firebase Phone Auth (SMS envoyé et
+// vérifié entièrement côté Firebase — le backend ne génère ni n'envoie
+// aucun code lui-même pour ce canal). Remplace le canal SMS de l'ancien
+// flux OTP maison (voir VerifyOTP, toujours utilisé pour l'email).
+func (s *AuthService) VerifyPhoneWithFirebase(ctx context.Context, userID, phoneNumber string) error {
+	if phoneNumber == "" {
+		return ErrInvalidOrExpiredToken
+	}
+	return s.userRepo.SetVerifiedPhone(ctx, userID, phoneNumber)
+}
+
 // SendOTP réémet un code OTP pour le canal demandé (resend).
 func (s *AuthService) SendOTP(ctx context.Context, userID, channel, purpose string) (string, error) {
 	code, err := s.otpService.Issue(ctx, userID, channel, purpose)

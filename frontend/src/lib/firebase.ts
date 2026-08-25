@@ -1,7 +1,16 @@
 'use client';
 
 import { initializeApp, getApps, type FirebaseApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signInAnonymously, type Auth } from 'firebase/auth';
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signInAnonymously,
+  signInWithPhoneNumber,
+  RecaptchaVerifier,
+  type Auth,
+  type ConfirmationResult,
+} from 'firebase/auth';
 import { getFirestore, type Firestore } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -43,6 +52,27 @@ export function firestoreDb(): Firestore {
 export async function signInWithGoogle(): Promise<string> {
   const provider = new GoogleAuthProvider();
   const result = await signInWithPopup(firebaseAuth(), provider);
+  return result.user.getIdToken();
+}
+
+// sendPhoneVerificationCode : envoie un SMS via Firebase (reCAPTCHA invisible
+// requis par Firebase pour limiter les abus) et retourne le ConfirmationResult
+// à passer à confirmPhoneCode une fois le code saisi. containerId doit être
+// l'id d'un <div> vide monté dans la page (ex: "recaptcha-container").
+export async function sendPhoneVerificationCode(phone: string, containerId: string): Promise<ConfirmationResult> {
+  const verifier = new RecaptchaVerifier(firebaseAuth(), containerId, { size: 'invisible' });
+  try {
+    return await signInWithPhoneNumber(firebaseAuth(), phone, verifier);
+  } finally {
+    verifier.clear();
+  }
+}
+
+// confirmPhoneCode : valide le code reçu par SMS et retourne l'ID token
+// Firebase à envoyer au backend (POST /api/auth/verify-phone-firebase) —
+// même principe que signInWithGoogle, Firebase ne sert que de vérificateur.
+export async function confirmPhoneCode(confirmation: ConfirmationResult, code: string): Promise<string> {
+  const result = await confirmation.confirm(code);
   return result.user.getIdToken();
 }
 

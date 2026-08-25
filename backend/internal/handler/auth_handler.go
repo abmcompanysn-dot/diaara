@@ -300,6 +300,51 @@ func (h *AuthHandler) GoogleLogin(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"access_token": result.AccessToken})
 }
 
+// VerifyPhoneFirebase — POST /api/auth/verify-phone-firebase (authentifié).
+// Le frontend vérifie le numéro directement via Firebase Phone Auth
+// (signInWithPhoneNumber + reCAPTCHA, SMS envoyé par Firebase — DIARRA n'a
+// aucun fournisseur SMS à lui) et envoie ici l'ID token obtenu ; le backend
+// le vérifie et marque le téléphone vérifié avec le numéro confirmé par
+// Firebase (remplace le canal "sms" de l'ancien flux OTP maison).
+func (h *AuthHandler) VerifyPhoneFirebase(w http.ResponseWriter, r *http.Request) {
+	if h.firebase == nil {
+		http.Error(w, `{"error":"phone_verification_not_configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+
+	var input model.VerifyPhoneFirebaseInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil || input.IDToken == "" {
+		http.Error(w, `{"error":"id_token_required"}`, http.StatusBadRequest)
+		return
+	}
+
+	claims, err := h.firebase.VerifyIDToken(input.IDToken)
+	if err != nil || claims.PhoneNumber == "" {
+		http.Error(w, `{"error":"invalid_phone_token"}`, http.StatusUnauthorized)
+		return
+	}
+
+	if err := h.authService.VerifyPhoneWithFirebase(r.Context(), userID, claims.PhoneNumber); err != nil {
+		http.Error(w, `{"error":"phone_verification_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	user, err := h.authService.Me(r.Context(), userID)
+	if err != nil {
+		http.Error(w, `{"error":"me_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"user": user})
+}
+
 func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 	cookie, err := r.Cookie("refresh_token")
 	if err != nil {

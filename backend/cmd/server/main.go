@@ -284,6 +284,7 @@ func main() {
 		r.Post("/reset-password", authHandler.ResetPassword)
 		r.With(middleware.RequireAuth(jwtManager)).Post("/send-otp", authHandler.SendOTP)
 		r.With(middleware.RequireAuth(jwtManager)).Post("/verify-otp", authHandler.VerifyOTP)
+		r.With(middleware.RequireAuth(jwtManager)).Post("/verify-phone-firebase", authHandler.VerifyPhoneFirebase)
 		r.With(middleware.RequireAuth(jwtManager)).Get("/me", authHandler.Me)
 	})
 

@@ -3,7 +3,7 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth';
-import { OtpForm } from '@/components/otp-form';
+import { PhoneVerifyForm } from '@/components/phone-verify-form';
 import { AuthShell } from '@/components/auth-shell';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 
@@ -47,14 +47,12 @@ export default function VerifyPhonePage() {
             Vérifiez votre téléphone
           </CardTitle>
           <CardDescription className="text-center text-green-900/60">
-            Un code a été envoyé par SMS au <span className="font-medium">{user.phone}</span>.
+            Nécessaire pour demander un versement sur votre compte mobile money.
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <OtpForm
-            channel="sms"
-            title="Vérifier le téléphone"
-            description="Nécessaire pour demander un versement sur votre compte mobile money."
+          <PhoneVerifyForm
+            phone={user.phone}
             onVerified={() => router.replace('/dashboard')}
             onSkip={() => router.replace('/dashboard')}
             skipLabel="Plus tard"

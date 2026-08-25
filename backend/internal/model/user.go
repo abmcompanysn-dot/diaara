@@ -60,6 +60,12 @@ type UpdateAdTrackingInput struct {
 	GoogleTagID     *string `json:"google_tag_id,omitempty"`
 }
 
+// VerifyPhoneFirebaseInput — POST /api/auth/verify-phone-firebase. IDToken
+// est le jeton Firebase obtenu après signInWithPhoneNumber côté frontend.
+type VerifyPhoneFirebaseInput struct {
+	IDToken string `json:"id_token"`
+}
+
 type LoginInput struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`

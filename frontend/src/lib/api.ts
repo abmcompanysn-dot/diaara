@@ -129,6 +129,12 @@ export const api = {
 
   getMe: () => fetchApi<{ user: any }>('/api/auth/me'),
 
+  verifyPhoneFirebase: (idToken: string) =>
+    fetchApi<{ user: any }>('/api/auth/verify-phone-firebase', {
+      method: 'POST',
+      body: JSON.stringify({ id_token: idToken }),
+    }),
+
   logout: () =>
     fetchApi<void>('/api/auth/logout', {
       method: 'POST',
@@ -245,6 +251,11 @@ export const api = {
     // amount_cfa : uniquement pris en compte si le produit est en prix libre
     // (price_mode "flexible") — ignoré côté serveur pour un produit à prix fixe.
     amount_cfa?: number;
+    // payment_method : "mobile_money" (défaut si absent) | "card" | "paypal".
+    // Carte et PayPal passent toujours par KPay côté serveur (PawaPay ne les
+    // supporte pas) ; mobile_money est routé PawaPay/KPay selon le réglage
+    // admin par pays (voir CheckoutProviderSettingKey côté backend).
+    payment_method?: 'mobile_money' | 'card' | 'paypal';
   }) =>
     // Pas de skipAuth ici : la route accepte les invités (guest checkout)
     // mais doit recevoir le token si l'acheteur est connecté, sinon le

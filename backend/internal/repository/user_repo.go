@@ -156,6 +156,19 @@ func (r *UserRepo) VerifyPhone(ctx context.Context, userID string) error {
 	return err
 }
 
+// SetVerifiedPhone enregistre le numéro confirmé par Firebase Phone Auth et
+// le marque vérifié en une seule opération — le numéro E.164 renvoyé par
+// Firebase remplace celui saisi librement à l'inscription (potentiellement
+// mal formaté), puisque Firebase vient de prouver que l'utilisateur le
+// possède réellement.
+func (r *UserRepo) SetVerifiedPhone(ctx context.Context, userID, phone string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE users SET phone = $2, phone_verified_at = NOW(), updated_at = NOW() WHERE id = $1`,
+		userID, phone,
+	)
+	return err
+}
+
 func (r *UserRepo) CreateEmailVerification(ctx context.Context, userID, tokenHash string, expiresAt time.Time) error {
 	_, err := r.pool.Exec(ctx,
 		`INSERT INTO email_verifications (user_id, token_hash, expires_at) VALUES ($1, $2, $3)`,
