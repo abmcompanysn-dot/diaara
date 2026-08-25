@@ -6,7 +6,7 @@ import { useEffect, useRef } from 'react';
 import { useAuth } from '@/lib/auth';
 import { useMobileMenu } from '@/lib/mobile-menu-context';
 import { Button } from '@/components/ui/button';
-import { CartIcon, HomeIcon, StoreIcon, WalletIcon, ShieldIcon, HeadsetIcon, ZapIcon, MegaphoneIcon, UserIcon } from '@/components/icons';
+import { CartIcon, HomeIcon, StoreIcon, WalletIcon, ShieldIcon, HeadsetIcon, ZapIcon, MegaphoneIcon, UserIcon, MessageIcon } from '@/components/icons';
 import { MenuIcon, XIcon, ChevronRightIcon } from '@/components/icons';
 import { NotificationBell } from '@/components/notification-bell';
 import { cn } from '@/lib/utils';
@@ -85,6 +85,7 @@ export function Header() {
             { href: '/admin/automation', label: 'Automatisation', Icon: ZapIcon },
             { href: '/admin/donations', label: 'Fidélisation', Icon: WalletIcon },
             { href: '/admin/support-agents', label: 'Contact support', Icon: HeadsetIcon },
+            { href: '/admin/broadcast', label: 'Diffusion email', Icon: MessageIcon },
           ]
         : [],
     },

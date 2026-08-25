@@ -428,6 +428,47 @@ func (r *UserRepo) ListAdminIDs(ctx context.Context) ([]string, error) {
 	return ids, rows.Err()
 }
 
+// ListAdminEmails — emails de tous les administrateurs (notifications par
+// email, ex: nouvelle inscription — voir AuthService.notifyAdminsOfSignup).
+func (r *UserRepo) ListAdminEmails(ctx context.Context) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `SELECT email FROM users WHERE is_admin = true`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	emails := []string{}
+	for rows.Next() {
+		var email string
+		if err := rows.Scan(&email); err != nil {
+			return nil, err
+		}
+		emails = append(emails, email)
+	}
+	return emails, rows.Err()
+}
+
+// ListAllEmails — emails de tous les comptes utilisateurs, pour la diffusion
+// admin (voir AdminHandler.SendBroadcast). Ne renvoie que les emails, pour
+// limiter la mémoire même avec un grand nombre de comptes.
+func (r *UserRepo) ListAllEmails(ctx context.Context) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `SELECT email FROM users`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	emails := []string{}
+	for rows.Next() {
+		var email string
+		if err := rows.Scan(&email); err != nil {
+			return nil, err
+		}
+		emails = append(emails, email)
+	}
+	return emails, rows.Err()
+}
+
 // UserRoleCounts — répartition des utilisateurs par rôle (un compte peut
 // cumuler plusieurs rôles, donc la somme peut dépasser le total).
 type UserRoleCounts struct {

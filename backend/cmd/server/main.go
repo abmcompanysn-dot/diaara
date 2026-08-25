@@ -449,6 +449,7 @@ func main() {
 			r.Put("/users/{id}/role", adminHandler.SetRole)
 			r.Put("/users/{id}/suspend", adminHandler.SuspendUser)
 			r.Put("/users/{id}/reactivate", adminHandler.ReactivateUser)
+			r.Post("/broadcast", adminHandler.SendBroadcast)
 		})
 
 		r.Group(func(r chi.Router) {

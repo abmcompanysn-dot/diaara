@@ -253,6 +253,29 @@ func (n *NotificationService) SendSupportContact(ctx context.Context, to, name, 
 
 var nonDigits = regexp.MustCompile(`\D`)
 
+// SendAdminNewSignup notifie un admin qu'un nouveau compte vient d'être créé.
+func (n *NotificationService) SendAdminNewSignup(ctx context.Context, to, userEmail string) error {
+	body := fmt.Sprintf(`<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Nouvelle inscription sur DIARRA : <strong>%s</strong>.</p>`, html.EscapeString(userEmail))
+	inner := contentHTML("Nouvelle inscription", body, "Voir les utilisateurs", n.frontendURL+"/admin/users")
+	return n.client.Send(ctx, to, "Nouvelle inscription : "+userEmail, n.renderEmail(inner))
+}
+
+// SendAdminEmailVerified notifie un admin qu'un compte vient de valider son
+// email (première étape de validation après l'inscription).
+func (n *NotificationService) SendAdminEmailVerified(ctx context.Context, to, userEmail string) error {
+	body := fmt.Sprintf(`<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Le compte <strong>%s</strong> vient de valider son email.</p>`, html.EscapeString(userEmail))
+	inner := contentHTML("Email validé", body, "Voir les utilisateurs", n.frontendURL+"/admin/users")
+	return n.client.Send(ctx, to, "Email validé : "+userEmail, n.renderEmail(inner))
+}
+
+// SendBroadcast envoie un email en diffusion (newsletter/annonce) : subject
+// et bodyHTML sont fournis tels quels par l'admin, sans échappement ni
+// gabarit — c'est un contenu HTML complet composé volontairement par un
+// admin de confiance, pas une entrée utilisateur non fiable.
+func (n *NotificationService) SendBroadcast(ctx context.Context, to, subject, bodyHTML string) error {
+	return n.client.Send(ctx, to, subject, n.renderEmail(bodyHTML))
+}
+
 func (n *NotificationService) SendOTP(ctx context.Context, to, code, purpose string) error {
 	subject := "Votre code de vérification DIARRA"
 	body := fmt.Sprintf(`<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Votre code de vérification pour %s est : <strong style="font-size:20px;color:#0f7a50;">%s</strong></p>

@@ -772,3 +772,65 @@ func (h *AdminHandler) Analytics(w http.ResponseWriter, r *http.Request) {
 		TopClosers:  topClosers,
 	})
 }
+
+// SendBroadcast — POST /api/admin/broadcast (scope "users"). Diffuse un
+// email (HTML composé par l'admin) à tous les comptes DIARRA. TestOnly
+// n'envoie qu'à l'admin connecté, pour prévisualiser avant l'envoi réel.
+// L'envoi en masse part en tâche de fond, espacé pour ne pas dépasser les
+// limites de débit du fournisseur email — la réponse HTTP ne reflète que
+// le démarrage, pas la livraison individuelle de chaque email.
+func (h *AdminHandler) SendBroadcast(w http.ResponseWriter, r *http.Request) {
+	if h.notifications == nil {
+		http.Error(w, `{"error":"email_not_configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	var input struct {
+		Subject  string `json:"subject"`
+		HTML     string `json:"html"`
+		TestOnly bool   `json:"test_only"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+	if input.Subject == "" || input.HTML == "" {
+		http.Error(w, `{"error":"subject_and_html_required"}`, http.StatusBadRequest)
+		return
+	}
+
+	if input.TestOnly {
+		userID := middleware.GetUserID(r.Context())
+		admin, err := h.userRepo.FindByID(r.Context(), userID)
+		if err != nil {
+			http.Error(w, `{"error":"admin_not_found"}`, http.StatusInternalServerError)
+			return
+		}
+		if err := h.notifications.SendBroadcast(r.Context(), admin.Email, input.Subject, input.HTML); err != nil {
+			http.Error(w, `{"error":"send_failed"}`, http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{"status": "test_sent", "to": admin.Email})
+		return
+	}
+
+	emails, err := h.userRepo.ListAllEmails(r.Context())
+	if err != nil {
+		http.Error(w, `{"error":"list_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	subject := input.Subject
+	bodyHTML := input.HTML
+	go func() {
+		ctx := context.Background()
+		for _, to := range emails {
+			_ = h.notifications.SendBroadcast(ctx, to, subject, bodyHTML)
+			time.Sleep(150 * time.Millisecond)
+		}
+	}()
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"status": "started", "recipients": len(emails)})
+}

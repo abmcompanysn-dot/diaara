@@ -104,6 +104,9 @@ func (s *AuthService) Register(ctx context.Context, input model.RegisterInput) (
 	}
 	if s.notifications != nil {
 		go s.notifications.SendOTP(context.Background(), user.Email, emailCode, "vérification de l'email")
+		go s.notifyAdmins(context.Background(), func(ctx context.Context, adminEmail string) error {
+			return s.notifications.SendAdminNewSignup(ctx, adminEmail, user.Email)
+		})
 	}
 
 	// Émettre OTP SMS si téléphone fourni
@@ -317,11 +320,35 @@ func (s *AuthService) VerifyOTP(ctx context.Context, userID, channel, purpose, c
 	// Marque le champ correspondant comme vérifié
 	switch purpose {
 	case model.OTPPurposeEmailVerify:
-		return s.userRepo.VerifyEmail(ctx, userID)
+		if err := s.userRepo.VerifyEmail(ctx, userID); err != nil {
+			return err
+		}
+		if s.notifications != nil {
+			if user, err := s.userRepo.FindByID(ctx, userID); err == nil {
+				go s.notifyAdmins(context.Background(), func(ctx context.Context, adminEmail string) error {
+					return s.notifications.SendAdminEmailVerified(ctx, adminEmail, user.Email)
+				})
+			}
+		}
+		return nil
 	case model.OTPPurposePhoneVerify:
 		return s.userRepo.VerifyPhone(ctx, userID)
 	default:
 		return nil
+	}
+}
+
+// notifyAdmins envoie un email à chaque administrateur en tâche de fond —
+// une erreur sur un envoi n'empêche pas les autres, et n'est jamais
+// remontée à l'appelant (ces notifications sont secondaires, jamais sur le
+// chemin critique d'une action utilisateur).
+func (s *AuthService) notifyAdmins(ctx context.Context, send func(ctx context.Context, adminEmail string) error) {
+	emails, err := s.userRepo.ListAdminEmails(ctx)
+	if err != nil {
+		return
+	}
+	for _, email := range emails {
+		_ = send(ctx, email)
 	}
 }
 

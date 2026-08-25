@@ -143,16 +143,19 @@ export const api = {
 
   // OTP : envoi (resend) et vérification. Le refresh token vit en cookie httpOnly,
   // l'access token dans localStorage.
-  sendOtp: (channel: 'email' | 'sms') =>
+  // purpose : optionnel, force l'usage du code plutôt que de le déduire du
+  // canal — sert au repli "confirmer le téléphone par email" (channel:
+  // 'email', purpose: 'phone_verify') quand Firebase Phone Auth échoue.
+  sendOtp: (channel: 'email' | 'sms', purpose?: 'email_verify' | 'phone_verify') =>
     fetchApi<{ status: string; channel: string; dev_code?: string }>('/api/auth/send-otp', {
       method: 'POST',
-      body: JSON.stringify({ channel }),
+      body: JSON.stringify({ channel, purpose }),
     }),
 
-  verifyOtp: (channel: 'email' | 'sms', code: string) =>
+  verifyOtp: (channel: 'email' | 'sms', code: string, purpose?: 'email_verify' | 'phone_verify') =>
     fetchApi<{ status: string; channel: string }>('/api/auth/verify-otp', {
       method: 'POST',
-      body: JSON.stringify({ channel, code }),
+      body: JSON.stringify({ channel, code, purpose }),
     }),
 
   refreshToken: () =>
@@ -549,6 +552,15 @@ export const api = {
     fetchApi<{ ok: boolean }>('/api/support/contact', {
       method: 'POST',
       body: JSON.stringify(input),
+    }),
+
+  // Diffusion email (admin, scope "users") : subject + html composés par
+  // l'admin, envoyés à tous les comptes DIARRA. test_only n'envoie qu'à
+  // l'admin connecté, pour prévisualiser.
+  sendBroadcast: (data: { subject: string; html: string; test_only?: boolean }) =>
+    fetchApi<{ status: string; recipients?: number; to?: string }>('/api/admin/broadcast', {
+      method: 'POST',
+      body: JSON.stringify(data),
     }),
 
   // Agents support (admin, tout admin)

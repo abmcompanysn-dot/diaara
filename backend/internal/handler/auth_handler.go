@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/mail"
 	"os"
@@ -379,6 +380,32 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 
 // VerifyOTP — POST /api/auth/verify-otp
 // Valide un code OTP et marque l'email ou le téléphone comme vérifié.
+// resolveOTPPurpose déduit l'usage du code OTP à partir du canal (email →
+// vérification email, sms → vérification téléphone), sauf si un usage
+// explicite est fourni et reconnu — cas du repli "confirmer le téléphone
+// par email" (canal email, usage phone_verify) quand Firebase Phone Auth
+// échoue.
+func resolveOTPPurpose(channel, explicitPurpose string) (string, error) {
+	if explicitPurpose != "" {
+		switch explicitPurpose {
+		case model.OTPPurposeEmailVerify, model.OTPPurposePhoneVerify:
+			return explicitPurpose, nil
+		default:
+			return "", errInvalidOTPPurpose
+		}
+	}
+	switch channel {
+	case model.OTPChannelEmail:
+		return model.OTPPurposeEmailVerify, nil
+	case model.OTPChannelSMS:
+		return model.OTPPurposePhoneVerify, nil
+	default:
+		return "", errInvalidOTPPurpose
+	}
+}
+
+var errInvalidOTPPurpose = errors.New("invalid otp purpose")
+
 func (h *AuthHandler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())
 	if userID == "" {
@@ -389,6 +416,10 @@ func (h *AuthHandler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 	var input struct {
 		Channel string `json:"channel"`
 		Code    string `json:"code"`
+		// Purpose : optionnel, force l'usage du code plutôt que de le
+		// déduire du canal — sert au repli "confirmer le téléphone par
+		// email" quand Firebase Phone Auth échoue (quota SMS dépassé...).
+		Purpose string `json:"purpose,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
@@ -399,13 +430,8 @@ func (h *AuthHandler) VerifyOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	purpose := ""
-	switch input.Channel {
-	case model.OTPChannelEmail:
-		purpose = model.OTPPurposeEmailVerify
-	case model.OTPChannelSMS:
-		purpose = model.OTPPurposePhoneVerify
-	default:
+	purpose, err := resolveOTPPurpose(input.Channel, input.Purpose)
+	if err != nil {
 		http.Error(w, `{"error":"invalid_channel"}`, http.StatusBadRequest)
 		return
 	}
@@ -440,6 +466,7 @@ func (h *AuthHandler) SendOTP(w http.ResponseWriter, r *http.Request) {
 
 	var input struct {
 		Channel string `json:"channel"`
+		Purpose string `json:"purpose,omitempty"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
@@ -450,13 +477,8 @@ func (h *AuthHandler) SendOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	purpose := ""
-	switch input.Channel {
-	case model.OTPChannelEmail:
-		purpose = model.OTPPurposeEmailVerify
-	case model.OTPChannelSMS:
-		purpose = model.OTPPurposePhoneVerify
-	default:
+	purpose, err := resolveOTPPurpose(input.Channel, input.Purpose)
+	if err != nil {
 		http.Error(w, `{"error":"invalid_channel"}`, http.StatusBadRequest)
 		return
 	}
