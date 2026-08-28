@@ -834,3 +834,41 @@ func (h *AdminHandler) SendBroadcast(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"status": "started", "recipients": len(emails)})
 }
+
+// SendUserMessage — POST /api/admin/users/{id}/message (scope "users").
+// Envoie un email direct à un utilisateur précis (ex: expliquer un incident
+// de paiement à un vendeur), indépendamment de tout ticket support existant.
+func (h *AdminHandler) SendUserMessage(w http.ResponseWriter, r *http.Request) {
+	if h.notifications == nil {
+		http.Error(w, `{"error":"email_not_configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+	userID := chi.URLParam(r, "id")
+
+	var input struct {
+		Subject string `json:"subject"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+	if input.Subject == "" || input.Message == "" {
+		http.Error(w, `{"error":"subject_and_message_required"}`, http.StatusBadRequest)
+		return
+	}
+
+	user, err := h.userRepo.FindByID(r.Context(), userID)
+	if err != nil {
+		http.Error(w, `{"error":"user_not_found"}`, http.StatusNotFound)
+		return
+	}
+
+	if err := h.notifications.SendAdminMessage(r.Context(), user.Email, input.Subject, input.Message); err != nil {
+		http.Error(w, `{"error":"send_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}

@@ -563,6 +563,14 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  // Message direct à un utilisateur précis (admin, scope "users") — ex:
+  // expliquer un incident de paiement à un vendeur, sans ticket préalable.
+  sendUserMessage: (userId: string, data: { subject: string; message: string }) =>
+    fetchApi<{ ok: boolean }>(`/api/admin/users/${userId}/message`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
   // Agents support (admin, tout admin)
   getSupportAgents: () =>
     fetchApi<{

@@ -52,12 +52,14 @@ function RowMenu({
   onSuspend,
   onReactivate,
   onPromote,
+  onMessage,
 }: {
   user: User;
   onRole: (role: string, action: 'grant' | 'revoke') => void;
   onSuspend: () => void;
   onReactivate: () => void;
   onPromote: () => void;
+  onMessage: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
@@ -159,6 +161,16 @@ function RowMenu({
               </button>
             </>
           )}
+          <div className="my-1 border-t border-green-900/10" />
+          <button
+            onClick={() => {
+              onMessage();
+              setOpen(false);
+            }}
+            className="w-full text-left px-3 py-2 hover:bg-green-900/5 text-green-950"
+          >
+            Envoyer un message
+          </button>
           {user.is_admin && (
             <p className="px-3 py-2 text-green-900/40 text-xs">Compte administrateur</p>
           )}
@@ -175,6 +187,12 @@ export default function AdminUsersPage() {
   const [toSuspend, setToSuspend] = useState<User | null>(null);
   const [toRole, setToRole] = useState<{ user: User; role: string; action: 'grant' | 'revoke' } | null>(null);
   const [toPromote, setToPromote] = useState<User | null>(null);
+  const [messageTarget, setMessageTarget] = useState<User | null>(null);
+  const [messageSubject, setMessageSubject] = useState('');
+  const [messageBody, setMessageBody] = useState('');
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const [messageError, setMessageError] = useState('');
+  const [messageSent, setMessageSent] = useState(false);
 
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
@@ -233,6 +251,31 @@ export default function AdminUsersPage() {
       setError(friendlyError(err));
     } finally {
       setToRole(null);
+    }
+  };
+
+  const openMessage = (user: User) => {
+    setMessageTarget(user);
+    setMessageSubject('');
+    setMessageBody('');
+    setMessageError('');
+    setMessageSent(false);
+  };
+
+  const handleSendMessage = async () => {
+    if (!messageTarget || !messageSubject.trim() || !messageBody.trim()) {
+      setMessageError('Le sujet et le message sont requis.');
+      return;
+    }
+    setMessageError('');
+    setSendingMessage(true);
+    try {
+      await api.sendUserMessage(messageTarget.id, { subject: messageSubject.trim(), message: messageBody.trim() });
+      setMessageSent(true);
+    } catch (err: any) {
+      setMessageError(friendlyError(err));
+    } finally {
+      setSendingMessage(false);
     }
   };
 
@@ -427,6 +470,7 @@ export default function AdminUsersPage() {
                             onSuspend={() => setToSuspend(user)}
                             onReactivate={() => handleReactivate(user.id)}
                             onPromote={() => setToPromote(user)}
+                            onMessage={() => openMessage(user)}
                           />
                         </TableCell>
                       </TableRow>
@@ -511,6 +555,74 @@ export default function AdminUsersPage() {
         onConfirm={handleSetRole}
         onCancel={() => setToRole(null)}
       />
+
+      {messageTarget && (
+        <div className="fixed inset-0 z-100 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-green-950/60 backdrop-blur-sm"
+            onClick={() => setMessageTarget(null)}
+            aria-hidden
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="relative w-full max-w-md rounded-2xl bg-white shadow-lift border border-green-900/10 p-6"
+          >
+            <h2 className="font-display font-bold text-lg text-green-950">
+              Envoyer un message à {messageTarget.email}
+            </h2>
+
+            {messageSent ? (
+              <>
+                <p className="text-sm text-green-700 mt-4">Message envoyé avec succès.</p>
+                <div className="mt-6 flex justify-end">
+                  <Button onClick={() => setMessageTarget(null)}>Fermer</Button>
+                </div>
+              </>
+            ) : (
+              <>
+                {messageError && (
+                  <div className="mt-3 p-3 bg-destructive/10 text-destructive rounded text-sm">{messageError}</div>
+                )}
+                <div className="mt-4 space-y-3">
+                  <div className="space-y-1.5">
+                    <label htmlFor="msg-subject" className="text-sm font-medium text-green-900">
+                      Sujet
+                    </label>
+                    <Input
+                      id="msg-subject"
+                      value={messageSubject}
+                      onChange={(e) => setMessageSubject(e.target.value)}
+                      placeholder="Ex: À propos de votre paiement"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label htmlFor="msg-body" className="text-sm font-medium text-green-900">
+                      Message
+                    </label>
+                    <textarea
+                      id="msg-body"
+                      value={messageBody}
+                      onChange={(e) => setMessageBody(e.target.value)}
+                      rows={6}
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                      placeholder="Bonjour, ..."
+                    />
+                  </div>
+                </div>
+                <div className="mt-6 flex justify-end gap-3">
+                  <Button variant="outline" onClick={() => setMessageTarget(null)}>
+                    Annuler
+                  </Button>
+                  <Button onClick={handleSendMessage} disabled={sendingMessage}>
+                    {sendingMessage ? 'Envoi…' : 'Envoyer'}
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       <ConfirmDialog
         open={!!toPromote}

@@ -268,6 +268,19 @@ func (n *NotificationService) SendAdminEmailVerified(ctx context.Context, to, us
 	return n.client.Send(ctx, to, "Email validé : "+userEmail, n.renderEmail(inner))
 }
 
+// SendAdminMessage envoie un message individuel de l'équipe DIARRA à un
+// utilisateur précis (ex: expliquer un incident de paiement à un vendeur),
+// indépendamment de tout ticket support existant. message est un texte
+// libre saisi par un admin, échappé avant insertion (contrairement à
+// SendBroadcast, qui accepte du HTML volontairement composé par l'admin).
+func (n *NotificationService) SendAdminMessage(ctx context.Context, to, subject, message string) error {
+	safeMessage := strings.ReplaceAll(html.EscapeString(message), "\n", "<br>")
+	body := fmt.Sprintf(`<div style="margin:0;padding:16px 18px;background-color:#f2f7f4;border-left:4px solid #0f7a50;border-radius:8px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">%s</div>
+<p style="margin:16px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.6;color:#6b7c74;">Message envoyé par l&rsquo;équipe DIARRA. Pour toute question, répondez directement à cet email ou contactez le support.</p>`, safeMessage)
+	inner := contentHTML(subject, body, "", "")
+	return n.client.Send(ctx, to, subject, n.renderEmail(inner))
+}
+
 // SendBroadcast envoie un email en diffusion (newsletter/annonce) : subject
 // et bodyHTML sont fournis tels quels par l'admin, sans échappement ni
 // gabarit — c'est un contenu HTML complet composé volontairement par un
