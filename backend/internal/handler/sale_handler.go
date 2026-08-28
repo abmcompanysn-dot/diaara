@@ -349,10 +349,10 @@ func (h *SaleHandler) initiatePaymentPage(ctx context.Context, sale *model.Sale,
 		return nil, errors.New("payment non configuré")
 	}
 	returnURL := h.frontendURL + "/checkout/return?token=" + *sale.CheckoutToken
-	reason := product.Title
-	if runes := []rune(reason); len(runes) > 50 {
-		reason = string(runes[:47]) + "..."
-	}
+	// PawaPay a rejeté en production des titres contenant un emoji ou un
+	// tiret cadratin (INVALID_PARAMETER sur "reason", incident 2026-08-27)
+	// alors que la longueur était valide — voir SanitizePaymentReason.
+	reason := payment.SanitizePaymentReason(product.Title, 50)
 
 	// Le catalogue est tarifé en XOF ; on convertit vers la devise locale du
 	// pays choisi (PawaPay exige le montant dans la devise du pays/opérateur).

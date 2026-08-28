@@ -12,6 +12,11 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
+
+	"golang.org/x/text/runes"
+	"golang.org/x/text/transform"
+	"golang.org/x/text/unicode/norm"
 )
 
 // PawaPay — dépôt mobile money via l'API PawaPay v2.
@@ -188,6 +193,41 @@ func (c *PawaPayClient) setHeaders(req *http.Request) {
 type AmountDetails struct {
 	Amount   string `json:"amount"`
 	Currency string `json:"currency"`
+}
+
+// diacriticStripper translittère les caractères accentués vers leur
+// équivalent ASCII (é -> e, à -> a...) plutôt que de les supprimer,
+// pour garder les titres français lisibles après nettoyage.
+var diacriticStripper = transform.Chain(norm.NFD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
+
+// SanitizePaymentReason nettoie un texte libre (ex: titre produit) pour le
+// champ "reason" de PawaPay. Le comportement réel de l'API est plus strict
+// que sa documentation : un titre contenant un emoji ou un tiret cadratin
+// (—) a été rejeté en production avec INVALID_PARAMETER alors que la longueur
+// était valide (voir incident du 2026-08-27, sales aba7863b/c8a6c9db/...).
+// Le champ voisin "customerMessage" documente lui explicitement le motif
+// autorisé ^[a-zA-Z0-9 ]+$ — on applique la même règle ici par prudence,
+// après avoir translittéré les accents pour ne pas juste les faire disparaître.
+func SanitizePaymentReason(s string, maxLen int) string {
+	out, _, err := transform.String(diacriticStripper, s)
+	if err != nil {
+		out = s
+	}
+	var b strings.Builder
+	for _, r := range out {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == ' ' {
+			b.WriteRune(r)
+		}
+	}
+	cleaned := strings.Join(strings.Fields(b.String()), " ") // espaces multiples -> un seul
+	runesCleaned := []rune(cleaned)
+	if len(runesCleaned) > maxLen {
+		cleaned = strings.TrimSpace(string(runesCleaned[:maxLen]))
+	}
+	if cleaned == "" {
+		return "DIARRA"
+	}
+	return cleaned
 }
 
 type PaymentPageRequest struct {
