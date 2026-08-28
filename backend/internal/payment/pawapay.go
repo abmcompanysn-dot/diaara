@@ -731,6 +731,22 @@ func ResolveOperator(country, operator string) (*Operator, error) {
 // PawaPay. Les versements vendeur restent en XOF (XOFOperators ci-dessus) —
 // les convertir nécessiterait une seconde conversion (devise acheteur → XOF
 // → devise versement), hors périmètre pour l'instant.
+// UnavailableCountries — pays proposés par le catalogue DIARRA mais pas
+// activés pour les dépôts sur notre compte PawaPay (DEPOSITS_NOT_ALLOWED en
+// production, incident 2026-08-27/28 — confirmé via GET /v2/active-conf).
+// Retirer une entrée ici seulement après confirmation explicite de PawaPay
+// que le pays est activé.
+var UnavailableCountries = map[string]bool{
+	"BFA": true, // Burkina Faso
+	"ETH": true, // Éthiopie
+	"GHA": true, // Ghana
+	"LSO": true, // Lesotho
+	"MWI": true, // Malawi
+	"MOZ": true, // Mozambique
+	"NGA": true, // Nigeria
+	"TZA": true, // Tanzanie
+}
+
 var CountryCurrency = map[string]string{
 	"BEN": "XOF", "BFA": "XOF", "CMR": "XAF", "CIV": "XOF", "COD": "CDF",
 	"ETH": "ETB", "GAB": "XAF", "GHA": "GHS", "KEN": "KES", "LSO": "LSL",

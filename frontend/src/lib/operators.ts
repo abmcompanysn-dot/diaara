@@ -10,27 +10,23 @@ export interface CheckoutCountry {
   flag: string; // Emoji drapeau, pour le sélecteur pays du checkout.
 }
 
+// Retiré temporairement : BFA, ETH, GHA, LSO, MWI, MOZ, NGA, TZA — non
+// activés pour les dépôts sur notre compte PawaPay (DEPOSITS_NOT_ALLOWED en
+// production, incident 2026-08-27/28). À réintégrer dès l'activation
+// confirmée côté PawaPay (vérifier via GET /v2/active-conf).
 export const CHECKOUT_COUNTRIES: CheckoutCountry[] = [
   { code: 'SEN', name: 'Sénégal', currency: 'XOF', flag: '🇸🇳' },
   { code: 'CIV', name: "Côte d'Ivoire", currency: 'XOF', flag: '🇨🇮' },
   { code: 'BEN', name: 'Bénin', currency: 'XOF', flag: '🇧🇯' },
-  { code: 'BFA', name: 'Burkina Faso', currency: 'XOF', flag: '🇧🇫' },
   { code: 'CMR', name: 'Cameroun', currency: 'XAF', flag: '🇨🇲' },
   { code: 'GAB', name: 'Gabon', currency: 'XAF', flag: '🇬🇦' },
   { code: 'COG', name: 'Congo-Brazzaville', currency: 'XAF', flag: '🇨🇬' },
   { code: 'COD', name: 'RD Congo', currency: 'CDF', flag: '🇨🇩' },
-  { code: 'GHA', name: 'Ghana', currency: 'GHS', flag: '🇬🇭' },
-  { code: 'NGA', name: 'Nigeria', currency: 'NGN', flag: '🇳🇬' },
   { code: 'KEN', name: 'Kenya', currency: 'KES', flag: '🇰🇪' },
   { code: 'RWA', name: 'Rwanda', currency: 'RWF', flag: '🇷🇼' },
   { code: 'UGA', name: 'Ouganda', currency: 'UGX', flag: '🇺🇬' },
-  { code: 'TZA', name: 'Tanzanie', currency: 'TZS', flag: '🇹🇿' },
   { code: 'ZMB', name: 'Zambie', currency: 'ZMW', flag: '🇿🇲' },
-  { code: 'MWI', name: 'Malawi', currency: 'MWK', flag: '🇲🇼' },
-  { code: 'MOZ', name: 'Mozambique', currency: 'MZN', flag: '🇲🇿' },
-  { code: 'LSO', name: 'Lesotho', currency: 'LSL', flag: '🇱🇸' },
   { code: 'SLE', name: 'Sierra Leone', currency: 'SLE', flag: '🇸🇱' },
-  { code: 'ETH', name: 'Éthiopie', currency: 'ETB', flag: '🇪🇹' },
 ];
 
 // Opérateurs mobile money par pays — utilisé pour le moyen de versement

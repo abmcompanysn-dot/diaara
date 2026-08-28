@@ -82,6 +82,10 @@ func (h *SaleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"country_required"}`, http.StatusBadRequest)
 		return
 	}
+	if payment.UnavailableCountries[input.Country] {
+		http.Error(w, `{"error":"country_not_available"}`, http.StatusBadRequest)
+		return
+	}
 
 	// Guest Checkout : si non connecté, on exige l'email
 	if userID == "" {
