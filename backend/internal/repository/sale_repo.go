@@ -20,13 +20,13 @@ func NewSaleRepo(pool *pgxpool.Pool) *SaleRepo {
 }
 
 const saleColumns = `id, product_id, buyer_id, buyer_name, country, referral_link_id, amount_cfa, platform_fee_cfa,
-	closer_commission_cfa, vendor_amount_cfa, payment_provider, payment_reference, checkout_token, status, refund_reference, delivered_at, created_at`
+	closer_commission_cfa, vendor_amount_cfa, payment_provider, payment_reference, provider_transaction_id, checkout_token, status, refund_reference, delivered_at, created_at`
 
 func scanSale(row pgx.Row) (*model.Sale, error) {
 	s := &model.Sale{}
 	err := row.Scan(&s.ID, &s.ProductID, &s.BuyerID, &s.BuyerName, &s.Country, &s.ReferralLinkID, &s.AmountCFA,
 		&s.PlatformFeeCFA, &s.CloserCommissionCFA, &s.VendorAmountCFA, &s.PaymentProvider,
-		&s.PaymentReference, &s.CheckoutToken, &s.Status, &s.RefundReference, &s.DeliveredAt, &s.CreatedAt)
+		&s.PaymentReference, &s.ProviderTransactionID, &s.CheckoutToken, &s.Status, &s.RefundReference, &s.DeliveredAt, &s.CreatedAt)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, ErrSaleNotFound
@@ -62,7 +62,7 @@ func (r *SaleRepo) ListByVendor(ctx context.Context, vendorID string) ([]*Vendor
 	rows, err := r.pool.Query(ctx,
 		`SELECT s.id, s.product_id, s.buyer_id, s.buyer_name, s.country, s.referral_link_id, s.amount_cfa,
 			s.platform_fee_cfa, s.closer_commission_cfa, s.vendor_amount_cfa, s.payment_provider,
-			s.payment_reference, s.checkout_token, s.status, s.refund_reference, s.delivered_at, s.created_at,
+			s.payment_reference, s.provider_transaction_id, s.checkout_token, s.status, s.refund_reference, s.delivered_at, s.created_at,
 			u.email, p.title
 		 FROM sales s
 		 JOIN products p ON p.id = s.product_id
@@ -80,7 +80,7 @@ func (r *SaleRepo) ListByVendor(ctx context.Context, vendorID string) ([]*Vendor
 		v := &VendorSaleView{Sale: s}
 		if err := rows.Scan(&s.ID, &s.ProductID, &s.BuyerID, &s.BuyerName, &s.Country, &s.ReferralLinkID, &s.AmountCFA,
 			&s.PlatformFeeCFA, &s.CloserCommissionCFA, &s.VendorAmountCFA, &s.PaymentProvider,
-			&s.PaymentReference, &s.CheckoutToken, &s.Status, &s.RefundReference, &s.DeliveredAt, &s.CreatedAt,
+			&s.PaymentReference, &s.ProviderTransactionID, &s.CheckoutToken, &s.Status, &s.RefundReference, &s.DeliveredAt, &s.CreatedAt,
 			&v.BuyerEmail, &v.ProductTitle); err != nil {
 			return nil, err
 		}
@@ -165,6 +165,16 @@ func (r *SaleRepo) UpdateStatus(ctx context.Context, id, status string) error {
 func (r *SaleRepo) UpdatePaymentReference(ctx context.Context, id, ref string) error {
 	_, err := r.pool.Exec(ctx,
 		`UPDATE sales SET payment_reference = $2 WHERE id = $1`, id, ref)
+	return err
+}
+
+// SetProviderTransactionID — enregistre l'ID KPay du paiement juste après
+// l'initiation (voir model.Sale.ProviderTransactionID) : nécessaire pour les
+// appels GET statut/remboursement ultérieurs, KPay n'utilisant pas notre
+// payment_reference comme identifiant côté serveur.
+func (r *SaleRepo) SetProviderTransactionID(ctx context.Context, id, providerTxID string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE sales SET provider_transaction_id = $2 WHERE id = $1`, id, providerTxID)
 	return err
 }
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/diarra/backend/internal/auth"
@@ -36,8 +37,13 @@ type AdminHandler struct {
 	ticketRepo    *repository.TicketRepo
 	pool          *pgxpool.Pool
 	storage       s3Pinger // nil si stockage objet non configuré
+	// files : accès complet au stockage objet (URL signée) pour permettre à
+	// un modérateur de télécharger le fichier livrable d'un produit avant de
+	// l'approuver. nil si stockage non configuré.
+	files         StorageService
 	startTime     time.Time
 	pawapay       *payment.PawaPayClient
+	kpay          *payment.KPayClient
 	notifications *email.NotificationService // nil si aucun fournisseur email configuré
 	cache         *cache.Client
 }
@@ -53,8 +59,10 @@ func NewAdminHandler(
 	ticketRepo *repository.TicketRepo,
 	pool *pgxpool.Pool,
 	storage s3Pinger,
+	files StorageService,
 	startTime time.Time,
 	pawapay *payment.PawaPayClient,
+	kpay *payment.KPayClient,
 	notifications *email.NotificationService,
 	cacheClient *cache.Client,
 ) *AdminHandler {
@@ -69,7 +77,9 @@ func NewAdminHandler(
 		ticketRepo:    ticketRepo,
 		pool:          pool,
 		storage:       storage,
+		files:         files,
 		startTime:     startTime,
+		kpay:          kpay,
 		pawapay:       pawapay,
 		notifications: notifications,
 		cache:         cacheClient,
@@ -130,8 +140,61 @@ func (h *AdminHandler) Moderate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Notifie le vendeur de la décision par email (best-effort, non bloquant :
+	// la modération est déjà enregistrée, un échec d'envoi ne doit pas la
+	// faire échouer).
+	if h.notifications != nil {
+		note := ""
+		if input.Note != nil {
+			note = *input.Note
+		}
+		vendorID, title, status := product.VendorID, product.Title, input.Status
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			vendor, err := h.userRepo.FindByID(ctx, vendorID)
+			if err != nil || vendor.Email == "" {
+				return
+			}
+			_ = h.notifications.SendProductModerated(ctx, vendor.Email, title, status, note)
+		}()
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"product": product})
+}
+
+// DownloadProductFile — GET /api/admin/products/{id}/download : renvoie une
+// URL signée de courte durée vers le fichier livrable du produit, pour qu'un
+// modérateur puisse en vérifier le contenu avant d'approuver. Même mécanique
+// que le téléchargement acheteur (voir DeliveryHandler), mais réservé aux
+// admins ayant le scope modération.
+func (h *AdminHandler) DownloadProductFile(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	if h.files == nil {
+		http.Error(w, `{"error":"storage_not_configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	product, err := h.productRepo.FindByID(r.Context(), id)
+	if err != nil {
+		http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
+		return
+	}
+	if product.FileKey == "" {
+		http.Error(w, `{"error":"no_file"}`, http.StatusNotFound)
+		return
+	}
+
+	url, err := h.files.GenerateSignedURL(r.Context(), product.FileKey, 5*time.Minute)
+	if err != nil {
+		http.Error(w, `{"error":"signed_url_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"signed_url": url})
 }
 
 // ConfirmDeletion — DELETE /api/admin/products/{id} : supprime
@@ -365,6 +428,31 @@ func (h *AdminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Réglages par opérateur (versements) et par pays (checkout) — voir
+	// model.GatewayOperatorSettingKey / CheckoutProviderSettingKey. Empêche
+	// notamment d'assigner KPay à un opérateur qu'il ne supporte pas (ex.
+	// Wave, suspendu côté KPay).
+	for key, value := range input {
+		switch {
+		case strings.HasPrefix(key, "gateway_op_"):
+			if value != "off" && value != "pawapay" && value != "kpay" {
+				http.Error(w, `{"error":"invalid_gateway_provider"}`, http.StatusBadRequest)
+				return
+			}
+			if value == "kpay" {
+				code := strings.ToUpper(strings.TrimPrefix(key, "gateway_op_"))
+				if !payment.KPayProviderCodes[code] {
+					http.Error(w, fmt.Sprintf(`{"error":"kpay_unsupported_operator","operator":"%s"}`, code), http.StatusBadRequest)
+					return
+				}
+			}
+		case strings.HasPrefix(key, "checkout_provider_"):
+			if value != "pawapay" && value != "kpay" {
+				http.Error(w, `{"error":"invalid_checkout_provider"}`, http.StatusBadRequest)
+				return
+			}
+		}
+	}
 	if err := h.settingsRepo.SetMany(r.Context(), input); err != nil {
 		http.Error(w, `{"error":"settings_update_failed"}`, http.StatusInternalServerError)
 		return
@@ -426,10 +514,6 @@ func (h *AdminHandler) Payouts(w http.ResponseWriter, r *http.Request) {
 // RetryPayout — POST /api/admin/payouts/{id}/retry (scope "finance") :
 // relance un versement resté en échec (nouvel essai PawaPay avec un nouvel ID).
 func (h *AdminHandler) RetryPayout(w http.ResponseWriter, r *http.Request) {
-	if h.pawapay == nil {
-		http.Error(w, `{"error":"payment_not_configured"}`, http.StatusServiceUnavailable)
-		return
-	}
 	id := chi.URLParam(r, "id")
 	payout, err := h.payoutRepo.FindByID(r.Context(), id)
 	if err != nil {
@@ -441,6 +525,38 @@ func (h *AdminHandler) RetryPayout(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Le prestataire est celui déjà résolu à la création du versement (voir
+	// PayoutHandler.Create) — une relance ne doit jamais basculer un
+	// versement vers un autre prestataire que celui d'origine.
+	if payout.Provider == "kpay" {
+		if h.kpay == nil {
+			http.Error(w, `{"error":"payment_not_configured"}`, http.StatusServiceUnavailable)
+			return
+		}
+		resp, err := h.kpay.InitiatePayout(r.Context(), payment.PayoutInitRequest{
+			Amount:      fmt.Sprintf("%d", payout.AmountCFA),
+			Provider:    payout.Operator,
+			PhoneNumber: payout.PhoneNumber,
+			ExternalId:  payout.ID,
+			Description: "Versement DIARRA",
+		})
+		if err != nil {
+			http.Error(w, `{"error":"payout_rejected","reason":"payout_retry_failed"}`, http.StatusBadGateway)
+			return
+		}
+		if err := h.payoutRepo.SetProviderReference(r.Context(), payout.ID, resp.ID); err != nil {
+			http.Error(w, `{"error":"payout_update_failed"}`, http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "processing"})
+		return
+	}
+
+	if h.pawapay == nil {
+		http.Error(w, `{"error":"payment_not_configured"}`, http.StatusServiceUnavailable)
+		return
+	}
 	pawapayID := uuidString()
 	resp, err := h.pawapay.InitiatePayout(r.Context(), payment.PayoutRequest{
 		PayoutId: pawapayID,
@@ -464,7 +580,7 @@ func (h *AdminHandler) RetryPayout(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, fmt.Sprintf(`{"error":"payout_rejected","reason":"%s"}`, reason), http.StatusBadGateway)
 		return
 	}
-	if err := h.payoutRepo.SetPawaPayReference(r.Context(), payout.ID, pawapayID); err != nil {
+	if err := h.payoutRepo.SetProviderReference(r.Context(), payout.ID, pawapayID); err != nil {
 		http.Error(w, `{"error":"payout_update_failed"}`, http.StatusInternalServerError)
 		return
 	}
@@ -547,11 +663,6 @@ func (h *AdminHandler) Sales(w http.ResponseWriter, r *http.Request) {
 
 // RefundSale — POST /api/admin/sales/{id}/refund (remboursement total, mobile money)
 func (h *AdminHandler) RefundSale(w http.ResponseWriter, r *http.Request) {
-	if h.pawapay == nil {
-		http.Error(w, `{"error":"payment_not_configured"}`, http.StatusServiceUnavailable)
-		return
-	}
-
 	id := chi.URLParam(r, "id")
 	sale, err := h.saleRepo.FindByID(r.Context(), id)
 	if err != nil {
@@ -560,6 +671,36 @@ func (h *AdminHandler) RefundSale(w http.ResponseWriter, r *http.Request) {
 	}
 	if sale.Status != string(model.SalePaid) {
 		http.Error(w, `{"error":"sale_not_refundable"}`, http.StatusBadRequest)
+		return
+	}
+
+	if sale.PaymentProvider == "kpay" {
+		if h.kpay == nil {
+			http.Error(w, `{"error":"payment_not_configured"}`, http.StatusServiceUnavailable)
+			return
+		}
+		if sale.ProviderTransactionID == nil {
+			http.Error(w, `{"error":"missing_provider_transaction_id"}`, http.StatusInternalServerError)
+			return
+		}
+		resp, err := h.kpay.InitiateRefund(r.Context(), *sale.ProviderTransactionID, payment.RefundInitRequest{
+			ExternalId: sale.ID,
+		})
+		if err != nil {
+			http.Error(w, `{"error":"refund_rejected","reason":"refund_init_failed"}`, http.StatusBadGateway)
+			return
+		}
+		if err := h.saleRepo.SetRefundReference(r.Context(), sale.ID, resp.ID); err != nil {
+			http.Error(w, `{"error":"refund_update_failed"}`, http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "refund_pending"})
+		return
+	}
+
+	if h.pawapay == nil {
+		http.Error(w, `{"error":"payment_not_configured"}`, http.StatusServiceUnavailable)
 		return
 	}
 

@@ -33,6 +33,33 @@ func TestCalculateWithCloser(t *testing.T) {
 	}
 }
 
+func TestCalculateHighValueTier(t *testing.T) {
+	c := NewCommissionService()
+
+	// En dessous du seuil : taux normal (15%).
+	belowAmount := HighValueThresholdCFA - 1
+	below := c.Calculate(belowAmount, DefaultPlatformFeePct)
+	wantBelow := int(float64(belowAmount) * DefaultPlatformFeePct / 100.0)
+	if below.PlatformFeeCFA != wantBelow {
+		t.Fatalf("below threshold: PlatformFeeCFA = %d, want %d", below.PlatformFeeCFA, wantBelow)
+	}
+
+	// À partir du seuil (1 000 000 FCFA) : taux réduit (10%).
+	at := c.Calculate(HighValueThresholdCFA, DefaultPlatformFeePct)
+	if at.PlatformFeeCFA != 100000 {
+		t.Fatalf("at threshold: PlatformFeeCFA = %d, want 100000", at.PlatformFeeCFA)
+	}
+	if at.VendorAmountCFA != 900000 {
+		t.Fatalf("at threshold: VendorAmountCFA = %d, want 900000", at.VendorAmountCFA)
+	}
+
+	// Au-dessus du seuil, avec un taux admin différent : le palier prime.
+	above := c.Calculate(2_000_000, 20)
+	if above.PlatformFeeCFA != 200000 {
+		t.Fatalf("above threshold: PlatformFeeCFA = %d, want 200000", above.PlatformFeeCFA)
+	}
+}
+
 func TestCalculateWithCloserCapped(t *testing.T) {
 	c := NewCommissionService()
 

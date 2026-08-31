@@ -19,12 +19,12 @@ func NewPayoutRepo(pool *pgxpool.Pool) *PayoutRepo {
 	return &PayoutRepo{pool: pool}
 }
 
-const payoutColumns = `id, user_id, amount_cfa, status, phone_number, operator, pawapay_payout_id, failure_reason, requested_at, paid_at`
+const payoutColumns = `id, user_id, amount_cfa, status, phone_number, operator, provider, provider_reference, failure_reason, requested_at, paid_at`
 
 func scanPayout(row pgx.Row) (*model.Payout, error) {
 	p := &model.Payout{}
 	err := row.Scan(&p.ID, &p.UserID, &p.AmountCFA, &p.Status, &p.PhoneNumber, &p.Operator,
-		&p.PawaPayPayoutID, &p.FailureReason, &p.RequestedAt, &p.PaidAt)
+		&p.Provider, &p.ProviderReference, &p.FailureReason, &p.RequestedAt, &p.PaidAt)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, ErrPayoutNotFound
@@ -34,10 +34,14 @@ func scanPayout(row pgx.Row) (*model.Payout, error) {
 	return p, nil
 }
 
-func (r *PayoutRepo) Create(ctx context.Context, userID string, amount int, phone, operator string) (*model.Payout, error) {
+// Create — provider est résolu par l'appelant depuis GatewayOperatorSettingKey
+// AU MOMENT de la création (pas relu à chaque tentative/webhook ensuite),
+// pour qu'un changement de réglage admin ne redirige jamais un versement
+// déjà en cours vers un autre prestataire.
+func (r *PayoutRepo) Create(ctx context.Context, userID string, amount int, phone, operator, provider string) (*model.Payout, error) {
 	return scanPayout(r.pool.QueryRow(ctx,
-		`INSERT INTO payouts (user_id, amount_cfa, phone_number, operator) VALUES ($1, $2, $3, $4) RETURNING `+payoutColumns,
-		userID, amount, phone, operator))
+		`INSERT INTO payouts (user_id, amount_cfa, phone_number, operator, provider) VALUES ($1, $2, $3, $4, $5) RETURNING `+payoutColumns,
+		userID, amount, phone, operator, provider))
 }
 
 func (r *PayoutRepo) ListByUser(ctx context.Context, userID string) ([]*model.Payout, error) {
@@ -74,7 +78,7 @@ type PayoutWithUser struct {
 func (r *PayoutRepo) ListAllAdmin(ctx context.Context) ([]*PayoutWithUser, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT p.id, p.user_id, p.amount_cfa, p.status, p.phone_number, p.operator,
-		        p.pawapay_payout_id, p.failure_reason, p.requested_at, p.paid_at, u.email
+		        p.provider, p.provider_reference, p.failure_reason, p.requested_at, p.paid_at, u.email
 		 FROM payouts p JOIN users u ON u.id = p.user_id
 		 ORDER BY p.requested_at DESC`)
 	if err != nil {
@@ -86,7 +90,7 @@ func (r *PayoutRepo) ListAllAdmin(ctx context.Context) ([]*PayoutWithUser, error
 	for rows.Next() {
 		p := &PayoutWithUser{}
 		if err := rows.Scan(&p.ID, &p.UserID, &p.AmountCFA, &p.Status, &p.PhoneNumber, &p.Operator,
-			&p.PawaPayPayoutID, &p.FailureReason, &p.RequestedAt, &p.PaidAt, &p.UserEmail); err != nil {
+			&p.Provider, &p.ProviderReference, &p.FailureReason, &p.RequestedAt, &p.PaidAt, &p.UserEmail); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -94,16 +98,19 @@ func (r *PayoutRepo) ListAllAdmin(ctx context.Context) ([]*PayoutWithUser, error
 	return out, rows.Err()
 }
 
-func (r *PayoutRepo) FindByPawaPayID(ctx context.Context, pawapayPayoutID string) (*model.Payout, error) {
+// FindByProviderReference — clé composite (provider, reference) : les deux
+// prestataires génèrent leurs propres identifiants dans des espaces
+// indépendants, donc la référence brute seule ne suffit pas à désambiguïser.
+func (r *PayoutRepo) FindByProviderReference(ctx context.Context, provider, reference string) (*model.Payout, error) {
 	return scanPayout(r.pool.QueryRow(ctx,
-		`SELECT `+payoutColumns+` FROM payouts WHERE pawapay_payout_id = $1`, pawapayPayoutID))
+		`SELECT `+payoutColumns+` FROM payouts WHERE provider = $1 AND provider_reference = $2`, provider, reference))
 }
 
-// SetPawaPayReference — enregistre l'ID PawaPay juste après l'acceptation de la demande.
-func (r *PayoutRepo) SetPawaPayReference(ctx context.Context, id, pawapayPayoutID string) error {
+// SetProviderReference — enregistre l'ID du prestataire juste après l'acceptation de la demande.
+func (r *PayoutRepo) SetProviderReference(ctx context.Context, id, reference string) error {
 	_, err := r.pool.Exec(ctx,
-		`UPDATE payouts SET pawapay_payout_id = $2, status = 'processing' WHERE id = $1`,
-		id, pawapayPayoutID)
+		`UPDATE payouts SET provider_reference = $2, status = 'processing' WHERE id = $1`,
+		id, reference)
 	return err
 }
 

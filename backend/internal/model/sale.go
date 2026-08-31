@@ -15,6 +15,11 @@ type Sale struct {
 	VendorAmountCFA     int        `json:"vendor_amount_cfa"`
 	PaymentProvider     string     `json:"payment_provider"`
 	PaymentReference    string     `json:"payment_reference"`
+	// ProviderTransactionID : ID propre à KPay (retourné à l'initiation),
+	// nécessaire pour ses appels GET statut/remboursement — reste nil pour
+	// une vente PawaPay (payment_reference est déjà l'identifiant, généré
+	// côté DIARRA).
+	ProviderTransactionID *string `json:"provider_transaction_id,omitempty"`
 	CheckoutToken       *string    `json:"checkout_token,omitempty"`
 	Status              string     `json:"status"`
 	RefundReference     *string    `json:"refund_reference,omitempty"`
@@ -34,6 +39,10 @@ type CreateOrderInput struct {
 	// serveur utilise toujours product.PriceCFA — ne jamais faire confiance
 	// à un montant client pour un produit à prix fixe.
 	AmountCFA *int `json:"amount_cfa,omitempty"`
+	// PaymentMethod : "mobile_money" (défaut, vide accepté) | "card" | "paypal".
+	// Carte/PayPal forcent KPay (PawaPay n'a pas cette capacité) — voir
+	// SaleHandler.initiateCheckout.
+	PaymentMethod string `json:"payment_method,omitempty"`
 }
 
 type SaleStatus string

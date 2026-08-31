@@ -22,6 +22,7 @@ type PayoutHandler struct {
 	userRepo     *repository.UserRepo
 	settingsRepo *repository.SettingsRepo
 	pawapay      *payment.PawaPayClient
+	kpay         *payment.KPayClient
 	cache        *cache.Client
 
 	// Cache en mémoire des limites de versement par opérateur (PawaPay
@@ -39,6 +40,7 @@ func NewPayoutHandler(
 	userRepo *repository.UserRepo,
 	settingsRepo *repository.SettingsRepo,
 	pawapay *payment.PawaPayClient,
+	kpay *payment.KPayClient,
 	cacheClient *cache.Client,
 ) *PayoutHandler {
 	return &PayoutHandler{
@@ -48,8 +50,17 @@ func NewPayoutHandler(
 		userRepo:     userRepo,
 		settingsRepo: settingsRepo,
 		pawapay:      pawapay,
+		kpay:         kpay,
 		cache:        cacheClient,
 	}
+}
+
+// resolvePayoutProvider lit le réglage admin par opérateur exact (voir
+// model.GatewayOperatorSettingKey) et retourne le nom du prestataire à
+// utiliser ("off" bloque explicitement l'opérateur). Défaut "pawapay" si le
+// réglage est absent (compatible avec le comportement d'avant KPay).
+func (h *PayoutHandler) resolvePayoutProvider(ctx context.Context, providerCode string) string {
+	return h.settingsRepo.Get(ctx, model.GatewayOperatorSettingKey(providerCode), "pawapay")
 }
 
 // vendorBalanceCacheKey — même package que webhook_handler.go, qui invalide
@@ -117,7 +128,7 @@ func (h *PayoutHandler) SetPayoutMethod(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, `{"error":"unsupported_operator"}`, http.StatusBadRequest)
 		return
 	}
-	if key := payment.GatewaySettingKey(op.Provider); key != "" && !h.settingsRepo.GetBool(r.Context(), key, true) {
+	if h.resolvePayoutProvider(r.Context(), op.Provider) == "off" {
 		http.Error(w, `{"error":"gateway_disabled"}`, http.StatusBadRequest)
 		return
 	}
@@ -298,15 +309,46 @@ func (h *PayoutHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	payout, err := h.payoutRepo.Create(r.Context(), userID, input.AmountCFA, *msisdn, *provider)
+	// Résolu UNE FOIS ici et persisté sur le versement (voir PayoutRepo.Create)
+	// — un changement de réglage admin après coup ne doit jamais rediriger un
+	// versement déjà en cours vers un autre prestataire.
+	providerName := h.resolvePayoutProvider(r.Context(), *provider)
+	if providerName == "off" {
+		http.Error(w, `{"error":"gateway_disabled"}`, http.StatusBadRequest)
+		return
+	}
+
+	payout, err := h.payoutRepo.Create(r.Context(), userID, input.AmountCFA, *msisdn, *provider, providerName)
 	if err != nil {
 		http.Error(w, `{"error":"payout_creation_failed"}`, http.StatusInternalServerError)
 		return
 	}
 	h.cache.Del(r.Context(), vendorBalanceCacheKey(userID))
 
-	// Déclenche le versement mobile money PawaPay (asynchrone, comme le checkout).
-	if h.pawapay != nil {
+	// Déclenche le versement mobile money (asynchrone, comme le checkout).
+	switch {
+	case providerName == "kpay" && h.kpay != nil:
+		resp, err := h.kpay.InitiatePayout(r.Context(), payment.PayoutInitRequest{
+			Amount:      fmt.Sprintf("%d", payout.AmountCFA),
+			Provider:    *provider,
+			PhoneNumber: *msisdn,
+			ExternalId:  payout.ID,
+			Description: "Versement DIARRA",
+		})
+		if err != nil {
+			reason := "payout_init_failed"
+			h.payoutRepo.UpdateStatus(r.Context(), payout.ID, "failed", &reason)
+			http.Error(w, fmt.Sprintf(`{"error":"payout_rejected","reason":"%s"}`, reason), http.StatusBadGateway)
+			return
+		}
+		if err := h.payoutRepo.SetProviderReference(r.Context(), payout.ID, resp.ID); err != nil {
+			http.Error(w, `{"error":"payout_update_failed"}`, http.StatusInternalServerError)
+			return
+		}
+		payout.ProviderReference = &resp.ID
+		payout.Status = "processing"
+
+	case h.pawapay != nil:
 		pawapayID := uuidString()
 		resp, err := h.pawapay.InitiatePayout(r.Context(), payment.PayoutRequest{
 			PayoutId: pawapayID,
@@ -331,11 +373,11 @@ func (h *PayoutHandler) Create(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, fmt.Sprintf(`{"error":"payout_rejected","reason":"%s"}`, reason), http.StatusBadGateway)
 			return
 		}
-		if err := h.payoutRepo.SetPawaPayReference(r.Context(), payout.ID, pawapayID); err != nil {
+		if err := h.payoutRepo.SetProviderReference(r.Context(), payout.ID, pawapayID); err != nil {
 			http.Error(w, `{"error":"payout_update_failed"}`, http.StatusInternalServerError)
 			return
 		}
-		payout.PawaPayPayoutID = &pawapayID
+		payout.ProviderReference = &pawapayID
 		payout.Status = "processing"
 	}
 

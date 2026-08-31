@@ -29,4 +29,5 @@ data:
   # ce ConfigMap ne le faisait pas) — la clé prod se faisait rejeter par
   # l'API sandbox, d'où les 401/502 sur /api/orders.
   PAWAPAY_BASE_URL: "https://api.pawapay.io"
+  KPAY_BASE_URL: "https://admin.kpay.site"
   SMTP_PORT: "587"

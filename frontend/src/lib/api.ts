@@ -407,6 +407,11 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  // Renvoie une URL signée de courte durée vers le fichier livrable du
+  // produit, pour le vérifier avant de le modérer.
+  getAdminProductDownloadUrl: (id: string) =>
+    fetchApi<{ signed_url: string }>(`/api/admin/products/${id}/download`),
+
   confirmProductDeletion: (id: string) =>
     fetchApi<{ status: string }>(`/api/admin/products/${id}`, { method: 'DELETE' }),
 

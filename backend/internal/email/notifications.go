@@ -223,6 +223,30 @@ func (n *NotificationService) SendPayoutConfirmed(ctx context.Context, to string
 	return n.client.Send(ctx, to, "Versement confirmé", n.renderEmail(inner))
 }
 
+// SendProductModerated notifie un vendeur de la décision de modération sur
+// l'un de ses produits. status vaut "approved" ou "rejected" ; note est la
+// raison du refus saisie par l'admin (échappée avant insertion — texte
+// libre), ignorée si vide ou si le produit est approuvé.
+func (n *NotificationService) SendProductModerated(ctx context.Context, to, productTitle, status, note string) error {
+	safeTitle := html.EscapeString(productTitle)
+
+	if status == "approved" {
+		body := fmt.Sprintf(`<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Bonne nouvelle : votre produit <strong>%s</strong> a été approuvé. Il est maintenant en ligne et visible par tous les acheteurs du catalogue.</p>`, safeTitle)
+		inner := contentHTML("Votre produit est en ligne !", body, "Voir mes produits", n.frontendURL+"/vendor/products")
+		return n.client.Send(ctx, to, "Votre produit a été approuvé", n.renderEmail(inner))
+	}
+
+	reason := ""
+	if strings.TrimSpace(note) != "" {
+		reason = fmt.Sprintf(`<div style="margin:16px 0 0;padding:16px 18px;background-color:#fdf2f2;border-left:4px solid #dc2626;border-radius:8px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#0a3225;"><strong>Raison :</strong><br>%s</div>`,
+			strings.ReplaceAll(html.EscapeString(note), "\n", "<br>"))
+	}
+	body := fmt.Sprintf(`<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Votre produit <strong>%s</strong> n&rsquo;a pas été approuvé pour le moment.</p>%s
+<p style="margin:16px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#6b7c74;">Vous pouvez corriger les points signalés puis le soumettre à nouveau depuis votre espace vendeur.</p>`, safeTitle, reason)
+	inner := contentHTML("Votre produit n'a pas été approuvé", body, "Revoir mes produits", n.frontendURL+"/vendor/products")
+	return n.client.Send(ctx, to, "Votre produit n'a pas été approuvé", n.renderEmail(inner))
+}
+
 // SendSupportContact notifie un agent support d'un nouveau message envoyé
 // depuis le widget de contact public du site (visiteur non authentifié).
 // Le bouton d'action pointe directement vers une réponse par email (mailto:)

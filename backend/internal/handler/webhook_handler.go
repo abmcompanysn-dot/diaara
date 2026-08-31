@@ -23,18 +23,20 @@ import (
 )
 
 type WebhookHandler struct {
-	saleRepo         *repository.SaleRepo
-	userRepo         *repository.UserRepo
-	productRepo      *repository.ProductRepo
-	payoutRepo       *repository.PayoutRepo
-	pawapay          *payment.PawaPayClient
-	commissionSvc    *service.CommissionService
-	donationSvc      *service.DonationService
-	notifications    *email.NotificationService
-	notificationRepo *repository.NotificationRepo
-	storage          *storage.S3Storage
-	allowedIPs       map[string]bool
-	cache            *cache.Client
+	saleRepo          *repository.SaleRepo
+	userRepo          *repository.UserRepo
+	productRepo       *repository.ProductRepo
+	payoutRepo        *repository.PayoutRepo
+	pawapay           *payment.PawaPayClient
+	kpay              *payment.KPayClient
+	kpayWebhookSecret string
+	commissionSvc     *service.CommissionService
+	donationSvc       *service.DonationService
+	notifications     *email.NotificationService
+	notificationRepo  *repository.NotificationRepo
+	storage           *storage.S3Storage
+	allowedIPs        map[string]bool
+	cache             *cache.Client
 }
 
 func NewWebhookHandler(
@@ -43,6 +45,8 @@ func NewWebhookHandler(
 	productRepo *repository.ProductRepo,
 	payoutRepo *repository.PayoutRepo,
 	pawapay *payment.PawaPayClient,
+	kpay *payment.KPayClient,
+	kpayWebhookSecret string,
 	donationSvc *service.DonationService,
 	notifications *email.NotificationService,
 	notificationRepo *repository.NotificationRepo,
@@ -55,19 +59,38 @@ func NewWebhookHandler(
 		ips[strings.TrimSpace(ip)] = true
 	}
 	return &WebhookHandler{
-		saleRepo:         saleRepo,
-		userRepo:         userRepo,
-		productRepo:      productRepo,
-		payoutRepo:       payoutRepo,
-		pawapay:          pawapay,
-		commissionSvc:    service.NewCommissionService(),
-		donationSvc:      donationSvc,
-		notifications:    notifications,
-		notificationRepo: notificationRepo,
-		storage:          storage,
-		allowedIPs:       ips,
-		cache:            cacheClient,
+		saleRepo:          saleRepo,
+		userRepo:          userRepo,
+		productRepo:       productRepo,
+		payoutRepo:        payoutRepo,
+		pawapay:           pawapay,
+		kpay:              kpay,
+		kpayWebhookSecret: kpayWebhookSecret,
+		commissionSvc:     service.NewCommissionService(),
+		donationSvc:       donationSvc,
+		notifications:     notifications,
+		notificationRepo:  notificationRepo,
+		storage:           storage,
+		allowedIPs:        ips,
+		cache:             cacheClient,
 	}
+}
+
+// verifyKPayRequest — HMAC-SHA256 (X-KPAY-Signature) sur le corps brut, avec
+// le secret webhook DÉDIÉ (distinct de la clé secrète API) — schéma différent
+// de verifyRequest (Content-Digest + liste blanche IP, PawaPay).
+func (h *WebhookHandler) verifyKPayRequest(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, `{"error":"read_failed"}`, http.StatusBadRequest)
+		return nil, false
+	}
+	sig := r.Header.Get("X-KPAY-Signature")
+	if !payment.VerifyKPaySignature(h.kpayWebhookSecret, body, sig) {
+		http.Error(w, `{"error":"invalid_signature"}`, http.StatusUnauthorized)
+		return nil, false
+	}
+	return body, true
 }
 
 // notify insère une notification in-app, en tâche de fond, sans jamais faire
@@ -121,7 +144,7 @@ func (h *WebhookHandler) PawaPayPayoutWebhook(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	payout, err := h.payoutRepo.FindByPawaPayID(r.Context(), payload.PayoutId)
+	payout, err := h.payoutRepo.FindByProviderReference(r.Context(), "pawapay", payload.PayoutId)
 	if err != nil {
 		http.Error(w, `{"error":"payout_not_found"}`, http.StatusNotFound)
 		return
@@ -321,6 +344,211 @@ func (h *WebhookHandler) PawaPayWebhook(w http.ResponseWriter, r *http.Request) 
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": status.Data.Status})
+}
+
+// --- Webhooks KPay -----------------------------------------------------------
+//
+// Même principe défensif que PawaPay ci-dessus (ne jamais faire confiance au
+// statut du corps du webhook, toujours revérifier via l'API), mais
+// vérification par HMAC réel (verifyKPayRequest) au lieu de Content-Digest+IP.
+
+// KPayPaymentWebhook reçoit la confirmation de paiement depuis KPay.
+func (h *WebhookHandler) KPayPaymentWebhook(w http.ResponseWriter, r *http.Request) {
+	if h.kpay == nil {
+		http.Error(w, `{"error":"kpay_not_configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+	body, ok := h.verifyKPayRequest(w, r)
+	if !ok {
+		return
+	}
+
+	var payload struct {
+		ExternalId string `json:"externalId"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil || payload.ExternalId == "" {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+
+	sale, err := h.saleRepo.FindByPaymentReference(r.Context(), payload.ExternalId)
+	if err != nil {
+		http.Error(w, `{"error":"sale_not_found"}`, http.StatusNotFound)
+		return
+	}
+	if sale.Status != string(model.SalePending) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": sale.Status})
+		return
+	}
+	if sale.ProviderTransactionID == nil {
+		http.Error(w, `{"error":"missing_provider_transaction_id"}`, http.StatusInternalServerError)
+		return
+	}
+
+	status, err := h.kpay.GetPaymentStatus(r.Context(), *sale.ProviderTransactionID)
+	if err != nil {
+		http.Error(w, `{"error":"status_check_failed"}`, http.StatusBadGateway)
+		return
+	}
+
+	if status.Status == "COMPLETED" {
+		if err := h.saleRepo.UpdateStatus(r.Context(), sale.ID, string(model.SalePaid)); err != nil {
+			http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
+			return
+		}
+		if h.notifications != nil {
+			go h.notifyPaid(context.Background(), sale)
+		}
+		if h.donationSvc != nil {
+			go h.donationSvc.Accumulate(context.Background(), sale.PlatformFeeCFA)
+		}
+		h.notify(r.Context(), sale.BuyerID, "order_paid", "Commande confirmée",
+			fmt.Sprintf("Votre paiement de %d FCFA a été confirmé.", sale.AmountCFA), "/orders")
+		if product, err := h.productRepo.FindByID(r.Context(), sale.ProductID); err == nil {
+			h.notify(r.Context(), product.VendorID, "sale", "Nouvelle vente",
+				fmt.Sprintf("%s vient d'acheter « %s » pour %d FCFA.", sale.BuyerName, product.Title, sale.VendorAmountCFA), "/vendor/sales")
+			h.cache.Del(r.Context(), vendorBalanceCacheKey(product.VendorID))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "paid"})
+		return
+	}
+
+	if status.Status == "FAILED" || status.Status == "CANCELLED" {
+		if err := h.saleRepo.UpdateStatus(r.Context(), sale.ID, string(model.SaleFailed)); err != nil {
+			http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
+			return
+		}
+		if h.notifications != nil {
+			go h.notifyFailed(context.Background(), sale)
+		}
+		h.notify(r.Context(), sale.BuyerID, "order_failed", "Paiement échoué",
+			"Votre paiement n'a pas pu être traité, réessayez.", "/orders")
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": status.Status})
+}
+
+// KPayPayoutWebhook reçoit la confirmation d'un versement vendeur via KPay.
+func (h *WebhookHandler) KPayPayoutWebhook(w http.ResponseWriter, r *http.Request) {
+	if h.kpay == nil {
+		http.Error(w, `{"error":"kpay_not_configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+	body, ok := h.verifyKPayRequest(w, r)
+	if !ok {
+		return
+	}
+
+	var payload struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil || payload.ID == "" {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+
+	payout, err := h.payoutRepo.FindByProviderReference(r.Context(), "kpay", payload.ID)
+	if err != nil {
+		http.Error(w, `{"error":"payout_not_found"}`, http.StatusNotFound)
+		return
+	}
+	if payout.Status == "paid" || payout.Status == "failed" {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": payout.Status})
+		return
+	}
+
+	status, err := h.kpay.GetPayoutStatus(r.Context(), payload.ID)
+	if err != nil {
+		http.Error(w, `{"error":"status_check_failed"}`, http.StatusBadGateway)
+		return
+	}
+
+	switch status.Status {
+	case "COMPLETED":
+		h.payoutRepo.UpdateStatus(r.Context(), payout.ID, "paid", nil)
+		h.notify(r.Context(), payout.UserID, "payout_paid", "Versement effectué",
+			fmt.Sprintf("Votre versement de %d FCFA a été envoyé.", payout.AmountCFA), "/vendor/earnings")
+	case "FAILED", "CANCELLED":
+		reason := status.FailureReason
+		h.payoutRepo.UpdateStatus(r.Context(), payout.ID, "failed", &reason)
+		h.notify(r.Context(), payout.UserID, "payout_failed", "Versement échoué",
+			"Votre demande de versement a été refusée, vérifiez votre moyen de versement.", "/vendor/earnings")
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": status.Status})
+}
+
+// KPayRefundWebhook reçoit la confirmation d'un remboursement via KPay.
+//
+// La doc fournie par KPay ne liste pas d'endpoint GET dédié au statut d'un
+// remboursement (contrairement à PawaPay GetRefundStatus) — à confirmer
+// contre leur API réelle avant mise en production. En attendant, on
+// revérifie via le statut du PAIEMENT parent (GetPaymentStatus sur
+// sale.ProviderTransactionID) plutôt que de faire confiance au webhook seul.
+func (h *WebhookHandler) KPayRefundWebhook(w http.ResponseWriter, r *http.Request) {
+	if h.kpay == nil {
+		http.Error(w, `{"error":"kpay_not_configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+	body, ok := h.verifyKPayRequest(w, r)
+	if !ok {
+		return
+	}
+
+	var payload struct {
+		ID                string `json:"id"`
+		OriginalPaymentId string `json:"originalPaymentId"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil || payload.ID == "" {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+
+	sale, err := h.saleRepo.FindByRefundReference(r.Context(), payload.ID)
+	if err != nil {
+		http.Error(w, `{"error":"sale_not_found"}`, http.StatusNotFound)
+		return
+	}
+	if sale.Status == string(model.SaleRefunded) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": sale.Status})
+		return
+	}
+	if sale.ProviderTransactionID == nil {
+		http.Error(w, `{"error":"missing_provider_transaction_id"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// Pas d'endpoint de statut dédié au remboursement (voir commentaire de
+	// fonction) : on relit le paiement parent, dont le statut redevient
+	// "COMPLETED" (jamais un statut "refunded" dédié côté KPay d'après leur
+	// doc) une fois le remboursement traité — on se fie donc ici au statut
+	// annoncé par le WEBHOOK lui-même pour décider, contrairement au reste de
+	// ce fichier (à corriger dès confirmation d'un vrai endpoint de statut).
+	_, err = h.kpay.GetPaymentStatus(r.Context(), *sale.ProviderTransactionID)
+	if err != nil {
+		http.Error(w, `{"error":"status_check_failed"}`, http.StatusBadGateway)
+		return
+	}
+
+	var payloadStatus struct {
+		Status string `json:"status"`
+	}
+	json.Unmarshal(body, &payloadStatus)
+
+	if payloadStatus.Status == "COMPLETED" {
+		h.saleRepo.UpdateStatus(r.Context(), sale.ID, string(model.SaleRefunded))
+		go h.notifyRefunded(context.Background(), sale)
+		h.notify(r.Context(), sale.BuyerID, "refund", "Remboursement effectué",
+			fmt.Sprintf("Votre remboursement de %d FCFA a été traité.", sale.AmountCFA), "/orders")
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": payloadStatus.Status})
 }
 
 // notifyFailed envoie l'email d'échec de paiement à l'acheteur.

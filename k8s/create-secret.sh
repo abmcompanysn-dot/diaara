@@ -55,6 +55,12 @@ kubectl create secret generic diarra-secrets \
   --from-literal=PAWAPAY_API_KEY="$(env_value PAWAPAY_API_KEY)" \
   --from-literal=PAWAPAY_CALLBACK_URL="$(env_value PAWAPAY_CALLBACK_URL)" \
   --from-literal=PAWAPAY_CALLBACK_IPS="$(env_value PAWAPAY_CALLBACK_IPS)" \
+  --from-literal=KPAY_API_KEY="$(env_value KPAY_API_KEY)" \
+  --from-literal=KPAY_SECRET_KEY="$(env_value KPAY_SECRET_KEY)" \
+  --from-literal=KPAY_WEBHOOK_SECRET="$(env_value KPAY_WEBHOOK_SECRET)" \
+  --from-literal=KPAY_CALLBACK_URL="$(env_value KPAY_CALLBACK_URL)" \
+  --from-literal=KPAY_PAYOUT_CALLBACK_URL="$(env_value KPAY_PAYOUT_CALLBACK_URL)" \
+  --from-literal=KPAY_REFUND_CALLBACK_URL="$(env_value KPAY_REFUND_CALLBACK_URL)" \
   --from-literal=FIREBASE_PROJECT_ID="$(env_value FIREBASE_PROJECT_ID)" \
   --dry-run=client -o yaml | kubectl apply -f -
 

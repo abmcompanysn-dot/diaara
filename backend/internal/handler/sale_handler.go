@@ -36,6 +36,7 @@ type SaleHandler struct {
 	userRepo      *repository.UserRepo
 	settingsRepo  *repository.SettingsRepo
 	pawapay       *payment.PawaPayClient
+	kpay          *payment.KPayClient
 	commissionSvc *service.CommissionService
 	notifications *email.NotificationService
 	frontendURL   string
@@ -48,6 +49,7 @@ func NewSaleHandler(
 	userRepo *repository.UserRepo,
 	settingsRepo *repository.SettingsRepo,
 	pawapay *payment.PawaPayClient,
+	kpay *payment.KPayClient,
 	notifications *email.NotificationService,
 	frontendURL string,
 ) *SaleHandler {
@@ -58,10 +60,36 @@ func NewSaleHandler(
 		userRepo:      userRepo,
 		settingsRepo:  settingsRepo,
 		pawapay:       pawapay,
+		kpay:          kpay,
 		commissionSvc: service.NewCommissionService(),
 		notifications: notifications,
 		frontendURL:   strings.TrimSuffix(frontendURL, "/"),
 	}
+}
+
+// resolveDepositProvider retourne l'adaptateur PaymentProvider (statut/
+// remboursement, voir payment.PaymentProvider) correspondant au fournisseur
+// déjà enregistré sur une vente — jamais recalculé après coup, contrairement
+// à la sélection faite à l'initiation (resolveCheckoutProvider).
+func (h *SaleHandler) resolveDepositProvider(providerName string) payment.PaymentProvider {
+	if providerName == "kpay" && h.kpay != nil {
+		return h.kpay.AsProvider()
+	}
+	return h.pawapay.AsProvider()
+}
+
+// resolveCheckoutProvider détermine le prestataire à utiliser pour un NOUVEAU
+// paiement. Carte/PayPal forcent KPay (route de capacité : PawaPay n'a pas
+// carte/PayPal, ce n'est pas un choix) ; sinon (mobile money) on lit le
+// réglage admin par pays (model.CheckoutProviderSettingKey) — le checkout en
+// mode GATEWAY ne connaît que le pays de l'acheteur, jamais l'opérateur
+// exact (choisi ensuite sur la page hébergée), contrairement aux versements
+// vendeur qui, eux, routent par opérateur exact (voir PayoutHandler).
+func (h *SaleHandler) resolveCheckoutProvider(ctx context.Context, country, paymentMethod string) string {
+	if paymentMethod == "card" || paymentMethod == "paypal" {
+		return "kpay"
+	}
+	return h.settingsRepo.Get(ctx, model.CheckoutProviderSettingKey(country), "pawapay")
 }
 
 // Create — l'acheteur crée une commande et initie un dépôt mobile money PawaPay
@@ -164,8 +192,12 @@ func (h *SaleHandler) Create(w http.ResponseWriter, r *http.Request) {
 	// Commission : taux configurable depuis l'admin (settings.commission_rate_pct,
 	// 15% par défaut). Calculé ici plutôt que via CommissionService (qui reste
 	// au taux fixe pour ses autres usages) pour ne dépendre que de ce réglage.
+	// Palier réduit : à partir de 1 000 000 FCFA, la commission passe à 10%
+	// quel que soit le taux configuré (voir service.HighValueThresholdCFA).
 	rate := h.settingsRepo.GetFloat(r.Context(), model.SettingCommissionRatePct, service.DefaultPlatformFeePct)
+	rate = service.EffectivePlatformFeePct(amount, rate)
 	platformFee := int(float64(amount) * rate / 100.0)
+	providerName := h.resolveCheckoutProvider(r.Context(), input.Country, input.PaymentMethod)
 	sale := &model.Sale{
 		ProductID:       product.ID,
 		BuyerID:         userID,
@@ -174,7 +206,7 @@ func (h *SaleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		AmountCFA:       amount,
 		PlatformFeeCFA:  platformFee,
 		VendorAmountCFA: amount - platformFee,
-		PaymentProvider: "pawapay",
+		PaymentProvider: providerName,
 		Status:          string(model.SalePending),
 	}
 
@@ -222,11 +254,12 @@ func (h *SaleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Page de paiement PawaPay hébergée : l'acheteur y choisit lui-même son
-	// opérateur mobile money, PawaPay le redirige ensuite vers ReturnUrl.
-	page, err := h.initiatePaymentPage(r.Context(), created, product, input.Country)
-	if err != nil || page == nil || page.RedirectUrl == "" {
-		log.Printf("payment_init_failed sale=%s: %v", created.ID, err)
+	// Page de paiement hébergée (PawaPay ou KPay selon providerName) :
+	// l'acheteur y choisit lui-même son opérateur mobile money/carte/PayPal,
+	// le prestataire le redirige ensuite vers ReturnUrl.
+	redirectURL, err := h.initiateCheckout(r.Context(), created, product, input.Country, providerName)
+	if err != nil || redirectURL == "" {
+		log.Printf("payment_init_failed sale=%s provider=%s: %v", created.ID, providerName, err)
 		h.saleRepo.UpdateStatus(r.Context(), created.ID, string(model.SaleFailed))
 		http.Error(w, `{"error":"payment_init_failed"}`, http.StatusBadGateway)
 		return
@@ -237,7 +270,7 @@ func (h *SaleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		"order": created,
 		"checkout": map[string]string{
 			"deposit_id":   created.PaymentReference,
-			"redirect_url": page.RedirectUrl,
+			"redirect_url": redirectURL,
 		},
 	})
 }
@@ -257,13 +290,20 @@ func (h *SaleHandler) CheckoutStatus(w http.ResponseWriter, r *http.Request) {
 	}
 
 	status := sale.Status
-	// Si le webhook n'est pas (encore) arrivé, on demande le statut frais à PawaPay.
-	if (status == string(model.SalePending)) && h.pawapay != nil {
-		if res, err := h.pawapay.GetDepositStatus(r.Context(), sale.PaymentReference); err == nil && res.Data != nil {
-			switch res.Data.Status {
-			case "COMPLETED":
+	// Si le webhook n'est pas (encore) arrivé, on demande le statut frais au
+	// prestataire qui a réellement traité cette vente (sale.PaymentProvider).
+	providerConfigured := (sale.PaymentProvider == "kpay" && h.kpay != nil) ||
+		(sale.PaymentProvider != "kpay" && h.pawapay != nil)
+	if status == string(model.SalePending) && providerConfigured {
+		ref := sale.PaymentReference
+		if sale.PaymentProvider == "kpay" && sale.ProviderTransactionID != nil {
+			ref = *sale.ProviderTransactionID
+		}
+		if outcome, err := h.resolveDepositProvider(sale.PaymentProvider).GetDepositStatus(r.Context(), ref); err == nil {
+			switch outcome.Status {
+			case "completed":
 				status = string(model.SalePaid)
-			case "FAILED":
+			case "failed", "cancelled":
 				status = string(model.SaleFailed)
 			}
 		}
@@ -342,6 +382,54 @@ func (h *SaleHandler) ListVendor(w http.ResponseWriter, r *http.Request) {
 
 func newUUID() string {
 	return uuidString()
+}
+
+// initiateCheckout distribue vers PawaPay ou KPay selon providerName (déjà
+// résolu par resolveCheckoutProvider et persisté sur sale.PaymentProvider),
+// et renvoie l'URL de redirection vers la page de paiement hébergée.
+func (h *SaleHandler) initiateCheckout(ctx context.Context, sale *model.Sale, product *model.Product, country, providerName string) (string, error) {
+	if providerName == "kpay" {
+		return h.initiateKPayCheckout(ctx, sale, product)
+	}
+	page, err := h.initiatePaymentPage(ctx, sale, product, country)
+	if err != nil || page == nil {
+		return "", err
+	}
+	return page.RedirectUrl, nil
+}
+
+// initiateKPayCheckout — mode GATEWAY (page hébergée par KPay) : pas de
+// provider/phoneNumber envoyés, l'acheteur choisit lui-même son opérateur
+// mobile money, sa carte ou PayPal sur la page KPay. paymentMethod
+// "card"/"paypal" force ce mode même si le pays serait normalement routé
+// vers PawaPay (voir resolveCheckoutProvider).
+//
+// Devise : XOF par défaut (même devise que le catalogue) — à ajuster si la
+// passerelle carte de KPay l'exige autrement (à vérifier en sandbox).
+func (h *SaleHandler) initiateKPayCheckout(ctx context.Context, sale *model.Sale, product *model.Product) (string, error) {
+	if h.kpay == nil {
+		return "", errors.New("KPay non configuré")
+	}
+	returnURL := h.frontendURL + "/checkout/return?token=" + *sale.CheckoutToken
+
+	req := payment.PaymentInitRequest{
+		Amount:      fmt.Sprintf("%d", sale.AmountCFA),
+		Currency:    "XOF",
+		ExternalId:  sale.PaymentReference,
+		ReturnUrl:   returnURL,
+		Description: product.Title,
+		Metadata:    map[string]string{"saleId": sale.ID},
+	}
+	resp, err := h.kpay.InitiatePayment(ctx, req)
+	if err != nil {
+		return "", err
+	}
+	if resp.ID != "" {
+		if err := h.saleRepo.SetProviderTransactionID(ctx, sale.ID, resp.ID); err != nil {
+			return "", err
+		}
+	}
+	return resp.GatewayUrl, nil
 }
 
 // initiatePaymentPage crée une page de paiement PawaPay hébergée pour une vente :

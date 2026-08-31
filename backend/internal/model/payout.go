@@ -3,16 +3,17 @@ package model
 import "time"
 
 type Payout struct {
-	ID              string     `json:"id"`
-	UserID          string     `json:"user_id"`
-	AmountCFA       int        `json:"amount_cfa"`
-	Status          string     `json:"status"`
-	PhoneNumber     string     `json:"phone_number"`
-	Operator        string     `json:"operator"`
-	PawaPayPayoutID *string    `json:"pawapay_payout_id,omitempty"`
-	FailureReason   *string    `json:"failure_reason,omitempty"`
-	RequestedAt     time.Time  `json:"requested_at"`
-	PaidAt          *time.Time `json:"paid_at,omitempty"`
+	ID                string     `json:"id"`
+	UserID            string     `json:"user_id"`
+	AmountCFA         int        `json:"amount_cfa"`
+	Status            string     `json:"status"`
+	PhoneNumber       string     `json:"phone_number"`
+	Operator          string     `json:"operator"`
+	Provider          string     `json:"provider"` // "pawapay" | "kpay", résolu à la création (voir GatewayOperatorSettingKey)
+	ProviderReference *string    `json:"provider_reference,omitempty"`
+	FailureReason     *string    `json:"failure_reason,omitempty"`
+	RequestedAt       time.Time  `json:"requested_at"`
+	PaidAt            *time.Time `json:"paid_at,omitempty"`
 }
 
 // CreatePayoutInput — le montant à verser. Le compte mobile money destinataire

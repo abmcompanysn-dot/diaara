@@ -193,6 +193,23 @@ func main() {
 		allowedIPs = strings.Split(ips, ",")
 	}
 
+	// Paiement KPay (mobile money 12 pays + carte/PayPal, en complément de
+	// PawaPay — voir plan d'intégration). Optionnel comme PawaPay : sans
+	// KPAY_API_KEY/KPAY_SECRET_KEY, kpay reste nil et le checkout carte/
+	// PayPal ainsi que le routage mobile money vers KPay sont désactivés,
+	// tout continue de fonctionner via PawaPay seul.
+	var kpay *payment.KPayClient
+	if os.Getenv("KPAY_API_KEY") != "" && os.Getenv("KPAY_SECRET_KEY") != "" {
+		kpay = payment.NewKPayClient(payment.KPayConfig{
+			APIKey:        os.Getenv("KPAY_API_KEY"),
+			SecretKey:     os.Getenv("KPAY_SECRET_KEY"),
+			BaseURL:       os.Getenv("KPAY_BASE_URL"), // défaut: https://admin.kpay.site
+			WebhookSecret: os.Getenv("KPAY_WEBHOOK_SECRET"),
+		})
+	} else {
+		log.Println("WARNING: KPay non configuré, paiement carte/PayPal et mobile money KPay désactivés")
+	}
+
 	// Notifications in-app
 	notificationRepo := repository.NewNotificationRepo(pool)
 	notificationHandler := handler.NewNotificationHandler(notificationRepo)
@@ -208,10 +225,10 @@ func main() {
 	healthHandler := handler.NewHealthHandler(pool)
 	authHandler := handler.NewAuthHandler(authService, firebaseVerifier)
 	productHandler := handler.NewProductHandler(productRepo, userRepo, saleRepo, storageService, os.Getenv("FRONTEND_URL"), redisCache)
-	saleHandler := handler.NewSaleHandler(saleRepo, productRepo, referralRepo, userRepo, settingsRepo, pawapay, notifications, os.Getenv("FRONTEND_URL"))
+	saleHandler := handler.NewSaleHandler(saleRepo, productRepo, referralRepo, userRepo, settingsRepo, pawapay, kpay, notifications, os.Getenv("FRONTEND_URL"))
 	closerHandler := handler.NewCloserHandler(referralRepo, productRepo, os.Getenv("FRONTEND_URL"))
 	bundleHandler := handler.NewBundleHandler(bundleRepo, productRepo)
-	webhookHandler := handler.NewWebhookHandler(saleRepo, userRepo, productRepo, payoutRepo, pawapay, donationService, notifications, notificationRepo, s3, allowedIPs, redisCache)
+	webhookHandler := handler.NewWebhookHandler(saleRepo, userRepo, productRepo, payoutRepo, pawapay, kpay, os.Getenv("KPAY_WEBHOOK_SECRET"), donationService, notifications, notificationRepo, s3, allowedIPs, redisCache)
 	feedHandler := handler.NewFeedHandler(productRepo, os.Getenv("FRONTEND_URL"))
 	donationHandler := handler.NewDonationHandler(donationRepo, settingsRepo, donationService)
 
@@ -229,7 +246,7 @@ func main() {
 	}
 
 	// Versements & revenus vendeur
-	payoutHandler := handler.NewPayoutHandler(payoutRepo, saleRepo, productRepo, userRepo, settingsRepo, pawapay, redisCache)
+	payoutHandler := handler.NewPayoutHandler(payoutRepo, saleRepo, productRepo, userRepo, settingsRepo, pawapay, kpay, redisCache)
 
 	// Support tickets
 	ticketRepo := repository.NewTicketRepo(pool)
@@ -241,7 +258,7 @@ func main() {
 	supportContactHandler := handler.NewSupportContactHandler(supportContactRepo, notifications)
 
 	// Administration
-	adminHandler := handler.NewAdminHandler(productRepo, saleRepo, userRepo, referralRepo, adminPermRepo, payoutRepo, settingsRepo, ticketRepo, pool, storageHealthPinger, startTime, pawapay, notifications, redisCache)
+	adminHandler := handler.NewAdminHandler(productRepo, saleRepo, userRepo, referralRepo, adminPermRepo, payoutRepo, settingsRepo, ticketRepo, pool, storageHealthPinger, storageService, startTime, pawapay, kpay, notifications, redisCache)
 
 	r := chi.NewRouter()
 
@@ -389,6 +406,9 @@ func main() {
 		r.Post("/pawapay", webhookHandler.PawaPayWebhook)
 		r.Post("/pawapay/payout", webhookHandler.PawaPayPayoutWebhook)
 		r.Post("/pawapay/refund", webhookHandler.PawaPayRefundWebhook)
+		r.Post("/kpay", webhookHandler.KPayPaymentWebhook)
+		r.Post("/kpay/payout", webhookHandler.KPayPayoutWebhook)
+		r.Post("/kpay/refund", webhookHandler.KPayRefundWebhook)
 	})
 
 	// WebSocket temps réel
@@ -438,6 +458,7 @@ func main() {
 			r.Use(middleware.RequireAdminScope(model.AdminPermModeration))
 			r.Get("/products/pending", adminHandler.PendingProducts)
 			r.Get("/products", adminHandler.ListProducts)
+			r.Get("/products/{id}/download", adminHandler.DownloadProductFile)
 			r.Put("/products/{id}/moderate", adminHandler.Moderate)
 			r.Delete("/products/{id}", adminHandler.ConfirmDeletion)
 			r.Put("/products/{id}/cancel-deletion", adminHandler.CancelDeletion)

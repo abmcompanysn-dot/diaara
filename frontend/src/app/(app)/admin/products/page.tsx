@@ -50,6 +50,7 @@ export default function AdminProductsPage() {
   const [toModerate, setToModerate] = useState<{ id: string; status: string } | null>(null);
   const [rejectNote, setRejectNote] = useState('');
   const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [toDeletionAction, setToDeletionAction] = useState<{ id: string; action: 'confirm' | 'cancel' } | null>(null);
 
@@ -113,6 +114,18 @@ export default function AdminProductsPage() {
       setError(friendlyError(err));
     } finally {
       setUploadingId(null);
+    }
+  };
+
+  const handleDownloadFile = async (productId: string) => {
+    setDownloadingId(productId);
+    try {
+      const { signed_url } = await api.getAdminProductDownloadUrl(productId);
+      window.open(signed_url, '_blank', 'noopener');
+    } catch (err: any) {
+      setError(friendlyError(err));
+    } finally {
+      setDownloadingId(null);
     }
   };
 
@@ -259,7 +272,16 @@ export default function AdminProductsPage() {
                   <span>Vendeur : {product.vendor_email || product.vendor_id.slice(0, 8) + '...'}</span>
                   <span>{new Date(product.created_at).toLocaleDateString('fr-FR')}</span>
                 </div>
-                <div className="flex gap-3">
+                <div className="flex flex-wrap gap-3">
+                  {product.file_key && (
+                    <Button
+                      variant="outline"
+                      onClick={() => handleDownloadFile(product.id)}
+                      disabled={downloadingId === product.id}
+                    >
+                      {downloadingId === product.id ? 'Préparation...' : 'Télécharger le fichier'}
+                    </Button>
+                  )}
                   {product.moderation_status !== 'approved' && (
                     <Button
                       onClick={() => setToModerate({ id: product.id, status: 'approved' })}

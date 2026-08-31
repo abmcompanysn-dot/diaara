@@ -45,6 +45,7 @@ export default function CheckoutView() {
   const [country, setCountry] = useState('SEN');
   const [email, setEmail] = useState('');
   const [customAmount, setCustomAmount] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState<'mobile_money' | 'card' | 'paypal'>('mobile_money');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
@@ -97,6 +98,7 @@ export default function CheckoutView() {
         product_id: product.id,
         buyer_name: name,
         country,
+        payment_method: paymentMethod,
         ...(guest ? { buyer_email: email } : {}),
         ...(isFlexible ? { amount_cfa: amountToPay } : {}),
       });
@@ -255,6 +257,40 @@ export default function CheckoutView() {
               </p>
             </div>
 
+            <div className="space-y-2">
+              <Label>Moyen de paiement</Label>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('mobile_money')}
+                  className={`rounded-lg border p-3 text-sm font-medium text-left transition-colors ${
+                    paymentMethod === 'mobile_money'
+                      ? 'border-green-700 bg-green-50 text-green-900'
+                      : 'border-border bg-white text-green-900/70'
+                  }`}
+                >
+                  📱 Mobile Money
+                  <span className="block text-xs font-normal text-green-900/50 mt-0.5">
+                    Orange, Wave, MTN, Moov…
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPaymentMethod('card')}
+                  className={`rounded-lg border p-3 text-sm font-medium text-left transition-colors ${
+                    paymentMethod === 'card' || paymentMethod === 'paypal'
+                      ? 'border-green-700 bg-green-50 text-green-900'
+                      : 'border-border bg-white text-green-900/70'
+                  }`}
+                >
+                  💳 Carte bancaire / PayPal
+                  <span className="block text-xs font-normal text-green-900/50 mt-0.5">
+                    Visa, Mastercard, PayPal
+                  </span>
+                </button>
+              </div>
+            </div>
+
             {error && (
               <div className="p-3 bg-red-50 text-red-700 rounded text-sm" role="alert">
                 {error}
@@ -267,18 +303,24 @@ export default function CheckoutView() {
               className="w-full h-12 font-semibold bg-green-950 text-white hover:bg-green-900 text-base gap-2"
             >
               <LockIcon size={16} />
-              {submitting ? 'Redirection vers PawaPay...' : `Payer ${formatPrice(isFlexible ? amountToPay : product.price_cfa)}`}
+              {submitting ? 'Redirection en cours...' : `Payer ${formatPrice(isFlexible ? amountToPay : product.price_cfa)}`}
             </Button>
 
             <div className="flex flex-col items-center gap-2.5 pt-1">
               <p className="text-[11px] text-center text-green-900/40">
-                ✅ Redirection sécurisée vers PawaPay · Orange Money, Wave, MTN MoMo, Moov Money…
+                {paymentMethod === 'mobile_money'
+                  ? '✅ Redirection sécurisée · Orange Money, Wave, MTN MoMo, Moov Money…'
+                  : '✅ Redirection sécurisée · Carte bancaire, PayPal'}
               </p>
               <div className="flex flex-wrap justify-center gap-2">
-                <img src="/payments/orange-money.png" alt="Orange Money" className="h-6 object-contain" />
-                <img src="/payments/mtn-momo.png" alt="MTN MoMo" className="h-6 object-contain" />
-                <img src="/payments/moov-money.png" alt="Moov Money" className="h-6 object-contain" />
-                <img src="/payments/wave.png" alt="Wave" className="h-6 object-contain" />
+                {paymentMethod === 'mobile_money' ? (
+                  <>
+                    <img src="/payments/orange-money.png" alt="Orange Money" className="h-6 object-contain" />
+                    <img src="/payments/mtn-momo.png" alt="MTN MoMo" className="h-6 object-contain" />
+                    <img src="/payments/moov-money.png" alt="Moov Money" className="h-6 object-contain" />
+                    <img src="/payments/wave.png" alt="Wave" className="h-6 object-contain" />
+                  </>
+                ) : null}
               </div>
             </div>
           </div>
