@@ -19,7 +19,12 @@ import (
 
 type S3Storage struct {
 	client *s3.Client
-	bucket string
+	// presignClient sert UNIQUEMENT à générer les URL signées remises au
+	// navigateur : il pointe sur PublicEndpoint (accessible depuis Internet).
+	// client, lui, pointe sur Endpoint (réseau interne) pour Upload/Download/
+	// Ping côté serveur. Si PublicEndpoint est vide, les deux sont identiques.
+	presignClient *s3.Client
+	bucket        string
 }
 
 type S3Config struct {
@@ -27,7 +32,13 @@ type S3Config struct {
 	SecretAccessKey string
 	Bucket          string
 	Endpoint        string // ex: https://fly.storage.tigris.dev (Tigris) ou https://<ACCOUNT>.r2.cloudflarestorage.com (R2)
-	Region          string // défaut: auto
+	// PublicEndpoint : endpoint joignable depuis le navigateur, utilisé pour
+	// signer les URL de téléchargement. Nécessaire quand le stockage n'est
+	// pas directement exposé (MinIO derrière un reverse proxy : Endpoint =
+	// http://minio:9000 interne, PublicEndpoint = https://files.exemple.com).
+	// Vide => on signe avec Endpoint (cas Tigris/R2, déjà publics).
+	PublicEndpoint string
+	Region         string // défaut: auto
 }
 
 func NewS3Storage(cfg S3Config) (*S3Storage, error) {
@@ -51,9 +62,18 @@ func NewS3Storage(cfg S3Config) (*S3Storage, error) {
 		o.UsePathStyle = true
 	})
 
+	presignClient := client
+	if cfg.PublicEndpoint != "" && cfg.PublicEndpoint != cfg.Endpoint {
+		presignClient = s3.NewFromConfig(awsCfg, func(o *s3.Options) {
+			o.BaseEndpoint = aws.String(cfg.PublicEndpoint)
+			o.UsePathStyle = true
+		})
+	}
+
 	return &S3Storage{
-		client: client,
-		bucket: cfg.Bucket,
+		client:        client,
+		presignClient: presignClient,
+		bucket:        cfg.Bucket,
 	}, nil
 }
 
@@ -87,7 +107,7 @@ func (s *S3Storage) Delete(ctx context.Context, key string) error {
 }
 
 func (s *S3Storage) GenerateSignedURL(ctx context.Context, key string, expiry time.Duration) (string, error) {
-	presigner := s3.NewPresignClient(s.client)
+	presigner := s3.NewPresignClient(s.presignClient)
 	req, err := presigner.PresignGetObject(ctx, &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(key),

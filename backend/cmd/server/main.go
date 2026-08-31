@@ -64,6 +64,7 @@ func main() {
 	var storageService handler.StorageService
 	s3, err := storage.NewS3Storage(storage.S3Config{
 		Endpoint:        os.Getenv("S3_ENDPOINT"),
+		PublicEndpoint:  os.Getenv("S3_PUBLIC_ENDPOINT"),
 		AccessKeyID:     os.Getenv("S3_ACCESS_KEY_ID"),
 		SecretAccessKey: os.Getenv("S3_SECRET_ACCESS_KEY"),
 		Bucket:          os.Getenv("S3_BUCKET"),
