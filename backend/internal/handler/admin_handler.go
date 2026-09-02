@@ -1173,7 +1173,17 @@ func (h *AdminHandler) CreateManualPayout(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	payout, err := h.payoutRepo.CreateManual(r.Context(), input.UserID, input.AmountCFA, input.FeeCFA, input.Phone, input.Note, adminID)
+	// À défaut de numéro fourni, on reprend celui enregistré par le vendeur
+	// (moyen de versement) — pour que la traçabilité comptable montre bien où
+	// l'argent a été envoyé.
+	phone := input.Phone
+	if phone == "" {
+		if regPhone, _, _, perr := h.userRepo.GetPayoutMethod(r.Context(), input.UserID); perr == nil && regPhone != nil {
+			phone = *regPhone
+		}
+	}
+
+	payout, err := h.payoutRepo.CreateManual(r.Context(), input.UserID, input.AmountCFA, input.FeeCFA, phone, input.Note, adminID)
 	if err != nil {
 		http.Error(w, `{"error":"payout_creation_failed"}`, http.StatusInternalServerError)
 		return

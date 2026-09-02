@@ -70,10 +70,17 @@ func (r *PayoutRepo) FindByID(ctx context.Context, id string) (*model.Payout, er
 		`SELECT `+payoutColumns+` FROM payouts WHERE id = $1`, id))
 }
 
-// PayoutWithUser — versement enrichi de l'email du demandeur, pour la vue admin globale.
+// PayoutWithUser — versement enrichi de l'email du demandeur et du moyen de
+// versement enregistré par le vendeur (users.payout_*), pour la vue admin
+// globale. Les champs VendorPayout* servent de repli quand le versement
+// lui-même n'a pas d'opérateur/numéro (versement manuel créé de toutes pièces)
+// et à afficher « où envoyer l'argent » avant un règlement manuel.
 type PayoutWithUser struct {
 	model.Payout
-	UserEmail string `json:"user_email"`
+	UserEmail           string  `json:"user_email"`
+	VendorPayoutPhone   *string `json:"vendor_payout_phone,omitempty"`
+	VendorPayoutOperator *string `json:"vendor_payout_operator,omitempty"`
+	VendorPayoutCountry *string `json:"vendor_payout_country,omitempty"`
 }
 
 // ListAllAdmin — tous les versements, tous vendeurs/affiliés confondus (vue admin).
@@ -81,7 +88,8 @@ func (r *PayoutRepo) ListAllAdmin(ctx context.Context) ([]*PayoutWithUser, error
 	rows, err := r.pool.Query(ctx,
 		`SELECT p.id, p.user_id, p.amount_cfa, p.status, p.phone_number, p.operator,
 		        p.provider, p.provider_reference, p.failure_reason, p.requested_at, p.paid_at,
-		        p.is_manual, p.manual_note, p.fee_cfa, u.email
+		        p.is_manual, p.manual_note, p.fee_cfa,
+		        u.email, u.payout_phone, u.payout_operator, u.payout_country
 		 FROM payouts p JOIN users u ON u.id = p.user_id
 		 ORDER BY p.requested_at DESC`)
 	if err != nil {
@@ -94,7 +102,8 @@ func (r *PayoutRepo) ListAllAdmin(ctx context.Context) ([]*PayoutWithUser, error
 		p := &PayoutWithUser{}
 		if err := rows.Scan(&p.ID, &p.UserID, &p.AmountCFA, &p.Status, &p.PhoneNumber, &p.Operator,
 			&p.Provider, &p.ProviderReference, &p.FailureReason, &p.RequestedAt, &p.PaidAt,
-			&p.IsManual, &p.ManualNote, &p.FeeCFA, &p.UserEmail); err != nil {
+			&p.IsManual, &p.ManualNote, &p.FeeCFA,
+			&p.UserEmail, &p.VendorPayoutPhone, &p.VendorPayoutOperator, &p.VendorPayoutCountry); err != nil {
 			return nil, err
 		}
 		out = append(out, p)

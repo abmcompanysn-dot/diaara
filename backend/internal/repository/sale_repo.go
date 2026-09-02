@@ -424,7 +424,7 @@ func (r *SaleRepo) SalesByDay(ctx context.Context, days int) ([]model.SalesByDay
 			COALESCE(SUM(amount_cfa), 0) AS revenue_cfa
 		 FROM sales
 		 WHERE status <> 'failed' AND status <> 'refunded'
-			AND created_at >= now() - ($1 || ' days')::interval
+			AND created_at >= now() - make_interval(days => $1)
 		 GROUP BY day
 		 ORDER BY day`, days)
 	if err != nil {

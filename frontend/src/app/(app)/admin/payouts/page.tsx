@@ -13,8 +13,10 @@ import { PageLoader } from '@/components/page-loader';
 import { EmptyState } from '@/components/empty-state';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { formatPrice, PAYOUT_STATUS_BADGE, PAYOUT_STATUS_LABELS } from '@/lib/constants';
+import { findPayoutOperator, maskPhone } from '@/lib/operators';
 import { friendlyError } from '@/lib/error-messages';
-import { SearchIcon } from '@/components/icons';
+import { openPayoutReceipt } from '@/lib/payout-receipt';
+import { SearchIcon, FileIcon } from '@/components/icons';
 
 interface Payout {
   id: string;
@@ -32,6 +34,26 @@ interface Payout {
   failure_reason?: string | null;
   requested_at: string;
   paid_at?: string | null;
+  // Moyen de versement enregistré par le vendeur (repli quand le versement
+  // lui-même n'a pas d'opérateur/numéro — cas d'un versement manuel créé de
+  // toutes pièces) — voir PayoutRepo.ListAllAdmin côté backend.
+  vendor_payout_phone?: string | null;
+  vendor_payout_operator?: string | null;
+  vendor_payout_country?: string | null;
+}
+
+// paymentMethodOf — le moyen de paiement à afficher pour un versement : celui
+// du versement lui-même s'il en a un, sinon celui enregistré par le vendeur
+// (versement manuel créé sans numéro saisi), sinon "non renseigné".
+function paymentMethodOf(p: Payout): { label: string; phone: string } | null {
+  const operator = p.operator || p.vendor_payout_operator || '';
+  const phone = p.phone_number || p.vendor_payout_phone || '';
+  if (!operator && !phone) return null;
+  const op = findPayoutOperator(operator);
+  return {
+    label: op ? `${op.label} (${op.countryName})` : operator || '—',
+    phone: maskPhone(phone, op?.dialCode) || phone || '—',
+  };
 }
 
 export default function AdminPayoutsPage() {
@@ -313,7 +335,7 @@ export default function AdminPayoutsPage() {
                 <TableRow>
                   <TableHead>Date</TableHead>
                   <TableHead>Vendeur</TableHead>
-                  <TableHead>Téléphone</TableHead>
+                  <TableHead>Moyen de paiement</TableHead>
                   <TableHead>Montant</TableHead>
                   <TableHead>Frais</TableHead>
                   <TableHead>Voie</TableHead>
@@ -322,7 +344,9 @@ export default function AdminPayoutsPage() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.map((p) => (
+                {filtered.map((p) => {
+                  const method = paymentMethodOf(p);
+                  return (
                   <TableRow key={p.id}>
                     <TableCell className="text-sm whitespace-nowrap">
                       {new Date(p.requested_at).toLocaleDateString('fr-FR')}
@@ -334,7 +358,19 @@ export default function AdminPayoutsPage() {
                       )}
                     </TableCell>
                     <TableCell className="text-sm text-green-900/70 whitespace-nowrap">
-                      {p.phone_number || '—'}
+                      {method ? (
+                        <>
+                          {method.label}
+                          <span className="block text-[11px] text-green-900/40">{method.phone}</span>
+                        </>
+                      ) : (
+                        <>
+                          <span className="text-amber-700">— non renseigné</span>
+                          <Link href="/admin/users" className="block text-[11px] text-primary underline">
+                            Voir la fiche vendeur
+                          </Link>
+                        </>
+                      )}
                     </TableCell>
                     <TableCell className="font-mono whitespace-nowrap">{formatPrice(p.amount_cfa)}</TableCell>
                     <TableCell className="font-mono text-sm text-green-900/60">
@@ -399,10 +435,20 @@ export default function AdminPayoutsPage() {
                             Marquer payé (manuel)
                           </Button>
                         )}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="gap-1.5"
+                          onClick={() => openPayoutReceipt(p)}
+                        >
+                          <FileIcon size={14} />
+                          Reçu
+                        </Button>
                       </div>
                     </TableCell>
                   </TableRow>
-                ))}
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
@@ -445,6 +491,25 @@ export default function AdminPayoutsPage() {
               {settleTarget.user_email} — {formatPrice(settleTarget.amount_cfa)}. Confirme que l'argent a bien été
               envoyé au vendeur par un autre moyen. Aucun appel PawaPay/KPay ne sera fait.
             </p>
+            {(() => {
+              const method = paymentMethodOf(settleTarget);
+              return method ? (
+                <div className="p-3 rounded-lg bg-green-900/5 text-sm">
+                  <p className="font-medium text-green-950">Où envoyer l'argent</p>
+                  <p className="text-green-900/70">
+                    {method.label} · {method.phone}
+                  </p>
+                </div>
+              ) : (
+                <div className="p-3 rounded-lg bg-amber-50 text-amber-800 text-sm">
+                  Ce vendeur n'a enregistré aucun moyen de versement. Vérifiez avec lui avant d'envoyer l'argent —{' '}
+                  <Link href="/admin/users" className="underline">
+                    voir sa fiche
+                  </Link>
+                  .
+                </div>
+              );
+            })()}
             <Input
               placeholder="Note / référence (ex. Wave TX ABC123)"
               value={settleNote}

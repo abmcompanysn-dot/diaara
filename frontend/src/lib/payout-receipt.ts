@@ -11,6 +11,11 @@ export interface ReceiptPayout {
   requested_at: string;
   paid_at?: string | null;
   failure_reason?: string | null;
+  // Frais / taxe retenus sur le versement (0 ou absent = aucun). Renseigné
+  // pour les versements réglés à la main ; le net reçu = brut − frais.
+  fee_cfa?: number;
+  is_manual?: boolean;
+  manual_note?: string | null;
 }
 
 export function payoutReference(payout: ReceiptPayout): string {
@@ -29,8 +34,10 @@ export function openPayoutReceipt(payout: ReceiptPayout) {
   const requestedDate = new Date(payout.requested_at).toLocaleString('fr-FR');
   const paidDate = payout.paid_at ? new Date(payout.paid_at).toLocaleString('fr-FR') : null;
   const statusLabel = PAYOUT_STATUS_LABELS[payout.status] || payout.status;
-  const destination = op ? `${op.label} (${op.countryName})` : payout.operator;
-  const maskedPhone = maskPhone(payout.phone_number, op?.dialCode) || payout.phone_number;
+  const destination = op ? `${op.label} (${op.countryName})` : payout.operator || '—';
+  const maskedPhone = maskPhone(payout.phone_number, op?.dialCode) || payout.phone_number || '—';
+  const fee = payout.fee_cfa || 0;
+  const net = payout.amount_cfa - fee;
 
   win.document.write(`<!doctype html>
 <html lang="fr">
@@ -60,11 +67,13 @@ export function openPayoutReceipt(payout: ReceiptPayout) {
   <div class="row"><span>Statut</span><span><span class="status">${escapeHtml(statusLabel)}</span></span></div>
   <div class="row"><span>Date de la demande</span><span>${escapeHtml(requestedDate)}</span></div>
   ${paidDate ? `<div class="row"><span>Date du versement</span><span>${escapeHtml(paidDate)}</span></div>` : ''}
-  <div class="row"><span>Destination</span><span>${escapeHtml(destination)}</span></div>
+  <div class="row"><span>Moyen de paiement</span><span>${escapeHtml(destination)}</span></div>
   <div class="row"><span>Numéro</span><span>${escapeHtml(maskedPhone)}</span></div>
+  ${payout.is_manual ? `<div class="row"><span>Voie</span><span>Règlement manuel</span></div>` : ''}
+  ${payout.manual_note ? `<div class="row"><span>Référence</span><span>${escapeHtml(payout.manual_note)}</span></div>` : ''}
   <div class="row"><span>Montant brut</span><span>${escapeHtml(formatPrice(payout.amount_cfa))}</span></div>
-  <div class="row"><span>Frais</span><span>0 FCFA</span></div>
-  <div class="row total"><span>Montant net reçu</span><span>${escapeHtml(formatPrice(payout.amount_cfa))}</span></div>
+  <div class="row"><span>Frais / taxe</span><span>${escapeHtml(formatPrice(fee))}</span></div>
+  <div class="row total"><span>Montant net reçu</span><span>${escapeHtml(formatPrice(net))}</span></div>
   ${payout.failure_reason ? `<div class="row"><span>Motif</span><span>${escapeHtml(payout.failure_reason)}</span></div>` : ''}
 
   <p class="footer">Document généré automatiquement — DIARRA</p>
