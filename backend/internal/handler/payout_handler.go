@@ -3,7 +3,6 @@ package handler
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"sync"
 	"time"
@@ -309,77 +308,25 @@ func (h *PayoutHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Résolu UNE FOIS ici et persisté sur le versement (voir PayoutRepo.Create)
-	// — un changement de réglage admin après coup ne doit jamais rediriger un
-	// versement déjà en cours vers un autre prestataire.
+	// Prestataire pressenti, résolu et persisté ici (voir PayoutRepo.Create) —
+	// un changement de réglage admin après coup ne doit jamais rediriger ce
+	// versement. NB : "off" n'est plus bloquant côté vendeur (il ne doit jamais
+	// voir d'erreur sur une demande de retrait) ; l'admin verra le cas au
+	// moment de régler la demande et pourra la traiter manuellement.
 	providerName := h.resolvePayoutProvider(r.Context(), *provider)
-	if providerName == "off" {
-		http.Error(w, `{"error":"gateway_disabled"}`, http.StatusBadRequest)
-		return
-	}
 
+	// La demande est SEULEMENT enregistrée "en attente" (requested). Aucun
+	// versement n'est déclenché automatiquement : c'est l'admin qui décide,
+	// demande par demande, de régler automatiquement (PawaPay/KPay) ou
+	// manuellement (voir AdminHandler.SettlePayoutAuto / SettlePayoutManual).
+	// Le solde disponible est déduit dès maintenant (Earnings compte tout
+	// sauf 'failed' dans "requested").
 	payout, err := h.payoutRepo.Create(r.Context(), userID, input.AmountCFA, *msisdn, *provider, providerName)
 	if err != nil {
 		http.Error(w, `{"error":"payout_creation_failed"}`, http.StatusInternalServerError)
 		return
 	}
 	h.cache.Del(r.Context(), vendorBalanceCacheKey(userID))
-
-	// Déclenche le versement mobile money (asynchrone, comme le checkout).
-	switch {
-	case providerName == "kpay" && h.kpay != nil:
-		resp, err := h.kpay.InitiatePayout(r.Context(), payment.PayoutInitRequest{
-			Amount:      fmt.Sprintf("%d", payout.AmountCFA),
-			Provider:    *provider,
-			PhoneNumber: *msisdn,
-			ExternalId:  payout.ID,
-			Description: "Versement DIARRA",
-		})
-		if err != nil {
-			reason := "payout_init_failed"
-			h.payoutRepo.UpdateStatus(r.Context(), payout.ID, "failed", &reason)
-			http.Error(w, fmt.Sprintf(`{"error":"payout_rejected","reason":"%s"}`, reason), http.StatusBadGateway)
-			return
-		}
-		if err := h.payoutRepo.SetProviderReference(r.Context(), payout.ID, resp.ID); err != nil {
-			http.Error(w, `{"error":"payout_update_failed"}`, http.StatusInternalServerError)
-			return
-		}
-		payout.ProviderReference = &resp.ID
-		payout.Status = "processing"
-
-	case h.pawapay != nil:
-		pawapayID := uuidString()
-		resp, err := h.pawapay.InitiatePayout(r.Context(), payment.PayoutRequest{
-			PayoutId: pawapayID,
-			Recipient: payment.Payer{
-				Type: "MMO",
-				AccountDetails: payment.AccountDetails{
-					PhoneNumber: *msisdn,
-					Provider:    *provider,
-				},
-			},
-			Amount:            fmt.Sprintf("%d", payout.AmountCFA),
-			Currency:          "XOF",
-			ClientReferenceId: payout.ID,
-			CustomerMessage:   "VERSEMENT DIARRA",
-		})
-		if err != nil || resp.Status != "ACCEPTED" {
-			reason := "payout_init_failed"
-			if err == nil && resp.FailureReason != nil {
-				reason = resp.FailureReason.FailureCode
-			}
-			h.payoutRepo.UpdateStatus(r.Context(), payout.ID, "failed", &reason)
-			http.Error(w, fmt.Sprintf(`{"error":"payout_rejected","reason":"%s"}`, reason), http.StatusBadGateway)
-			return
-		}
-		if err := h.payoutRepo.SetProviderReference(r.Context(), payout.ID, pawapayID); err != nil {
-			http.Error(w, `{"error":"payout_update_failed"}`, http.StatusInternalServerError)
-			return
-		}
-		payout.ProviderReference = &pawapayID
-		payout.Status = "processing"
-	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)

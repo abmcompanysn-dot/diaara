@@ -380,6 +380,111 @@ func (h *SaleHandler) ListVendor(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]interface{}{"sales": sales})
 }
 
+// reminderMinInterval — délai minimal entre deux relances manuelles d'une même
+// commande (anti-spam ; le cron auto a sa propre cadence 1h/24h).
+const reminderMinInterval = 20 * time.Hour
+
+// sendPendingReminder envoie l'email de relance pour une commande "pending" et
+// enregistre l'envoi. Partagé par la relance vendeur, la relance admin et le
+// cron. Renvoie une erreur "explicative" destinée à l'API (déjà à jour, trop
+// tôt, email manquant...).
+func sendPendingReminder(ctx context.Context, saleRepo *repository.SaleRepo, notifications *email.NotificationService, v *repository.PendingSaleView, enforceCooldown bool) error {
+	if notifications == nil {
+		return errors.New("email_not_configured")
+	}
+	if v.Status != string(model.SalePending) {
+		return errors.New("sale_not_pending")
+	}
+	if v.CheckoutToken == nil || *v.CheckoutToken == "" {
+		return errors.New("no_checkout_token")
+	}
+	if v.BuyerEmail == "" {
+		return errors.New("buyer_has_no_email")
+	}
+	if enforceCooldown && v.RemindedAt != nil && time.Since(*v.RemindedAt) < reminderMinInterval {
+		return errors.New("reminded_too_recently")
+	}
+	if err := notifications.SendCartReminder(ctx, v.BuyerEmail, v.BuyerName, v.ProductTitle, v.AmountCFA, *v.CheckoutToken); err != nil {
+		return err
+	}
+	return saleRepo.MarkReminded(ctx, v.ID)
+}
+
+// Cadence de relance automatique des commandes "pending" : 1ʳᵉ relance 1h après
+// la création, 2ᵉ 24h après, puis plus rien ; au-delà de 7 jours on abandonne.
+const (
+	reminderFirstAfter  = 1 * time.Hour
+	reminderSecondAfter = 24 * time.Hour
+	reminderMaxAge      = 7 * 24 * time.Hour
+	reminderScanEvery   = 15 * time.Minute
+)
+
+// RunReminderLoop relance automatiquement, en tâche de fond, les acheteurs dont
+// la commande est restée "pending" (voir SaleRepo.ListRemindable pour la
+// cadence). Boucle jusqu'à annulation du contexte. À lancer une fois au
+// démarrage : go saleHandler.RunReminderLoop(ctx).
+func (h *SaleHandler) RunReminderLoop(ctx context.Context) {
+	if h.notifications == nil {
+		log.Printf("relance auto: désactivée (aucun fournisseur email configuré)")
+		return
+	}
+	ticker := time.NewTicker(reminderScanEvery)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			h.runReminderPass(ctx)
+		}
+	}
+}
+
+func (h *SaleHandler) runReminderPass(ctx context.Context) {
+	views, err := h.saleRepo.ListRemindable(ctx, reminderFirstAfter, reminderSecondAfter, reminderMaxAge)
+	if err != nil {
+		log.Printf("relance auto: échec de la lecture des commandes: %v", err)
+		return
+	}
+	sent := 0
+	for _, v := range views {
+		// enforceCooldown=false : la fenêtre est déjà décidée par la requête SQL
+		// (1h / 24h selon reminder_count).
+		if err := sendPendingReminder(ctx, h.saleRepo, h.notifications, v, false); err != nil {
+			log.Printf("relance auto: sale=%s ignorée: %v", v.ID, err)
+			continue
+		}
+		sent++
+	}
+	if sent > 0 {
+		log.Printf("relance auto: %d relance(s) envoyée(s) sur %d commande(s) candidate(s)", sent, len(views))
+	}
+}
+
+// RemindVendor — POST /api/vendor/sales/{id}/remind : le vendeur relance par
+// email un acheteur dont la commande d'un de SES produits est restée "pending".
+func (h *SaleHandler) RemindVendor(w http.ResponseWriter, r *http.Request) {
+	vendorID := middleware.GetUserID(r.Context())
+	if vendorID == "" {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	saleID := chi.URLParam(r, "id")
+
+	view, err := h.saleRepo.FindPendingViewForVendor(r.Context(), saleID, vendorID)
+	if err != nil {
+		http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
+		return
+	}
+	if err := sendPendingReminder(r.Context(), h.saleRepo, h.notifications, view, true); err != nil {
+		http.Error(w, fmt.Sprintf(`{"error":%q}`, err.Error()), http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
 func newUUID() string {
 	return uuidString()
 }
@@ -468,6 +573,9 @@ func (h *SaleHandler) initiatePaymentPage(ctx context.Context, sale *model.Sale,
 		Reason:          reason,
 		CustomerMessage: "PAIEMENT DIARRA",
 		Language:        "FR",
+		// Sans callbackUrl, PawaPay ne pousse jamais le statut final : la vente
+		// reste "pending" même après paiement (voir PaymentPageRequest.CallbackUrl).
+		CallbackUrl: h.pawapay.CallbackURL(),
 		Metadata: []payment.MetadataItem{
 			{"saleId": sale.ID},
 			{"product": product.Title},

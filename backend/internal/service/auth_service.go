@@ -10,6 +10,7 @@ import (
 	"github.com/diarra/backend/internal/email"
 	"github.com/diarra/backend/internal/model"
 	"github.com/diarra/backend/internal/otp"
+	"github.com/diarra/backend/internal/payment"
 	"github.com/diarra/backend/internal/repository"
 	"github.com/diarra/backend/internal/sms"
 )
@@ -28,16 +29,17 @@ const (
 )
 
 type AuthService struct {
-	userRepo           *repository.UserRepo
-	otpRepo            *repository.OTPRepo
-	otpService         *otp.Service
-	smsSender          sms.Sender
-	jwtManager         *auth.JWTManager
-	notifications      *email.NotificationService
+	userRepo            *repository.UserRepo
+	otpRepo             *repository.OTPRepo
+	otpService          *otp.Service
+	smsSender           sms.Sender
+	jwtManager          *auth.JWTManager
+	notifications       *email.NotificationService
 	adminPermissionRepo *repository.AdminPermissionRepo
+	settingsRepo        *repository.SettingsRepo // pour le lien communauté WhatsApp dans l'email de passage vendeur
 }
 
-func NewAuthService(userRepo *repository.UserRepo, otpRepo *repository.OTPRepo, otpService *otp.Service, smsSender sms.Sender, jwtManager *auth.JWTManager, notifications *email.NotificationService, adminPermissionRepo *repository.AdminPermissionRepo) *AuthService {
+func NewAuthService(userRepo *repository.UserRepo, otpRepo *repository.OTPRepo, otpService *otp.Service, smsSender sms.Sender, jwtManager *auth.JWTManager, notifications *email.NotificationService, adminPermissionRepo *repository.AdminPermissionRepo, settingsRepo *repository.SettingsRepo) *AuthService {
 	return &AuthService{
 		userRepo:            userRepo,
 		otpRepo:             otpRepo,
@@ -46,6 +48,7 @@ func NewAuthService(userRepo *repository.UserRepo, otpRepo *repository.OTPRepo, 
 		jwtManager:          jwtManager,
 		notifications:       notifications,
 		adminPermissionRepo: adminPermissionRepo,
+		settingsRepo:        settingsRepo,
 	}
 }
 
@@ -495,9 +498,40 @@ func (s *AuthService) UpdateAdTracking(ctx context.Context, userID string, input
 
 // AddRole attribue un rôle cumulable (vendeur/closer) à un compte déjà
 // existant — libre-service, sans validation admin (ex: bouton "devenir
-// vendeur" depuis l'espace client).
+// vendeur" depuis l'espace client). Sur passage au rôle vendeur, envoie
+// l'email de bienvenue vendeur avec le lien du groupe WhatsApp (celui du
+// pays du vendeur s'il est configuré, sinon le lien général).
 func (s *AuthService) AddRole(ctx context.Context, userID, role string) error {
-	return s.grantRoles(ctx, userID, []string{role})
+	if err := s.grantRoles(ctx, userID, []string{role}); err != nil {
+		return err
+	}
+	if role == model.RoleVendeur && s.notifications != nil {
+		go s.sendVendorWelcome(context.Background(), userID)
+	}
+	return nil
+}
+
+// sendVendorWelcome envoie l'email « Bienvenue dans l'espace vendeur » avec le
+// bon lien communauté WhatsApp. Best-effort (le rôle est déjà attribué).
+func (s *AuthService) sendVendorWelcome(ctx context.Context, userID string) {
+	user, err := s.userRepo.FindByID(ctx, userID)
+	if err != nil || user.Email == "" {
+		return
+	}
+	country := ""
+	if user.Phone != nil {
+		country = payment.CountryFromPhone(*user.Phone)
+	}
+	link := ""
+	if s.settingsRepo != nil {
+		if country != "" {
+			link = s.settingsRepo.Get(ctx, model.WhatsAppCommunitySettingKey(country), "")
+		}
+		if link == "" {
+			link = s.settingsRepo.Get(ctx, model.SettingWhatsAppCommunityURL, "")
+		}
+	}
+	_ = s.notifications.SendVendorWelcome(ctx, user.Email, link, payment.CountryLabel(country), country != "")
 }
 
 // grantRoles valide et attribue les rôles demandés à l'inscription.

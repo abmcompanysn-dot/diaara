@@ -114,14 +114,61 @@ func formatCFA(n int) string {
 	return b.String()
 }
 
-func (n *NotificationService) SendWelcome(ctx context.Context, to string) error {
+// WhatsAppCommunityHTML construit le bloc « Rejoindre la communauté WhatsApp »
+// à concaténer au corps d'un email (après contentHTML, avant renderEmail).
+// link est déjà résolu par l'appelant (lien du pays ou lien général).
+// countryLabel + hasCountry servent juste à personnaliser le texte ("groupe
+// WhatsApp du Sénégal" vs "communauté WhatsApp de DIARRA"). Renvoie "" si
+// link est vide.
+func WhatsAppCommunityHTML(link, countryLabel string, hasCountry bool) string {
+	if strings.TrimSpace(link) == "" {
+		return ""
+	}
+	safeLink := html.EscapeString(link)
+	intro := "Rejoignez la communauté WhatsApp de DIARRA pour les annonces, l&rsquo;entraide entre vendeurs et le support."
+	if hasCountry && countryLabel != "" && countryLabel != "—" {
+		intro = fmt.Sprintf("Rejoignez le groupe WhatsApp DIARRA de %s&nbsp;: annonces, entraide entre vendeurs et support de proximité.", html.EscapeString(countryLabel))
+	}
+	return fmt.Sprintf(`
+<table role="presentation" cellpadding="0" cellspacing="0" width="100%%" style="margin:28px 0 0;border-top:1px solid #e2ece7;">
+<tr><td style="padding:22px 0 0;">
+<p style="margin:0 0 12px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#0a3225;">%s</p>
+<table role="presentation" cellpadding="0" cellspacing="0"><tr>
+<td style="border-radius:999px;background-color:#25D366;">
+<a href="%s" style="display:inline-block;padding:12px 26px;font-family:Arial,Helvetica,sans-serif;font-size:14px;font-weight:700;color:#ffffff;text-decoration:none;">Rejoindre le groupe WhatsApp</a>
+</td></tr></table>
+<p style="margin:8px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#6b7c74;"><a href="%s" style="color:#0f7a50;">%s</a></p>
+</td></tr>
+</table>`, intro, safeLink, safeLink, safeLink)
+}
+
+// SendWelcome — email de création de compte. communityLink (peut être vide)
+// ajoute le bloc « Rejoindre la communauté WhatsApp » ; countryLabel/hasCountry
+// personnalisent son texte (voir WhatsAppCommunityHTML).
+func (n *NotificationService) SendWelcome(ctx context.Context, to, communityLink, countryLabel string, hasCountry bool) error {
 	inner := contentHTML(
 		"Bienvenue sur DIARRA !",
 		`<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Votre compte a été créé avec succès. Parcourez le catalogue et découvrez des produits numériques vendus en FCFA, en toute sécurité.</p>`,
 		"Parcourir le catalogue",
 		n.frontendURL+"/catalog",
 	)
+	inner += WhatsAppCommunityHTML(communityLink, countryLabel, hasCountry)
 	return n.client.Send(ctx, to, "Bienvenue sur DIARRA", n.renderEmail(inner))
+}
+
+// SendVendorWelcome — email envoyé quand un compte devient vendeur (ajout du
+// rôle "vendeur"). Met en avant le groupe WhatsApp vendeurs (communityLink,
+// idéalement celui du pays du vendeur).
+func (n *NotificationService) SendVendorWelcome(ctx context.Context, to, communityLink, countryLabel string, hasCountry bool) error {
+	inner := contentHTML(
+		"Vous êtes maintenant vendeur sur DIARRA",
+		`<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Votre espace vendeur est ouvert. Ajoutez votre premier produit numérique, fixez son prix en FCFA, et vendez à toute l&rsquo;Afrique francophone.</p>
+<p style="margin:14px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#0a3225;">Vous serez payé par mobile money dès qu&rsquo;une vente est confirmée.</p>`,
+		"Ajouter un produit",
+		n.frontendURL+"/vendor/products",
+	)
+	inner += WhatsAppCommunityHTML(communityLink, countryLabel, hasCountry)
+	return n.client.Send(ctx, to, "Bienvenue dans l'espace vendeur DIARRA", n.renderEmail(inner))
 }
 
 func (n *NotificationService) SendEmailVerification(ctx context.Context, to, token string) error {
@@ -186,6 +233,22 @@ func (n *NotificationService) SendPaymentFailed(ctx context.Context, to, buyerNa
 <p style="margin:16px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#6b7c74;">Ça arrive quand le solde mobile money est insuffisant, ou si l&rsquo;opération a été annulée pendant la validation. Aucun montant n&rsquo;a été débité pour cette tentative. Vous pouvez réessayer directement depuis le bouton ci-dessous.</p>`, buyerName, productTitle)
 	inner := contentHTML("Le paiement n'a pas abouti", body, "Réessayer le paiement", link)
 	return n.client.Send(ctx, to, "Votre paiement n'a pas abouti", n.renderEmail(inner))
+}
+
+// SendCartReminder — relance un acheteur dont la commande est restée "pending"
+// (page de paiement ouverte mais paiement jamais confirmé). Le lien pointe vers
+// la page de suivi publique (checkout_token) d'où l'acheteur peut relancer le
+// paiement, comme SendOrderConfirmed — un invité n'a pas de session.
+func (n *NotificationService) SendCartReminder(ctx context.Context, to, buyerName, productTitle string, amountCFA int, checkoutToken string) error {
+	link := fmt.Sprintf("%s/checkout/return?token=%s", n.frontendURL, checkoutToken)
+	body := fmt.Sprintf(`<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Bonjour %s, votre commande pour <strong>%s</strong> n&rsquo;a pas été finalisée. Elle vous attend encore&nbsp;: reprenez le paiement en un clic depuis le bouton ci-dessous.</p>
+<div style="margin:16px 0 0;padding:16px 18px;background-color:#f2f7f4;border-left:4px solid #0f7a50;border-radius:8px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#0a3225;">
+<strong>%s</strong><br>
+Montant : <strong>%s FCFA</strong>
+</div>
+<p style="margin:16px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.6;color:#6b7c74;">Si vous avez déjà payé, ignorez cet email : votre fichier vous a été envoyé séparément. En cas de souci, répondez à cet email.</p>`, buyerName, productTitle, productTitle, formatCFA(amountCFA))
+	inner := contentHTML("Vous n'avez pas terminé votre achat", body, "Reprendre mon paiement", link)
+	return n.client.Send(ctx, to, "Votre commande vous attend", n.renderEmail(inner))
 }
 
 func (n *NotificationService) SendDeliveryReady(ctx context.Context, to, orderID string) error {
@@ -298,10 +361,17 @@ func (n *NotificationService) SendAdminEmailVerified(ctx context.Context, to, us
 // libre saisi par un admin, échappé avant insertion (contrairement à
 // SendBroadcast, qui accepte du HTML volontairement composé par l'admin).
 func (n *NotificationService) SendAdminMessage(ctx context.Context, to, subject, message string) error {
+	return n.SendAdminMessageWithCommunity(ctx, to, subject, message, "", "", false)
+}
+
+// SendAdminMessageWithCommunity — comme SendAdminMessage, avec en pied le bloc
+// « Rejoindre la communauté WhatsApp » si communityLink est fourni.
+func (n *NotificationService) SendAdminMessageWithCommunity(ctx context.Context, to, subject, message, communityLink, countryLabel string, hasCountry bool) error {
 	safeMessage := strings.ReplaceAll(html.EscapeString(message), "\n", "<br>")
 	body := fmt.Sprintf(`<div style="margin:0;padding:16px 18px;background-color:#f2f7f4;border-left:4px solid #0f7a50;border-radius:8px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">%s</div>
 <p style="margin:16px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.6;color:#6b7c74;">Message envoyé par l&rsquo;équipe DIARRA. Pour toute question, répondez directement à cet email ou contactez le support.</p>`, safeMessage)
 	inner := contentHTML(subject, body, "", "")
+	inner += WhatsAppCommunityHTML(communityLink, countryLabel, hasCountry)
 	return n.client.Send(ctx, to, subject, n.renderEmail(inner))
 }
 

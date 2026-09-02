@@ -14,6 +14,26 @@ type Payout struct {
 	FailureReason     *string    `json:"failure_reason,omitempty"`
 	RequestedAt       time.Time  `json:"requested_at"`
 	PaidAt            *time.Time `json:"paid_at,omitempty"`
+	// Règlement manuel (argent envoyé au vendeur hors PawaPay/KPay) :
+	// IsManual + note libre + frais/taxe retenus. Voir PayoutRepo.SettleManually.
+	IsManual   bool    `json:"is_manual"`
+	ManualNote *string `json:"manual_note,omitempty"`
+	FeeCFA     int     `json:"fee_cfa"`
+}
+
+// SettlePayoutInput — règlement manuel d'un versement existant.
+type SettlePayoutInput struct {
+	Note   string `json:"note"`
+	FeeCFA int    `json:"fee_cfa"`
+}
+
+// ManualPayoutInput — création d'un versement manuel de toutes pièces.
+type ManualPayoutInput struct {
+	UserID    string `json:"user_id"`
+	AmountCFA int    `json:"amount"`
+	FeeCFA    int    `json:"fee_cfa"`
+	Phone     string `json:"phone"`
+	Note      string `json:"note"`
 }
 
 // CreatePayoutInput — le montant à verser. Le compte mobile money destinataire

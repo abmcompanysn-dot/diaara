@@ -239,6 +239,18 @@ type PaymentPageRequest struct {
 	CustomerMessage string         `json:"customerMessage,omitempty"` // 4-22 caractères
 	Language        string         `json:"language,omitempty"`        // "EN" ou "FR"
 	Metadata        []MetadataItem `json:"metadata,omitempty"`
+	// CallbackUrl : URL de notre webhook où PawaPay pousse le statut final du
+	// dépôt. SANS ce champ, PawaPay ne rappelle jamais et la vente reste
+	// "pending" indéfiniment même après un paiement réussi (incident du
+	// 2026-09-02 : plus aucune vente confirmée depuis le 18/08 faute de ce
+	// champ ici). Renseigné depuis PAWAPAY_CALLBACK_URL — voir CallbackURL().
+	CallbackUrl string `json:"callbackUrl,omitempty"`
+}
+
+// CallbackURL expose l'URL de webhook configurée (PAWAPAY_CALLBACK_URL), pour
+// que l'appelant la place dans DepositRequest.CallbackUrl / PaymentPageRequest.
+func (c *PawaPayClient) CallbackURL() string {
+	return c.cfg.CallbackURL
 }
 
 type PaymentPageResponse struct {

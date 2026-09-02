@@ -349,10 +349,14 @@ func (r *UserRepo) ListAllUsers(ctx context.Context) ([]*model.User, error) {
 }
 
 // UserWithStats — utilisateur enrichi de ses statistiques de vente (vue admin).
+// Country / CountryLabel sont dérivés de l'indicatif du téléphone par le
+// handler (voir payment.CountryFromPhone) — pas stockés en base.
 type UserWithStats struct {
 	model.User
-	ProductsSold      int `json:"products_sold"`
-	RevenueGeneratedCFA int `json:"revenue_generated_cfa"`
+	ProductsSold        int    `json:"products_sold"`
+	RevenueGeneratedCFA int    `json:"revenue_generated_cfa"`
+	Country             string `json:"country,omitempty"`       // ISO3, "" si inconnu
+	CountryLabel        string `json:"country_label,omitempty"` // nom lisible ou "—"
 }
 
 // ListAllUsersWithStats — tous les utilisateurs avec, pour chacun, le nombre
@@ -467,6 +471,34 @@ func (r *UserRepo) ListAllEmails(ctx context.Context) ([]string, error) {
 		emails = append(emails, email)
 	}
 	return emails, rows.Err()
+}
+
+// EmailWithPhone — un destinataire pour la diffusion admin ciblée par pays :
+// l'email (pour l'envoi) et le téléphone (pour déduire le pays côté handler,
+// via payment.CountryFromPhone).
+type EmailWithPhone struct {
+	Email string
+	Phone *string
+}
+
+// ListEmailsWithPhone — comme ListAllEmails, mais avec le téléphone de chaque
+// compte, pour permettre au handler de filtrer la diffusion par pays.
+func (r *UserRepo) ListEmailsWithPhone(ctx context.Context) ([]EmailWithPhone, error) {
+	rows, err := r.pool.Query(ctx, `SELECT email, phone FROM users`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []EmailWithPhone{}
+	for rows.Next() {
+		var e EmailWithPhone
+		if err := rows.Scan(&e.Email, &e.Phone); err != nil {
+			return nil, err
+		}
+		out = append(out, e)
+	}
+	return out, rows.Err()
 }
 
 // UserRoleCounts — répartition des utilisateurs par rôle (un compte peut

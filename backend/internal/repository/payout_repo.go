@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/diarra/backend/internal/model"
 	"github.com/jackc/pgx/v5"
@@ -19,12 +20,13 @@ func NewPayoutRepo(pool *pgxpool.Pool) *PayoutRepo {
 	return &PayoutRepo{pool: pool}
 }
 
-const payoutColumns = `id, user_id, amount_cfa, status, phone_number, operator, provider, provider_reference, failure_reason, requested_at, paid_at`
+const payoutColumns = `id, user_id, amount_cfa, status, phone_number, operator, provider, provider_reference, failure_reason, requested_at, paid_at, is_manual, manual_note, fee_cfa`
 
 func scanPayout(row pgx.Row) (*model.Payout, error) {
 	p := &model.Payout{}
 	err := row.Scan(&p.ID, &p.UserID, &p.AmountCFA, &p.Status, &p.PhoneNumber, &p.Operator,
-		&p.Provider, &p.ProviderReference, &p.FailureReason, &p.RequestedAt, &p.PaidAt)
+		&p.Provider, &p.ProviderReference, &p.FailureReason, &p.RequestedAt, &p.PaidAt,
+		&p.IsManual, &p.ManualNote, &p.FeeCFA)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, ErrPayoutNotFound
@@ -78,7 +80,8 @@ type PayoutWithUser struct {
 func (r *PayoutRepo) ListAllAdmin(ctx context.Context) ([]*PayoutWithUser, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT p.id, p.user_id, p.amount_cfa, p.status, p.phone_number, p.operator,
-		        p.provider, p.provider_reference, p.failure_reason, p.requested_at, p.paid_at, u.email
+		        p.provider, p.provider_reference, p.failure_reason, p.requested_at, p.paid_at,
+		        p.is_manual, p.manual_note, p.fee_cfa, u.email
 		 FROM payouts p JOIN users u ON u.id = p.user_id
 		 ORDER BY p.requested_at DESC`)
 	if err != nil {
@@ -90,7 +93,8 @@ func (r *PayoutRepo) ListAllAdmin(ctx context.Context) ([]*PayoutWithUser, error
 	for rows.Next() {
 		p := &PayoutWithUser{}
 		if err := rows.Scan(&p.ID, &p.UserID, &p.AmountCFA, &p.Status, &p.PhoneNumber, &p.Operator,
-			&p.Provider, &p.ProviderReference, &p.FailureReason, &p.RequestedAt, &p.PaidAt, &p.UserEmail); err != nil {
+			&p.Provider, &p.ProviderReference, &p.FailureReason, &p.RequestedAt, &p.PaidAt,
+			&p.IsManual, &p.ManualNote, &p.FeeCFA, &p.UserEmail); err != nil {
 			return nil, err
 		}
 		out = append(out, p)
@@ -106,12 +110,69 @@ func (r *PayoutRepo) FindByProviderReference(ctx context.Context, provider, refe
 		`SELECT `+payoutColumns+` FROM payouts WHERE provider = $1 AND provider_reference = $2`, provider, reference))
 }
 
+// ListProcessing — versements encore "processing" (envoyés à un prestataire
+// mais pas confirmés), plus anciens d'abord, dans la fenêtre maxAge. Utilisé
+// par le job de réconciliation de fond (filet de sécurité si un webhook
+// prestataire s'est perdu).
+func (r *PayoutRepo) ListProcessing(ctx context.Context, maxAge time.Duration) ([]*model.Payout, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+payoutColumns+`
+		 FROM payouts
+		 WHERE status = 'processing' AND provider_reference IS NOT NULL
+		   AND requested_at >= now() - $1::interval
+		 ORDER BY requested_at ASC
+		 LIMIT 200`, intervalStr(maxAge))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []*model.Payout{}
+	for rows.Next() {
+		p, err := scanPayout(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 // SetProviderReference — enregistre l'ID du prestataire juste après l'acceptation de la demande.
 func (r *PayoutRepo) SetProviderReference(ctx context.Context, id, reference string) error {
 	_, err := r.pool.Exec(ctx,
 		`UPDATE payouts SET provider_reference = $2, status = 'processing' WHERE id = $1`,
 		id, reference)
 	return err
+}
+
+// SettleManually — marque un versement "paid" SANS appel prestataire : l'argent
+// a été envoyé au vendeur hors PawaPay/KPay (Wave perso, espèces, virement).
+// note = référence/commentaire libre, feeCFA = frais/taxe éventuellement retenus
+// (0 si aucun), adminID = l'admin qui a effectué le règlement. N'agit que sur un
+// versement non encore réglé (requested/processing/failed).
+func (r *PayoutRepo) SettleManually(ctx context.Context, id, note string, feeCFA int, adminID string) (bool, error) {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE payouts
+		 SET status = 'paid', paid_at = now(), is_manual = TRUE,
+		     manual_note = $2, fee_cfa = $3, settled_by = $4, failure_reason = NULL
+		 WHERE id = $1 AND status IN ('requested', 'processing', 'failed')`,
+		id, note, feeCFA, adminID)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+// CreateManual — crée un versement déjà réglé à la main, de toutes pièces, pour
+// un vendeur (cas où aucune demande n'existe côté vendeur mais l'admin veut
+// tracer un paiement fait hors plateforme). provider = "manual".
+func (r *PayoutRepo) CreateManual(ctx context.Context, userID string, amount, feeCFA int, phone, note, adminID string) (*model.Payout, error) {
+	return scanPayout(r.pool.QueryRow(ctx,
+		`INSERT INTO payouts (user_id, amount_cfa, phone_number, operator, provider, status,
+		     paid_at, is_manual, manual_note, fee_cfa, settled_by)
+		 VALUES ($1, $2, $3, '', 'manual', 'paid', now(), TRUE, $4, $5, $6)
+		 RETURNING `+payoutColumns,
+		userID, amount, phone, note, feeCFA, adminID))
 }
 
 // UpdateStatus — statut final ('paid' ou 'failed'), avec la raison d'échec le cas échéant.

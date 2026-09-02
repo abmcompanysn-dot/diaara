@@ -25,12 +25,31 @@ import { SearchIcon, MoreVerticalIcon, ArrowLeftIcon } from '@/components/icons'
 interface User {
   id: string;
   email: string;
+  phone: string | null;
+  country?: string; // ISO3 déduit de l'indicatif, "" si inconnu
+  country_label?: string; // nom lisible ou "—"
   is_admin: boolean;
   roles: string[];
   locked_until: string | null;
   created_at: string;
   products_sold: number;
   revenue_generated_cfa: number;
+}
+
+interface CountryBucket {
+  country: string;
+  country_label: string;
+  users: number;
+  vendors: number;
+  with_phone: number;
+}
+
+// waLink construit un lien de discussion WhatsApp direct vers un numéro.
+// wa.me exige le numéro en chiffres seuls (indicatif compris, sans "+").
+function waLink(phone: string | null | undefined): string | null {
+  if (!phone) return null;
+  const digits = phone.replace(/\D/g, '');
+  return digits.length >= 8 ? `https://wa.me/${digits}` : null;
 }
 
 type RoleFilter = 'all' | 'client' | 'vendeur' | 'closer' | 'admin';
@@ -197,17 +216,33 @@ export default function AdminUsersPage() {
   const [search, setSearch] = useState('');
   const [roleFilter, setRoleFilter] = useState<RoleFilter>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
+  const [countryFilter, setCountryFilter] = useState<string>('all'); // 'all' | ISO3 | 'UNKNOWN'
   const [sortBy, setSortBy] = useState<SortBy>('date');
   const [pageSize, setPageSize] = useState<(typeof PAGE_SIZES)[number]>(20);
   const [page, setPage] = useState(1);
 
+  const [countryBuckets, setCountryBuckets] = useState<CountryBucket[]>([]);
+
+  // Message groupé par pays
+  const [groupMsgOpen, setGroupMsgOpen] = useState(false);
+  const [groupCountry, setGroupCountry] = useState<string>('all'); // 'all' | ISO3 | 'UNKNOWN'
+  const [groupSubject, setGroupSubject] = useState('');
+  const [groupHtml, setGroupHtml] = useState('');
+  const [groupSending, setGroupSending] = useState(false);
+  const [groupError, setGroupError] = useState('');
+  const [groupResult, setGroupResult] = useState('');
+
   useEffect(() => {
     loadUsers();
+    api
+      .getUsersByCountry()
+      .then((r) => setCountryBuckets(r.countries))
+      .catch(() => {});
   }, []);
 
   useEffect(() => {
     setPage(1);
-  }, [search, roleFilter, statusFilter, sortBy]);
+  }, [search, roleFilter, statusFilter, countryFilter, sortBy]);
 
   const loadUsers = async () => {
     setLoading(true);
@@ -219,6 +254,39 @@ export default function AdminUsersPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSendGroupMessage = async () => {
+    if (!groupSubject.trim() || !groupHtml.trim()) {
+      setGroupError('Le sujet et le message sont requis.');
+      return;
+    }
+    setGroupError('');
+    setGroupResult('');
+    setGroupSending(true);
+    try {
+      const payload: { subject: string; html: string; country?: string; test_only?: boolean } = {
+        subject: groupSubject.trim(),
+        html: groupHtml.trim(),
+      };
+      if (groupCountry !== 'all') payload.country = groupCountry;
+      const r = await api.sendBroadcast(payload);
+      setGroupResult(
+        `Envoi lancé vers ${r.recipients ?? 0} destinataire(s)${
+          groupCountry !== 'all' ? ` (${countryLabelOf(groupCountry)})` : ''
+        }.`
+      );
+    } catch (err: any) {
+      setGroupError(friendlyError(err));
+    } finally {
+      setGroupSending(false);
+    }
+  };
+
+  const countryLabelOf = (code: string) => {
+    if (code === 'all') return 'tous les pays';
+    if (code === 'UNKNOWN') return 'pays non déterminé';
+    return countryBuckets.find((b) => b.country === code)?.country_label || code;
   };
 
   const handleSuspend = async () => {
@@ -311,6 +379,12 @@ export default function AdminUsersPage() {
       list = list.filter((u) => (statusFilter === 'suspended' ? isSuspended(u) : !isSuspended(u)));
     }
 
+    if (countryFilter !== 'all') {
+      list = list.filter((u) =>
+        countryFilter === 'UNKNOWN' ? !u.country : u.country === countryFilter
+      );
+    }
+
     list = [...list].sort((a, b) =>
       sortBy === 'revenue'
         ? b.revenue_generated_cfa - a.revenue_generated_cfa
@@ -318,7 +392,7 @@ export default function AdminUsersPage() {
     );
 
     return list;
-  }, [users, search, roleFilter, statusFilter, sortBy]);
+  }, [users, search, roleFilter, statusFilter, countryFilter, sortBy]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
   const pageItems = filtered.slice((page - 1) * pageSize, page * pageSize);
@@ -338,10 +412,15 @@ export default function AdminUsersPage() {
         title="Utilisateurs"
         description={`${users.length} compte(s) enregistré(s)`}
         actions={
-          <Button variant="outline" size="sm" render={<Link href="/admin" />}>
-            <ArrowLeftIcon size={16} className="mr-2" />
-            Dashboard
-          </Button>
+          <div className="flex items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => setGroupMsgOpen(true)}>
+              Message groupé par pays
+            </Button>
+            <Button variant="outline" size="sm" render={<Link href="/admin" />}>
+              <ArrowLeftIcon size={16} className="mr-2" />
+              Dashboard
+            </Button>
+          </div>
         }
       />
 
@@ -385,6 +464,19 @@ export default function AdminUsersPage() {
               <SelectItem value="suspended">Suspendu</SelectItem>
             </SelectContent>
           </Select>
+          <Select value={countryFilter} onValueChange={(v) => setCountryFilter(v || 'all')}>
+            <SelectTrigger className="w-44 bg-white">
+              <SelectValue placeholder="Pays" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Tous les pays</SelectItem>
+              {countryBuckets.map((b) => (
+                <SelectItem key={b.country || 'unknown'} value={b.country || 'UNKNOWN'}>
+                  {b.country_label} ({b.users})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
           <Select value={sortBy} onValueChange={(v) => setSortBy((v as SortBy) || 'date')}>
             <SelectTrigger className="w-47.5 bg-white">
               <SelectValue placeholder="Trier par" />
@@ -405,6 +497,7 @@ export default function AdminUsersPage() {
                 <TableHeader>
                   <TableRow>
                     <TableHead>Utilisateur</TableHead>
+                    <TableHead>Téléphone / Pays</TableHead>
                     <TableHead>Inscrit le</TableHead>
                     <TableHead>Rôles</TableHead>
                     <TableHead>Performance</TableHead>
@@ -424,6 +517,32 @@ export default function AdminUsersPage() {
                             </span>
                             <span className="truncate max-w-55">{user.email}</span>
                           </div>
+                        </TableCell>
+                        <TableCell className="text-sm text-green-900/70 whitespace-nowrap">
+                          {user.phone ? (
+                            <span className="flex items-center gap-2">
+                              {waLink(user.phone) ? (
+                                <a
+                                  href={waLink(user.phone)!}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-green-700 hover:underline"
+                                  title="Ouvrir la discussion WhatsApp"
+                                >
+                                  {user.phone}
+                                </a>
+                              ) : (
+                                user.phone
+                              )}
+                            </span>
+                          ) : (
+                            '—'
+                          )}
+                          <span className="block text-[11px] text-green-900/40">
+                            {user.country_label && user.country_label !== '—'
+                              ? user.country_label
+                              : 'pays inconnu'}
+                          </span>
                         </TableCell>
                         <TableCell className="text-sm">
                           {new Date(user.created_at).toLocaleDateString('fr-FR')}
@@ -616,6 +735,131 @@ export default function AdminUsersPage() {
                   </Button>
                   <Button onClick={handleSendMessage} disabled={sendingMessage}>
                     {sendingMessage ? 'Envoi…' : 'Envoyer'}
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
+      {groupMsgOpen && (
+        <div className="fixed inset-0 z-100 flex items-center justify-center p-4">
+          <div
+            className="absolute inset-0 bg-green-950/60 backdrop-blur-sm"
+            onClick={() => setGroupMsgOpen(false)}
+            aria-hidden
+          />
+          <div
+            role="dialog"
+            aria-modal="true"
+            className="relative w-full max-w-lg rounded-2xl bg-white shadow-lift border border-green-900/10 p-6 max-h-[90vh] overflow-y-auto"
+          >
+            <h2 className="font-display font-bold text-lg text-green-950">Message groupé par pays</h2>
+            <p className="text-sm text-green-900/60 mt-1">
+              Envoie un email à tous les comptes du pays choisi (pays déduit de l&apos;indicatif du
+              téléphone). Le lien de la communauté WhatsApp du pays est ajouté automatiquement en pied
+              s&apos;il est configuré dans les réglages.
+            </p>
+
+            {groupResult ? (
+              <>
+                <p className="text-sm text-green-700 mt-4">{groupResult}</p>
+                <div className="mt-6 flex justify-end">
+                  <Button
+                    onClick={() => {
+                      setGroupMsgOpen(false);
+                      setGroupResult('');
+                      setGroupSubject('');
+                      setGroupHtml('');
+                    }}
+                  >
+                    Fermer
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <>
+                {groupError && (
+                  <div className="mt-3 p-3 bg-destructive/10 text-destructive rounded text-sm">
+                    {groupError}
+                  </div>
+                )}
+                <div className="mt-4 space-y-3">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium text-green-900">Pays ciblé</label>
+                    <Select value={groupCountry} onValueChange={(v) => setGroupCountry(v || 'all')}>
+                      <SelectTrigger className="bg-white">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="all">Tous les pays</SelectItem>
+                        {countryBuckets.map((b) => (
+                          <SelectItem key={b.country || 'unknown'} value={b.country || 'UNKNOWN'}>
+                            {b.country_label} — {b.users} compte(s)
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1.5">
+                    <label htmlFor="grp-subject" className="text-sm font-medium text-green-900">
+                      Sujet
+                    </label>
+                    <Input
+                      id="grp-subject"
+                      value={groupSubject}
+                      onChange={(e) => setGroupSubject(e.target.value)}
+                      placeholder="Ex: Rejoignez la communauté DIARRA"
+                    />
+                  </div>
+                  <div className="space-y-1.5">
+                    <label htmlFor="grp-body" className="text-sm font-medium text-green-900">
+                      Message (HTML autorisé)
+                    </label>
+                    <textarea
+                      id="grp-body"
+                      value={groupHtml}
+                      onChange={(e) => setGroupHtml(e.target.value)}
+                      rows={7}
+                      className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm font-mono"
+                      placeholder="<p>Bonjour,</p><p>...</p>"
+                    />
+                  </div>
+                </div>
+                <div className="mt-6 flex justify-end gap-3">
+                  <Button variant="outline" onClick={() => setGroupMsgOpen(false)}>
+                    Annuler
+                  </Button>
+                  <Button
+                    variant="outline"
+                    disabled={groupSending}
+                    onClick={async () => {
+                      if (!groupSubject.trim() || !groupHtml.trim()) {
+                        setGroupError('Le sujet et le message sont requis.');
+                        return;
+                      }
+                      setGroupError('');
+                      setGroupSending(true);
+                      try {
+                        const r = await api.sendBroadcast({
+                          subject: groupSubject.trim(),
+                          html: groupHtml.trim(),
+                          test_only: true,
+                          ...(groupCountry !== 'all' ? { country: groupCountry } : {}),
+                        });
+                        setGroupResult(`Email de test envoyé à ${r.to}. Vérifiez le rendu avant l'envoi réel.`);
+                      } catch (err: any) {
+                        setGroupError(friendlyError(err));
+                      } finally {
+                        setGroupSending(false);
+                      }
+                    }}
+                  >
+                    Test (à moi)
+                  </Button>
+                  <Button onClick={handleSendGroupMessage} disabled={groupSending}>
+                    {groupSending ? 'Envoi…' : `Envoyer (${countryLabelOf(groupCountry)})`}
                   </Button>
                 </div>
               </>

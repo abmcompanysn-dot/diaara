@@ -43,8 +43,10 @@ export const PRODUCT_STATUS_BADGE: Record<string, string> = {
 };
 
 /** Statuts de versement. */
+// Libellés « vérité » (vue admin). Côté vendeur, la page revenus remappe tout
+// sauf 'paid' vers « En cours de traitement » (voir vendorPayoutLabel).
 export const PAYOUT_STATUS_LABELS: Record<string, string> = {
-  requested: 'Demandé',
+  requested: 'En attente',
   processing: 'En traitement',
   paid: 'Payé',
   failed: 'Échec',

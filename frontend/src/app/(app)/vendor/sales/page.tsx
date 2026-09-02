@@ -29,10 +29,13 @@ interface VendorSale {
   product_title: string;
   buyer_name: string;
   buyer_email: string;
+  buyer_phone?: string | null;
   country?: string | null;
   amount_cfa: number;
   status: string;
   created_at: string;
+  reminded_at?: string | null;
+  reminder_count?: number;
 }
 
 function countryName(code?: string | null): string {
@@ -47,6 +50,8 @@ export default function VendorSalesPage() {
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [remindingId, setRemindingId] = useState<string | null>(null);
+  const [remindMsg, setRemindMsg] = useState('');
 
   useEffect(() => {
     api
@@ -55,6 +60,26 @@ export default function VendorSalesPage() {
       .catch((err: any) => setError(friendlyError(err)))
       .finally(() => setLoading(false));
   }, []);
+
+  async function handleRemind(saleId: string) {
+    setRemindingId(saleId);
+    setRemindMsg('');
+    try {
+      await api.remindVendorSale(saleId);
+      setSales((prev) =>
+        prev.map((s) =>
+          s.id === saleId
+            ? { ...s, reminded_at: new Date().toISOString(), reminder_count: (s.reminder_count || 0) + 1 }
+            : s
+        )
+      );
+      setRemindMsg('Relance envoyée par email à l’acheteur.');
+    } catch (err: any) {
+      setRemindMsg(friendlyError(err));
+    } finally {
+      setRemindingId(null);
+    }
+  }
 
   const filtered = useMemo(() => {
     let list = sales;
@@ -112,6 +137,12 @@ export default function VendorSalesPage() {
           </div>
         )}
 
+        {remindMsg && (
+          <div className="mb-4 p-3 bg-green-900/5 text-green-900 rounded text-sm" role="status">
+            {remindMsg}
+          </div>
+        )}
+
         {sales.length === 0 ? (
           <EmptyState title="Aucune vente pour le moment" description="Les ventes de vos produits apparaîtront ici avec les coordonnées de vos clients." />
         ) : filtered.length === 0 ? (
@@ -126,6 +157,9 @@ export default function VendorSalesPage() {
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-green-950 truncate">{sale.product_title}</p>
                       <p className="text-xs text-green-900/60 truncate">{sale.buyer_name} · {sale.buyer_email}</p>
+                      {sale.buyer_phone && (
+                        <p className="text-xs text-green-900/60 truncate">📞 {sale.buyer_phone}</p>
+                      )}
                     </div>
                     <span className="font-mono text-sm font-bold text-green-950 shrink-0">
                       {formatPrice(sale.amount_cfa)}
@@ -139,6 +173,20 @@ export default function VendorSalesPage() {
                       {ORDER_STATUS_LABELS[sale.status] || sale.status}
                     </Badge>
                   </div>
+                  {sale.status === 'pending' && (
+                    <button
+                      type="button"
+                      onClick={() => handleRemind(sale.id)}
+                      disabled={remindingId === sale.id}
+                      className="mt-3 w-full rounded-lg border border-green-900/20 bg-green-900/5 px-3 py-2 text-xs font-medium text-green-900 disabled:opacity-50"
+                    >
+                      {remindingId === sale.id
+                        ? 'Envoi…'
+                        : sale.reminder_count
+                          ? `Relancer à nouveau (${sale.reminder_count} déjà envoyée${sale.reminder_count > 1 ? 's' : ''})`
+                          : 'Relancer par email'}
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
@@ -152,9 +200,11 @@ export default function VendorSalesPage() {
                     <TableHead>Produit</TableHead>
                     <TableHead>Client</TableHead>
                     <TableHead>Email</TableHead>
+                    <TableHead>Téléphone</TableHead>
                     <TableHead>Pays</TableHead>
                     <TableHead>Montant</TableHead>
                     <TableHead>Statut</TableHead>
+                    <TableHead>Action</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -166,12 +216,31 @@ export default function VendorSalesPage() {
                       <TableCell className="max-w-[160px] truncate">{sale.product_title}</TableCell>
                       <TableCell>{sale.buyer_name}</TableCell>
                       <TableCell className="text-sm text-green-900/70">{sale.buyer_email}</TableCell>
+                      <TableCell className="text-sm text-green-900/70 whitespace-nowrap">{sale.buyer_phone || '—'}</TableCell>
                       <TableCell className="whitespace-nowrap">{countryName(sale.country)}</TableCell>
                       <TableCell className="font-mono">{formatPrice(sale.amount_cfa)}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className={SALE_STATUS_BADGE[sale.status]}>
                           {ORDER_STATUS_LABELS[sale.status] || sale.status}
                         </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {sale.status === 'pending' ? (
+                          <button
+                            type="button"
+                            onClick={() => handleRemind(sale.id)}
+                            disabled={remindingId === sale.id}
+                            className="rounded-lg border border-green-900/20 bg-green-900/5 px-2.5 py-1.5 text-xs font-medium text-green-900 disabled:opacity-50 whitespace-nowrap"
+                          >
+                            {remindingId === sale.id
+                              ? 'Envoi…'
+                              : sale.reminder_count
+                                ? `Relancer (${sale.reminder_count})`
+                                : 'Relancer'}
+                          </button>
+                        ) : (
+                          <span className="text-xs text-green-900/30">—</span>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}

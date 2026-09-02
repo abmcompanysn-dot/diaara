@@ -3,6 +3,8 @@ package repository
 import (
 	"context"
 	"errors"
+	"fmt"
+	"time"
 
 	"github.com/diarra/backend/internal/model"
 	"github.com/jackc/pgx/v5"
@@ -160,6 +162,172 @@ func (r *SaleRepo) UpdateStatus(ctx context.Context, id, status string) error {
 	_, err := r.pool.Exec(ctx,
 		`UPDATE sales SET status = $2 WHERE id = $1`, id, status)
 	return err
+}
+
+// ListPendingForProvider — ventes encore "pending" pour un prestataire donné
+// ("pawapay"/"kpay"), créées il y a moins de maxAge, plus anciennes d'abord.
+// Utilisé par le job de réconciliation de fond qui va revérifier chaque
+// dépôt via l'API du prestataire (filet de sécurité si un webhook s'est
+// perdu — incident du 2026-09-02).
+func (r *SaleRepo) ListPendingForProvider(ctx context.Context, provider string, maxAge time.Duration) ([]*model.Sale, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+saleColumns+`
+		 FROM sales
+		 WHERE status = 'pending' AND payment_provider = $1
+		   AND created_at >= now() - $2::interval
+		 ORDER BY created_at ASC
+		 LIMIT 200`, provider, intervalStr(maxAge))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	sales := []*model.Sale{}
+	for rows.Next() {
+		s, err := scanSale(rows)
+		if err != nil {
+			return nil, err
+		}
+		sales = append(sales, s)
+	}
+	return sales, rows.Err()
+}
+
+// PendingSaleView — commande non aboutie (pending/failed) enrichie du contact
+// acheteur (nom, email, téléphone, pays) et du titre produit + vendeur, pour
+// la vue admin « paiements en attente & échoués » et la relance vendeur.
+type PendingSaleView struct {
+	*model.Sale
+	BuyerEmail    string  `json:"buyer_email"`
+	BuyerPhone    *string `json:"buyer_phone,omitempty"`
+	ProductTitle  string  `json:"product_title"`
+	VendorID      string  `json:"vendor_id"`
+	VendorEmail   string  `json:"vendor_email"`
+}
+
+const pendingSaleSelect = `
+	SELECT s.id, s.product_id, s.buyer_id, s.buyer_name, s.country, s.referral_link_id, s.amount_cfa,
+		s.platform_fee_cfa, s.closer_commission_cfa, s.vendor_amount_cfa, s.payment_provider,
+		s.payment_reference, s.provider_transaction_id, s.checkout_token, s.status, s.refund_reference,
+		s.delivered_at, s.created_at,
+		s.reminded_at, s.reminder_count,
+		u.email, u.phone, p.title, p.vendor_id, vu.email
+	 FROM sales s
+	 JOIN products p ON p.id = s.product_id
+	 JOIN users u   ON u.id = s.buyer_id
+	 JOIN users vu  ON vu.id = p.vendor_id`
+
+func scanPendingSaleRows(rows pgx.Rows) ([]*PendingSaleView, error) {
+	defer rows.Close()
+	views := []*PendingSaleView{}
+	for rows.Next() {
+		s := &model.Sale{}
+		v := &PendingSaleView{Sale: s}
+		if err := rows.Scan(&s.ID, &s.ProductID, &s.BuyerID, &s.BuyerName, &s.Country, &s.ReferralLinkID, &s.AmountCFA,
+			&s.PlatformFeeCFA, &s.CloserCommissionCFA, &s.VendorAmountCFA, &s.PaymentProvider,
+			&s.PaymentReference, &s.ProviderTransactionID, &s.CheckoutToken, &s.Status, &s.RefundReference,
+			&s.DeliveredAt, &s.CreatedAt,
+			&s.RemindedAt, &s.ReminderCount,
+			&v.BuyerEmail, &v.BuyerPhone, &v.ProductTitle, &v.VendorID, &v.VendorEmail); err != nil {
+			return nil, err
+		}
+		views = append(views, v)
+	}
+	return views, rows.Err()
+}
+
+// ListPendingAndFailed — toutes les commandes pending/failed, plus récentes
+// d'abord (vue admin : voir qui a essayé d'acheter sans aboutir).
+func (r *SaleRepo) ListPendingAndFailed(ctx context.Context) ([]*PendingSaleView, error) {
+	rows, err := r.pool.Query(ctx, pendingSaleSelect+`
+	 WHERE s.status IN ('pending', 'failed')
+	 ORDER BY s.created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	return scanPendingSaleRows(rows)
+}
+
+// FindPendingViewForVendor — une commande pending précise appartenant à un
+// produit du vendeur donné (contrôle d'accès pour la relance vendeur).
+func (r *SaleRepo) FindPendingViewForVendor(ctx context.Context, saleID, vendorID string) (*PendingSaleView, error) {
+	rows, err := r.pool.Query(ctx, pendingSaleSelect+`
+	 WHERE s.id = $1 AND p.vendor_id = $2`, saleID, vendorID)
+	if err != nil {
+		return nil, err
+	}
+	views, err := scanPendingSaleRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	if len(views) == 0 {
+		return nil, ErrSaleNotFound
+	}
+	return views[0], nil
+}
+
+// FindPendingView — une commande précise (admin, sans restriction vendeur).
+func (r *SaleRepo) FindPendingView(ctx context.Context, saleID string) (*PendingSaleView, error) {
+	rows, err := r.pool.Query(ctx, pendingSaleSelect+` WHERE s.id = $1`, saleID)
+	if err != nil {
+		return nil, err
+	}
+	views, err := scanPendingSaleRows(rows)
+	if err != nil {
+		return nil, err
+	}
+	if len(views) == 0 {
+		return nil, ErrSaleNotFound
+	}
+	return views[0], nil
+}
+
+// MarkReminded — enregistre l'envoi d'une relance (incrémente le compteur).
+func (r *SaleRepo) MarkReminded(ctx context.Context, id string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE sales SET reminded_at = now(), reminder_count = reminder_count + 1 WHERE id = $1`, id)
+	return err
+}
+
+// ListRemindable — ventes "pending" candidates à une relance automatique, selon
+// la cadence « 1ʳᵉ relance à firstAfter, 2ᵉ à secondAfter, puis stop » :
+//   - reminder_count = 0 et âge ≥ firstAfter        → 1ʳᵉ relance
+//   - reminder_count = 1 et âge ≥ secondAfter       → 2ᵉ relance
+//   - reminder_count ≥ 2                             → plus jamais
+// Les ventes plus vieilles que maxAge sont abandonnées (pas de relance).
+// Jointe au contact acheteur.
+func (r *SaleRepo) ListRemindable(ctx context.Context, firstAfter, secondAfter, maxAge time.Duration) ([]*PendingSaleView, error) {
+	rows, err := r.pool.Query(ctx, pendingSaleSelect+`
+	 WHERE s.status = 'pending'
+	   AND s.created_at >= now() - $3::interval
+	   AND (
+	         (s.reminder_count = 0 AND s.created_at <= now() - $1::interval)
+	      OR (s.reminder_count = 1 AND s.created_at <= now() - $2::interval)
+	       )
+	 ORDER BY s.created_at ASC
+	 LIMIT 200`,
+		intervalStr(firstAfter), intervalStr(secondAfter), intervalStr(maxAge))
+	if err != nil {
+		return nil, err
+	}
+	return scanPendingSaleRows(rows)
+}
+
+// MarkManuallyConfirmed — bascule une vente pending/failed en 'paid' et trace
+// l'admin qui l'a fait. Ne touche pas une vente déjà payée/livrée/remboursée.
+func (r *SaleRepo) MarkManuallyConfirmed(ctx context.Context, id, adminID string) (bool, error) {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE sales
+		 SET status = 'paid', manually_confirmed_by = $2, manually_confirmed_at = now()
+		 WHERE id = $1 AND status IN ('pending', 'failed')`, id, adminID)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+// intervalStr formate une durée pour un cast ::interval PostgreSQL ("3600 seconds").
+func intervalStr(d time.Duration) string {
+	return fmt.Sprintf("%d seconds", int64(d.Seconds()))
 }
 
 func (r *SaleRepo) UpdatePaymentReference(ctx context.Context, id, ref string) error {

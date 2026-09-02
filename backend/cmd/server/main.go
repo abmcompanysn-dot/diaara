@@ -165,7 +165,7 @@ func main() {
 	}
 
 	// Services
-	authService := service.NewAuthService(userRepo, otpRepo, otpService, smsSender, jwtManager, notifications, adminPermRepo)
+	authService := service.NewAuthService(userRepo, otpRepo, otpService, smsSender, jwtManager, notifications, adminPermRepo, settingsRepo)
 
 	// Connexion Google via Firebase Auth (optionnelle — nécessite un projet
 	// Firebase avec le fournisseur Google activé, voir FIREBASE_PROJECT_ID).
@@ -259,7 +259,7 @@ func main() {
 	supportContactHandler := handler.NewSupportContactHandler(supportContactRepo, notifications)
 
 	// Administration
-	adminHandler := handler.NewAdminHandler(productRepo, saleRepo, userRepo, referralRepo, adminPermRepo, payoutRepo, settingsRepo, ticketRepo, pool, storageHealthPinger, storageService, startTime, pawapay, kpay, notifications, redisCache)
+	adminHandler := handler.NewAdminHandler(productRepo, saleRepo, userRepo, referralRepo, adminPermRepo, payoutRepo, settingsRepo, ticketRepo, pool, storageHealthPinger, storageService, startTime, pawapay, kpay, notifications, redisCache, webhookHandler)
 
 	r := chi.NewRouter()
 
@@ -444,9 +444,15 @@ func main() {
 		r.Get("/payout-limits", payoutHandler.Limits)
 		r.Get("/payout-method", payoutHandler.GetPayoutMethod)
 		r.Put("/payout-method", payoutHandler.SetPayoutMethod)
-		r.With(middleware.RequireVerifiedPhone(userRepo)).Post("/payouts", payoutHandler.Create)
+		// Une demande de versement n'est plus bloquée par la vérification du
+		// téléphone : le numéro est validé (format + opérateur) à
+		// l'enregistrement du moyen de versement (SetPayoutMethod), et la
+		// demande elle-même n'est qu'une mise en file d'attente traitée
+		// ensuite par un admin. Le vendeur ne doit jamais voir d'erreur ici.
+		r.Post("/payouts", payoutHandler.Create)
 		r.Get("/payouts", payoutHandler.Earnings)
 		r.Get("/sales", saleHandler.ListVendor)
+		r.Post("/sales/{id}/remind", saleHandler.RemindVendor)
 	})
 
 	// Routes admin (authentifié + admin). Un admin sans scope assigné garde
@@ -468,6 +474,7 @@ func main() {
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAdminScope(model.AdminPermUsers))
 			r.Get("/users", adminHandler.Users)
+			r.Get("/users/by-country", adminHandler.UsersCountrySummary)
 			r.Put("/users/{id}/role", adminHandler.SetRole)
 			r.Put("/users/{id}/suspend", adminHandler.SuspendUser)
 			r.Put("/users/{id}/reactivate", adminHandler.ReactivateUser)
@@ -479,12 +486,20 @@ func main() {
 			r.Use(middleware.RequireAdminScope(model.AdminPermFinance))
 			r.Get("/stats", adminHandler.Stats)
 			r.Get("/sales", adminHandler.Sales)
+			r.Get("/sales/pending", adminHandler.PendingSales)
 			r.Get("/analytics", adminHandler.Analytics)
 			r.Post("/sales/{id}/refund", adminHandler.RefundSale)
+			r.Post("/sales/{id}/remind", adminHandler.RemindSale)
+			r.Post("/sales/{id}/mark-paid", adminHandler.MarkSalePaid)
+			r.Post("/sales/{id}/check-provider", adminHandler.CheckSaleProvider)
 			r.Get("/settings", adminHandler.GetSettings)
 			r.Put("/settings", adminHandler.UpdateSettings)
 			r.Get("/payouts", adminHandler.Payouts)
+			r.Post("/payouts/{id}/settle-auto", adminHandler.SettlePayoutAuto)
 			r.Post("/payouts/{id}/retry", adminHandler.RetryPayout)
+			r.Post("/payouts/{id}/check-provider", adminHandler.CheckPayoutProvider)
+			r.Post("/payouts/{id}/settle-manual", adminHandler.SettlePayoutManual)
+			r.Post("/payouts/manual", adminHandler.CreateManualPayout)
 			r.Get("/activity", adminHandler.ActivityFeed)
 			// Clé pour la création de produit automatisée (voir /api/automation/products ci-dessous).
 			r.Get("/automation/key", adminHandler.GetAutomationKey)
@@ -569,6 +584,19 @@ func main() {
 	// Relance les aperçus filigranés restés bloqués "pending" suite à un
 	// redémarrage précédent survenu pendant leur génération.
 	go productHandler.RecoverStuckPreviews(context.Background())
+
+	// Relance automatique des acheteurs dont la commande est restée "pending"
+	// (email 1h puis 24h après, puis stop — voir SaleHandler.RunReminderLoop).
+	go saleHandler.RunReminderLoop(context.Background())
+
+	// Réconciliation de fond des dépôts PawaPay restés "pending" : revérifie
+	// leur statut réel via l'API PawaPay et confirme/échoue en conséquence.
+	// Filet de sécurité si un webhook s'est perdu (incident du 2026-09-02).
+	go webhookHandler.RunDepositReconcileLoop(context.Background())
+
+	// Même filet pour les versements restés "processing" (webhook prestataire
+	// perdu) : revérifie via l'API PawaPay/KPay et applique paid/failed.
+	go webhookHandler.RunPayoutReconcileLoop(context.Background())
 
 	port := os.Getenv("PORT")
 	if port == "" {

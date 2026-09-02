@@ -99,6 +99,9 @@ type CheckoutValue = 'pawapay' | 'kpay';
 
 const gatewayOpKey = (code: string) => `gateway_op_${code.toLowerCase()}`;
 const checkoutProviderKey = (iso3: string) => `checkout_provider_${iso3.toLowerCase()}`;
+// Miroir de backend/internal/model/settings.go WhatsAppCommunitySettingKey.
+const whatsappKey = (iso3: string) => `whatsapp_community_url_${iso3.toLowerCase()}`;
+const WHATSAPP_GENERAL_KEY = 'whatsapp_community_url';
 
 function groupByCountry<T extends { country: string; countryLabel: string }>(items: T[]) {
   const groups: { country: string; countryLabel: string; items: T[] }[] = [];
@@ -121,6 +124,8 @@ export default function AdminSettingsPage() {
   const [commissionRate, setCommissionRate] = useState('15');
   const [gatewayOps, setGatewayOps] = useState<Record<string, GatewayValue>>({});
   const [checkoutProviders, setCheckoutProviders] = useState<Record<string, CheckoutValue>>({});
+  // Liens communauté WhatsApp : clé "general" + une clé par ISO3.
+  const [whatsappLinks, setWhatsappLinks] = useState<Record<string, string>>({});
 
   useEffect(() => {
     api
@@ -139,6 +144,11 @@ export default function AdminSettingsPage() {
           c[country.iso3] = v === 'kpay' ? 'kpay' : 'pawapay';
         }
         setCheckoutProviders(c);
+        const wa: Record<string, string> = { general: settings[WHATSAPP_GENERAL_KEY] || '' };
+        for (const country of CHECKOUT_COUNTRIES) {
+          wa[country.iso3] = settings[whatsappKey(country.iso3)] || '';
+        }
+        setWhatsappLinks(wa);
       })
       .catch((err: any) => setError(friendlyError(err)))
       .finally(() => setLoading(false));
@@ -158,6 +168,9 @@ export default function AdminSettingsPage() {
       for (const op of OPERATORS) values[gatewayOpKey(op.code)] = gatewayOps[op.code] || 'pawapay';
       for (const country of CHECKOUT_COUNTRIES)
         values[checkoutProviderKey(country.iso3)] = checkoutProviders[country.iso3] || 'pawapay';
+      values[WHATSAPP_GENERAL_KEY] = (whatsappLinks.general || '').trim();
+      for (const country of CHECKOUT_COUNTRIES)
+        values[whatsappKey(country.iso3)] = (whatsappLinks[country.iso3] || '').trim();
       await api.updateAdminSettings(values);
       setSaved(true);
       setTimeout(() => setSaved(false), 2500);
@@ -181,7 +194,7 @@ export default function AdminSettingsPage() {
       <PageHeader
         eyebrow="// administration"
         title="Paramètres de la plateforme"
-        description="Commission, passerelles de paiement"
+        description="Commission, passerelles de paiement, communauté WhatsApp"
         actions={
           <Button variant="outline" size="sm" render={<Link href="/admin" />}>
             <ArrowLeftIcon size={16} className="mr-2" />
@@ -324,6 +337,48 @@ export default function AdminSettingsPage() {
                 </div>
               );
             })}
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-card border-green-900/5">
+          <CardHeader>
+            <CardTitle>Communauté WhatsApp</CardTitle>
+            <CardDescription>
+              Lien d&apos;invitation ajouté en pied des emails (bienvenue, passage vendeur,
+              messages groupés et messages admin). Le lien du pays de l&apos;utilisateur est
+              utilisé s&apos;il est renseigné ; sinon on retombe sur le lien général. Colle un
+              lien <code>chat.whatsapp.com/…</code> ou un lien de communauté.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            <div className="space-y-1.5">
+              <Label htmlFor="wa-general">Lien général (par défaut)</Label>
+              <Input
+                id="wa-general"
+                type="url"
+                placeholder="https://chat.whatsapp.com/…"
+                value={whatsappLinks.general || ''}
+                onChange={(e) => setWhatsappLinks((p) => ({ ...p, general: e.target.value }))}
+              />
+            </div>
+            <div className="pt-2 space-y-2">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                Liens par pays (optionnels)
+              </h3>
+              {CHECKOUT_COUNTRIES.map((country) => (
+                <div key={country.iso3} className="flex items-center gap-3">
+                  <span className="text-sm w-40 shrink-0">{country.label}</span>
+                  <Input
+                    type="url"
+                    placeholder="(utilise le lien général)"
+                    value={whatsappLinks[country.iso3] || ''}
+                    onChange={(e) =>
+                      setWhatsappLinks((p) => ({ ...p, [country.iso3]: e.target.value }))
+                    }
+                  />
+                </div>
+              ))}
+            </div>
           </CardContent>
         </Card>
 

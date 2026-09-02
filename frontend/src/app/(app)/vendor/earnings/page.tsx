@@ -15,7 +15,7 @@ import { PageHeader } from '@/components/page-header';
 import { PageLoader } from '@/components/page-loader';
 import { PayoutMethodForm } from '@/components/payout-method-form';
 import { ArrowLeftIcon, CheckIcon, DownloadIcon, WalletIcon, ChevronDownIcon } from '@/components/icons';
-import { formatPrice, PAYOUT_STATUS_BADGE, PAYOUT_STATUS_LABELS } from '@/lib/constants';
+import { formatPrice } from '@/lib/constants';
 import { friendlyError } from '@/lib/error-messages';
 import { PAYOUT_COUNTRIES, findPayoutOperator, maskPhone } from '@/lib/operators';
 import { openPayoutReceipt, payoutReference } from '@/lib/payout-receipt';
@@ -51,12 +51,25 @@ interface VendorSale {
   created_at: string;
 }
 
-const STATUS_DOT: Record<string, string> = {
-  paid: 'bg-green-500',
-  processing: 'bg-blue-500',
-  requested: 'bg-yellow-500',
-  failed: 'bg-red-500',
-};
+// Côté vendeur, une demande de versement n'a que deux issues visibles :
+// « Versé » (paid) ou « En cours de traitement » (tout le reste — requested,
+// processing, et même failed : un échec prestataire est géré par l'équipe
+// DIARRA, le vendeur ne voit jamais d'erreur ni de raison d'échec sur un
+// retrait). Les vrais statuts restent visibles côté admin.
+function vendorPayoutLabel(status: string): string {
+  return status === 'paid' ? 'Versé' : 'En cours de traitement';
+}
+function vendorPayoutDot(status: string): string {
+  return status === 'paid' ? 'bg-green-500' : 'bg-blue-500';
+}
+function vendorPayoutTextClass(status: string): string {
+  return status === 'paid' ? 'text-green-700' : 'text-blue-700';
+}
+function vendorPayoutBadgeClass(status: string): string {
+  return status === 'paid'
+    ? 'bg-green-100 text-green-700 hover:bg-green-100'
+    : 'bg-blue-100 text-blue-700 hover:bg-blue-100';
+}
 
 export default function VendorEarningsPage() {
   const [totalEarned, setTotalEarned] = useState(0);
@@ -197,7 +210,11 @@ export default function VendorEarningsPage() {
     setSubmitting(true);
     try {
       await api.requestPayout(amountNum);
-      toast({ variant: 'success', title: 'Demande envoyée', description: `Votre versement de ${formatPrice(amountNum)} est en cours de traitement.` });
+      toast({
+        variant: 'success',
+        title: 'Demande envoyée',
+        description: `Votre versement de ${formatPrice(amountNum)} sera traité sous 24h ouvrées.`,
+      });
       setAmount('');
       setSheetOpen(false);
       loadEarnings();
@@ -379,14 +396,14 @@ export default function VendorEarningsPage() {
                         </div>
                         <div className="text-right shrink-0">
                           <p className="font-mono font-bold text-sm text-green-950">{formatPrice(payout.amount_cfa)}</p>
-                          <span className={cn('inline-flex items-center gap-1 text-[11px] font-medium', {
-                            'text-green-700': payout.status === 'paid',
-                            'text-blue-700': payout.status === 'processing',
-                            'text-yellow-700': payout.status === 'requested',
-                            'text-red-700': payout.status === 'failed',
-                          })}>
-                            <span className={cn('w-1.5 h-1.5 rounded-full', STATUS_DOT[payout.status] || 'bg-gray-400')} />
-                            {PAYOUT_STATUS_LABELS[payout.status] || payout.status}
+                          <span
+                            className={cn(
+                              'inline-flex items-center gap-1 text-[11px] font-medium',
+                              vendorPayoutTextClass(payout.status)
+                            )}
+                          >
+                            <span className={cn('w-1.5 h-1.5 rounded-full', vendorPayoutDot(payout.status))} />
+                            {vendorPayoutLabel(payout.status)}
                           </span>
                         </div>
                         <ChevronDownIcon
@@ -404,8 +421,10 @@ export default function VendorEarningsPage() {
                               <span>{op?.label || payout.operator}</span>
                             )}
                           </div>
-                          {payout.status === 'failed' && payout.failure_reason && (
-                            <p className="text-xs text-red-600">{payout.failure_reason}</p>
+                          {payout.status !== 'paid' && (
+                            <p className="text-xs text-green-900/50">
+                              Traitement sous 24h ouvrées par l&rsquo;équipe DIARRA.
+                            </p>
                           )}
                           <Button
                             variant="outline"
@@ -457,11 +476,13 @@ export default function VendorEarningsPage() {
                           <TableCell className="font-mono">{formatPrice(payout.amount_cfa)}</TableCell>
                           <TableCell>
                             <div>
-                              <Badge className={PAYOUT_STATUS_BADGE[payout.status]}>
-                                {PAYOUT_STATUS_LABELS[payout.status] || payout.status}
+                              <Badge className={vendorPayoutBadgeClass(payout.status)}>
+                                {vendorPayoutLabel(payout.status)}
                               </Badge>
-                              {payout.status === 'failed' && payout.failure_reason && (
-                                <p className="text-xs text-red-600 mt-1 max-w-[180px]">{payout.failure_reason}</p>
+                              {payout.status !== 'paid' && (
+                                <p className="text-xs text-green-900/50 mt-1 max-w-[180px]">
+                                  Traitement sous 24h ouvrées.
+                                </p>
                               )}
                             </div>
                           </TableCell>
@@ -521,6 +542,20 @@ export default function VendorEarningsPage() {
               </div>
 
               <div className="rounded-lg bg-green-50/60 border border-green-900/5 p-3 space-y-1.5 text-sm">
+                {payoutMethod?.operator && (
+                  <div className="flex justify-between text-green-900/70">
+                    <span>Envoyé sur</span>
+                    <span className="font-medium text-green-950">
+                      {payoutMethod.operator_label}
+                      {payoutMethod.phone ? (
+                        <span className="font-mono text-green-900/60">
+                          {' '}
+                          · {maskPhone(payoutMethod.phone, findPayoutOperator(payoutMethod.operator)?.dialCode) || payoutMethod.phone}
+                        </span>
+                      ) : null}
+                    </span>
+                  </div>
+                )}
                 <div className="flex justify-between text-green-900/70">
                   <span>Frais de transfert</span>
                   <span className="font-mono">0 FCFA</span>
@@ -532,7 +567,8 @@ export default function VendorEarningsPage() {
               </div>
 
               <p className={`text-xs ${blockReason ? 'text-yellow-700' : 'text-muted-foreground'}`}>
-                {blockReason || 'Versements traités sous 48h.'}
+                {blockReason ||
+                  "Votre demande sera vérifiée puis traitée par l'équipe DIARRA sous 24h ouvrées. Vous n'avez rien d'autre à faire."}
               </p>
             </div>
             <SheetFooter>

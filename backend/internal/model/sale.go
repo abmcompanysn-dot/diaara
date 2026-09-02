@@ -25,6 +25,10 @@ type Sale struct {
 	RefundReference     *string    `json:"refund_reference,omitempty"`
 	DeliveredAt         *time.Time `json:"delivered_at,omitempty"`
 	CreatedAt           time.Time  `json:"created_at"`
+	// Relance des commandes restées "pending" : date de la dernière relance
+	// envoyée à l'acheteur et nombre total de relances (voir SaleRepo.MarkReminded).
+	RemindedAt    *time.Time `json:"reminded_at,omitempty"`
+	ReminderCount int        `json:"reminder_count"`
 }
 
 type CreateOrderInput struct {

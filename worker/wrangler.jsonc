@@ -26,10 +26,14 @@
   },
 
   "vars": {
-    // Backend Go sur le VPS. diarra.abmcy.com devient une simple
-    // redirection vers diarra.app (le frontend, servi par ce Worker) — le
-    // backend a donc sa propre adresse dédiée pour rester joignable.
-    "BACKEND_URL": "https://origin.abmcy.com"
+    // Backend Go sur le VPS (169.58.214.115), joignable via api.diarra.app
+    // — sous-domaine Cloudflare proxied (nuage orange) : le fetch() de ce
+    // Worker vers cette adresse reste dans le réseau Cloudflare, donc le
+    // certificat self-signed de Caddy (mode SSL "Full") est accepté.
+    // origin.abmcy.com (Vercel DNS -> VPS) donnait un 526 : le fetch() du
+    // Worker valide le certificat d'origine en strict, indépendamment du
+    // mode SSL de la zone.
+    "BACKEND_URL": "https://api.diarra.app"
   },
 
   // Route de production — nouveau domaine dédié à l'application (distinct

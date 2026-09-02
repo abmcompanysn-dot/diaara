@@ -23,7 +23,21 @@ const (
 	SettingDonationSharePct     = "donation_share_pct"
 	SettingDonationThresholdCFA = "donation_threshold_cfa"
 	SettingDonationEnabled      = "donation_program_enabled"
+
+	// Communauté WhatsApp : lien d'invitation général (chat.whatsapp.com/... ou
+	// lien de communauté). Inséré dans les emails de bienvenue, de passage
+	// vendeur, les broadcasts et les messages admin individuels. Un lien par
+	// pays peut le surcharger (voir WhatsAppCommunitySettingKey) ; à défaut on
+	// retombe sur ce lien général.
+	SettingWhatsAppCommunityURL = "whatsapp_community_url"
 )
+
+// WhatsAppCommunitySettingKey — lien communauté WhatsApp spécifique à un pays
+// (ISO 3166-1 alpha-3), ex. "whatsapp_community_url_sen". Optionnel : si le
+// réglage est vide, l'appelant retombe sur SettingWhatsAppCommunityURL.
+func WhatsAppCommunitySettingKey(countryISO3 string) string {
+	return "whatsapp_community_url_" + strings.ToLower(countryISO3)
+}
 
 // GatewayOperatorSettingKey — réglage par code opérateur EXACT (ex.
 // "MTN_MOMO_BEN"), valeur à 3 états : "off" | "pawapay" | "kpay". Pilote

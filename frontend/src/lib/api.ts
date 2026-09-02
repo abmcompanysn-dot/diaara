@@ -309,6 +309,10 @@ export const api = {
 
   getVendorSales: () => fetchApi<{ sales: any[] }>('/api/vendor/sales'),
 
+  // Relance par email d'un acheteur dont la commande est restée "en attente"
+  remindVendorSale: (id: string) =>
+    fetchApi<{ ok: boolean }>(`/api/vendor/sales/${id}/remind`, { method: 'POST' }),
+
   // Notifications in-app
   getNotifications: () => fetchApi<{ notifications: any[] }>('/api/notifications'),
 
@@ -428,7 +432,23 @@ export const api = {
     });
   },
 
-  getUsers: () => fetchApi<{ users: any[] }>('/api/admin/users'),
+  // country: ISO3 (ex "SEN"), "UNKNOWN" (pays non déterminé), ou omis = tous.
+  // Le pays est déduit de l'indicatif du téléphone côté backend.
+  getUsers: (country?: string) =>
+    fetchApi<{ users: any[] }>(`/api/admin/users${country ? `?country=${encodeURIComponent(country)}` : ''}`),
+
+  // Répartition des comptes par pays (en-tête de la vue « Utilisateurs par pays »
+  // + options du message groupé).
+  getUsersByCountry: () =>
+    fetchApi<{
+      countries: {
+        country: string;
+        country_label: string;
+        users: number;
+        vendors: number;
+        with_phone: number;
+      }[];
+    }>('/api/admin/users/by-country'),
 
   setRole: (id: string, role: string, action: 'grant' | 'revoke') =>
     fetchApi<void>(`/api/admin/users/${id}/role`, {
@@ -465,10 +485,33 @@ export const api = {
 
   getSales: () => fetchApi<{ sales: any[] }>('/api/admin/sales'),
 
+  // Commandes non abouties (pending/failed) avec contact acheteur complet
+  getPendingSales: () => fetchApi<{ sales: any[] }>('/api/admin/sales/pending'),
+
   refundSale: (id: string) =>
     fetchApi<{ status: string; refund_id: string }>(`/api/admin/sales/${id}/refund`, {
       method: 'POST',
     }),
+
+  // Relance par email l'acheteur d'une commande "en attente"
+  remindSale: (id: string) =>
+    fetchApi<{ ok: boolean }>(`/api/admin/sales/${id}/remind`, { method: 'POST' }),
+
+  // Confirme À LA MAIN un paiement (webhook jamais arrivé) : la vente passe
+  // "payée", l'acheteur reçoit son fichier, le vendeur est crédité.
+  markSalePaid: (id: string) =>
+    fetchApi<{ status: string }>(`/api/admin/sales/${id}/mark-paid`, { method: 'POST' }),
+
+  // « Vérifier chez PawaPay » : interroge le prestataire sur le vrai statut du
+  // dépôt. Si COMPLETED, la vente est confirmée automatiquement (comme le
+  // webhook). Ne force rien si le prestataire ne confirme pas.
+  checkSaleProvider: (id: string) =>
+    fetchApi<{
+      provider: string;
+      provider_status: string; // COMPLETED | FAILED | PROCESSING | NOT_FOUND | ...
+      provider_transaction_id?: string;
+      sale_status: string;
+    }>(`/api/admin/sales/${id}/check-provider`, { method: 'POST' }),
 
   getStats: () =>
     fetchApi<{
@@ -505,8 +548,41 @@ export const api = {
 
   getAdminPayouts: () => fetchApi<{ payouts: any[] }>('/api/admin/payouts'),
 
+  // Règle AUTOMATIQUEMENT une demande de versement « en attente » : déclenche
+  // le versement chez PawaPay/KPay. La demande passe « en traitement ».
+  settlePayoutAuto: (id: string) =>
+    fetchApi<{ status: string }>(`/api/admin/payouts/${id}/settle-auto`, { method: 'POST' }),
+
   retryPayout: (id: string) =>
     fetchApi<{ status: string }>(`/api/admin/payouts/${id}/retry`, { method: 'POST' }),
+
+  // Interroge le prestataire sur le vrai statut d'un versement « en traitement »
+  // et applique payé/échec en conséquence (comme checkSaleProvider).
+  checkPayoutProvider: (id: string) =>
+    fetchApi<{ provider: string; provider_status: string; payout_status: string }>(
+      `/api/admin/payouts/${id}/check-provider`,
+      { method: 'POST' }
+    ),
+
+  // Marque un versement "payé" à la main (argent envoyé hors PawaPay/KPay).
+  settlePayoutManual: (id: string, data: { note: string; fee_cfa: number }) =>
+    fetchApi<{ status: string }>(`/api/admin/payouts/${id}/settle-manual`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  // Crée un versement manuel de toutes pièces pour un vendeur.
+  createManualPayout: (data: {
+    user_id: string;
+    amount: number;
+    fee_cfa: number;
+    phone: string;
+    note: string;
+  }) =>
+    fetchApi<{ payout: any }>('/api/admin/payouts/manual', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 
   // Programme de reversement automatique ("Fidélisation")
   getDonations: () =>
@@ -560,9 +636,16 @@ export const api = {
     }),
 
   // Diffusion email (admin, scope "users") : subject + html composés par
-  // l'admin, envoyés à tous les comptes DIARRA. test_only n'envoie qu'à
-  // l'admin connecté, pour prévisualiser.
-  sendBroadcast: (data: { subject: string; html: string; test_only?: boolean }) =>
+  // l'admin. test_only n'envoie qu'à l'admin connecté, pour prévisualiser.
+  // country (ISO3 ou "UNKNOWN") restreint la diffusion aux comptes de ce pays
+  // (déduit de l'indicatif téléphone) ; un bloc « Rejoindre la communauté
+  // WhatsApp » est ajouté en pied si un lien est configuré.
+  sendBroadcast: (data: {
+    subject: string;
+    html: string;
+    test_only?: boolean;
+    country?: string;
+  }) =>
     fetchApi<{ status: string; recipients?: number; to?: string }>('/api/admin/broadcast', {
       method: 'POST',
       body: JSON.stringify(data),
