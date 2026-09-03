@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 
@@ -57,9 +58,15 @@ func NewPayoutHandler(
 // resolvePayoutProvider lit le réglage admin par opérateur exact (voir
 // model.GatewayOperatorSettingKey) et retourne le nom du prestataire à
 // utiliser ("off" bloque explicitement l'opérateur). Défaut "pawapay" si le
-// réglage est absent (compatible avec le comportement d'avant KPay).
+// réglage est absent. KPay est suspendu (2026-09-03) : une valeur "kpay"
+// éventuellement restée en base est traitée comme "pawapay" — voir aussi le
+// refus à l'écriture dans AdminHandler.UpdateSettings.
 func (h *PayoutHandler) resolvePayoutProvider(ctx context.Context, providerCode string) string {
-	return h.settingsRepo.Get(ctx, model.GatewayOperatorSettingKey(providerCode), "pawapay")
+	v := h.settingsRepo.Get(ctx, model.GatewayOperatorSettingKey(providerCode), "pawapay")
+	if v == "kpay" {
+		return "pawapay"
+	}
+	return v
 }
 
 // vendorBalanceCacheKey — même package que webhook_handler.go, qui invalide
@@ -82,6 +89,11 @@ func (h *PayoutHandler) GetPayoutMethod(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, `{"error":"payout_method_lookup_failed"}`, http.StatusInternalServerError)
 		return
 	}
+	paypalEmail, err := h.userRepo.GetPayoutPayPalEmail(r.Context(), userID)
+	if err != nil {
+		http.Error(w, `{"error":"payout_method_lookup_failed"}`, http.StatusInternalServerError)
+		return
+	}
 
 	label := ""
 	if operator != nil {
@@ -93,13 +105,22 @@ func (h *PayoutHandler) GetPayoutMethod(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
+	// Canal actif par défaut : PayPal s'il est renseigné (prioritaire), sinon
+	// mobile money. Le frontend s'en sert pour préselectionner l'onglet.
+	activeChannel := "mobile_money"
+	if paypalEmail != nil && *paypalEmail != "" {
+		activeChannel = "paypal"
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"payout_method": map[string]interface{}{
+			"active_channel": activeChannel,
 			"phone":          phone,
 			"operator":       operator,
 			"operator_label": label,
 			"country":        country,
+			"paypal_email":   paypalEmail,
 		},
 	})
 }
@@ -118,6 +139,30 @@ func (h *PayoutHandler) SetPayoutMethod(w http.ResponseWriter, r *http.Request) 
 		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
 		return
 	}
+
+	// Canal PayPal : on n'enregistre qu'un email (validation de forme
+	// minimale). N'écrase jamais le mobile money — les deux coexistent.
+	if input.Channel == "paypal" {
+		email := strings.TrimSpace(input.PayPalEmail)
+		if !looksLikeEmail(email) {
+			http.Error(w, `{"error":"invalid_paypal_email"}`, http.StatusBadRequest)
+			return
+		}
+		if err := h.userRepo.SetPayoutPayPalEmail(r.Context(), userID, email); err != nil {
+			http.Error(w, `{"error":"payout_method_save_failed"}`, http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"payout_method": map[string]interface{}{
+				"active_channel": "paypal",
+				"paypal_email":   email,
+			},
+		})
+		return
+	}
+
+	// Canal mobile money (défaut).
 	if input.Phone == "" || input.Operator == "" || input.Country == "" {
 		http.Error(w, `{"error":"payment_details_required"}`, http.StatusBadRequest)
 		return
@@ -145,12 +190,24 @@ func (h *PayoutHandler) SetPayoutMethod(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"payout_method": map[string]interface{}{
+			"active_channel": "mobile_money",
 			"phone":          msisdn,
 			"operator":       op.Provider,
 			"operator_label": op.Label,
 			"country":        input.Country,
 		},
 	})
+}
+
+// looksLikeEmail — validation de forme minimale (un @ au milieu, un point
+// après). Suffisant : PayPal rejettera de toute façon un email invalide au
+// moment du versement, on veut juste éviter les saisies vides/absurdes.
+func looksLikeEmail(s string) bool {
+	at := strings.IndexByte(s, '@')
+	if at <= 0 || at == len(s)-1 {
+		return false
+	}
+	return strings.IndexByte(s[at+1:], '.') > 0
 }
 
 // Earnings — GET /api/vendor/earnings
@@ -271,15 +328,34 @@ func (h *PayoutHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Le compte destinataire est celui enregistré au préalable (voir SetPayoutMethod),
-	// pas resaisi à chaque demande de versement.
+	// Le compte destinataire est celui enregistré au préalable (voir
+	// SetPayoutMethod), pas resaisi à chaque demande. Deux canaux possibles ;
+	// PayPal est prioritaire quand le vendeur a renseigné un email PayPal.
 	msisdn, provider, _, err := h.userRepo.GetPayoutMethod(r.Context(), userID)
 	if err != nil {
 		http.Error(w, `{"error":"payout_method_lookup_failed"}`, http.StatusInternalServerError)
 		return
 	}
-	if msisdn == nil || provider == nil || *msisdn == "" || *provider == "" {
+	paypalEmail, err := h.userRepo.GetPayoutPayPalEmail(r.Context(), userID)
+	if err != nil {
+		http.Error(w, `{"error":"payout_method_lookup_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	hasMobileMoney := msisdn != nil && provider != nil && *msisdn != "" && *provider != ""
+	hasPayPal := paypalEmail != nil && *paypalEmail != ""
+	if !hasMobileMoney && !hasPayPal {
 		http.Error(w, `{"error":"payout_method_required"}`, http.StatusBadRequest)
+		return
+	}
+	usePayPal := hasPayPal
+	if usePayPal && input.AmountCFA < model.PayPalPayoutMinCFA && hasMobileMoney {
+		// Sous le plancher PayPal mais un mobile money existe : on route vers
+		// le mobile money plutôt que de refuser.
+		usePayPal = false
+	}
+	if usePayPal && input.AmountCFA < model.PayPalPayoutMinCFA {
+		http.Error(w, `{"error":"amount_below_paypal_minimum"}`, http.StatusBadRequest)
 		return
 	}
 
@@ -308,20 +384,23 @@ func (h *PayoutHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Prestataire pressenti, résolu et persisté ici (voir PayoutRepo.Create) —
-	// un changement de réglage admin après coup ne doit jamais rediriger ce
-	// versement. NB : "off" n'est plus bloquant côté vendeur (il ne doit jamais
-	// voir d'erreur sur une demande de retrait) ; l'admin verra le cas au
-	// moment de régler la demande et pourra la traiter manuellement.
-	providerName := h.resolvePayoutProvider(r.Context(), *provider)
-
 	// La demande est SEULEMENT enregistrée "en attente" (requested). Aucun
 	// versement n'est déclenché automatiquement : c'est l'admin qui décide,
-	// demande par demande, de régler automatiquement (PawaPay/KPay) ou
+	// demande par demande, de régler automatiquement (PawaPay/PayPal) ou
 	// manuellement (voir AdminHandler.SettlePayoutAuto / SettlePayoutManual).
 	// Le solde disponible est déduit dès maintenant (Earnings compte tout
 	// sauf 'failed' dans "requested").
-	payout, err := h.payoutRepo.Create(r.Context(), userID, input.AmountCFA, *msisdn, *provider, providerName)
+	var payout *model.Payout
+	if usePayPal {
+		payout, err = h.payoutRepo.CreatePayPal(r.Context(), userID, input.AmountCFA, *paypalEmail)
+	} else {
+		// Prestataire pressenti, résolu et persisté ici (voir PayoutRepo.Create)
+		// — un changement de réglage admin après coup ne doit jamais rediriger
+		// ce versement. "off" n'est pas bloquant côté vendeur ; l'admin le verra
+		// au moment de régler.
+		providerName := h.resolvePayoutProvider(r.Context(), *provider)
+		payout, err = h.payoutRepo.Create(r.Context(), userID, input.AmountCFA, *msisdn, *provider, providerName)
+	}
 	if err != nil {
 		http.Error(w, `{"error":"payout_creation_failed"}`, http.StatusInternalServerError)
 		return

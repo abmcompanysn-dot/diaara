@@ -6,20 +6,20 @@ metadata:
 data:
   APP_ENV: "production"
   PORT: "8080"
-  # URL publique du site — sert de base pour les liens générés côté backend
-  # (sitemap, flux, partage, ET le returnUrl PawaPay post-paiement, voir
-  # sale_handler.go). Le frontend vit maintenant sur diarra.app (Cloudflare
-  # Worker) ; diarra.abmcy.com n'est plus qu'une redirection Caddy vers ce
-  # domaine (voir /etc/caddy/Caddyfile sur le VPS) — pointer directement ici
-  # évite l'aller-retour par la redirection.
+  # URL publique du site — base des liens générés côté backend (sitemap, flux,
+  # partage, returnUrl PawaPay/PayPal post-paiement, voir sale_handler.go). Le
+  # frontend est servi par le Worker Cloudflare "diaara" sur diarra.app ; le
+  # backend est joint sur api.diarra.app (ingress ci-contre + Caddy).
   FRONTEND_URL: "https://diarra.app"
   CORS_ALLOWED_ORIGINS: "https://diarra.app"
+  # Défaut sandbox si absent du Secret — mettre l'URL live via le Secret en prod.
+  PAYPAL_BASE_URL: "https://api-m.paypal.com"
   REDIS_URL: "redis://redis:6379"
   # Endpoint S3 PUBLIC (proxifié par Caddy), pas l'adresse interne du
   # cluster : les URLs signées générées par le backend doivent être
   # résolvables directement par le navigateur du client (voir
   # backend/internal/handler/product_handler.go, Cover/Preview/Delivery).
-  S3_ENDPOINT: "https://s3.diarra.abmcy.com"
+  S3_ENDPOINT: "https://files.diarra.app"
   S3_BUCKET: "diarra-files"
   S3_REGION: "us-east-1"
   # Production, pas sandbox — la clé API configurée (PAWAPAY_API_KEY, dans

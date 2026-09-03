@@ -79,7 +79,7 @@ spec:
       targetPort: 9001
 ---
 # Service séparé, NodePort fixe : Caddy (hors cluster) reverse-proxy
-# s3.diarra.abmcy.com vers ce port pour que les URLs signées générées par
+# files.diarra.app vers ce port pour que les URLs signées générées par
 # le backend restent résolvables par le navigateur du client (voir
 # S3_ENDPOINT dans configmap.yaml). Le service ClusterIP `minio` ci-dessus
 # reste l'accès interne normal.

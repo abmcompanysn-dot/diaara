@@ -16,10 +16,12 @@ import { findPayoutOperator, maskPhone } from '@/lib/operators';
 import { useToast } from '@/hooks/use-toast';
 
 interface PayoutMethod {
+  active_channel?: 'mobile_money' | 'paypal';
   phone: string | null;
   operator: string | null;
   operator_label: string;
   country: string | null;
+  paypal_email?: string | null;
 }
 
 export default function VendorAccountPage() {

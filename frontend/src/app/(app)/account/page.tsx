@@ -20,10 +20,12 @@ import { findPayoutOperator, maskPhone } from '@/lib/operators';
 import { useToast } from '@/hooks/use-toast';
 
 interface PayoutMethod {
+  active_channel?: 'mobile_money' | 'paypal';
   phone: string | null;
   operator: string | null;
   operator_label: string;
   country: string | null;
+  paypal_email?: string | null;
 }
 
 export default function AccountPage() {
@@ -77,8 +79,9 @@ export default function AccountPage() {
     setMethodError('');
     setMethodSubmitting(true);
     try {
-      const result = await api.setAccountPayoutMethod(data);
-      setPayoutMethod(result.payout_method);
+      await api.setAccountPayoutMethod({ channel: 'mobile_money', ...data });
+      const fresh = await api.getAccountPayoutMethod();
+      setPayoutMethod(fresh.payout_method);
       setEditingMethod(false);
       toast({ variant: 'success', title: 'Moyen de retrait enregistré' });
     } catch (err: any) {

@@ -20,13 +20,13 @@ func NewPayoutRepo(pool *pgxpool.Pool) *PayoutRepo {
 	return &PayoutRepo{pool: pool}
 }
 
-const payoutColumns = `id, user_id, amount_cfa, status, phone_number, operator, provider, provider_reference, failure_reason, requested_at, paid_at, is_manual, manual_note, fee_cfa`
+const payoutColumns = `id, user_id, amount_cfa, status, phone_number, operator, provider, provider_reference, failure_reason, requested_at, paid_at, is_manual, manual_note, fee_cfa, paypal_email, paypal_batch_id`
 
 func scanPayout(row pgx.Row) (*model.Payout, error) {
 	p := &model.Payout{}
 	err := row.Scan(&p.ID, &p.UserID, &p.AmountCFA, &p.Status, &p.PhoneNumber, &p.Operator,
 		&p.Provider, &p.ProviderReference, &p.FailureReason, &p.RequestedAt, &p.PaidAt,
-		&p.IsManual, &p.ManualNote, &p.FeeCFA)
+		&p.IsManual, &p.ManualNote, &p.FeeCFA, &p.PayPalEmail, &p.PayPalBatchID)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, ErrPayoutNotFound
@@ -36,14 +36,33 @@ func scanPayout(row pgx.Row) (*model.Payout, error) {
 	return p, nil
 }
 
-// Create — provider est résolu par l'appelant depuis GatewayOperatorSettingKey
-// AU MOMENT de la création (pas relu à chaque tentative/webhook ensuite),
-// pour qu'un changement de réglage admin ne redirige jamais un versement
-// déjà en cours vers un autre prestataire.
+// Create — versement MOBILE MONEY. provider est résolu par l'appelant depuis
+// GatewayOperatorSettingKey AU MOMENT de la création (pas relu à chaque
+// tentative/webhook ensuite), pour qu'un changement de réglage admin ne
+// redirige jamais un versement déjà en cours vers un autre prestataire.
 func (r *PayoutRepo) Create(ctx context.Context, userID string, amount int, phone, operator, provider string) (*model.Payout, error) {
 	return scanPayout(r.pool.QueryRow(ctx,
 		`INSERT INTO payouts (user_id, amount_cfa, phone_number, operator, provider) VALUES ($1, $2, $3, $4, $5) RETURNING `+payoutColumns,
 		userID, amount, phone, operator, provider))
+}
+
+// CreatePayPal — versement vers un email PayPal (provider = "paypal", canal
+// prioritaire quand le vendeur a renseigné un email PayPal). L'email est figé
+// ici, jamais relu après (même principe que phone_number pour le mobile money).
+func (r *PayoutRepo) CreatePayPal(ctx context.Context, userID string, amount int, paypalEmail string) (*model.Payout, error) {
+	return scanPayout(r.pool.QueryRow(ctx,
+		`INSERT INTO payouts (user_id, amount_cfa, provider, paypal_email) VALUES ($1, $2, 'paypal', $3) RETURNING `+payoutColumns,
+		userID, amount, paypalEmail))
+}
+
+// SetPayPalBatchID — enregistre le payout_batch_id PayPal juste après
+// l'acceptation du lot, et passe le versement à "processing" (miroir de
+// SetProviderReference pour le mobile money).
+func (r *PayoutRepo) SetPayPalBatchID(ctx context.Context, id, batchID string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE payouts SET paypal_batch_id = $2, provider_reference = $2, status = 'processing' WHERE id = $1`,
+		id, batchID)
+	return err
 }
 
 func (r *PayoutRepo) ListByUser(ctx context.Context, userID string) ([]*model.Payout, error) {
@@ -81,6 +100,7 @@ type PayoutWithUser struct {
 	VendorPayoutPhone   *string `json:"vendor_payout_phone,omitempty"`
 	VendorPayoutOperator *string `json:"vendor_payout_operator,omitempty"`
 	VendorPayoutCountry *string `json:"vendor_payout_country,omitempty"`
+	VendorPayoutPayPalEmail *string `json:"vendor_payout_paypal_email,omitempty"`
 }
 
 // ListAllAdmin — tous les versements, tous vendeurs/affiliés confondus (vue admin).
@@ -88,8 +108,8 @@ func (r *PayoutRepo) ListAllAdmin(ctx context.Context) ([]*PayoutWithUser, error
 	rows, err := r.pool.Query(ctx,
 		`SELECT p.id, p.user_id, p.amount_cfa, p.status, p.phone_number, p.operator,
 		        p.provider, p.provider_reference, p.failure_reason, p.requested_at, p.paid_at,
-		        p.is_manual, p.manual_note, p.fee_cfa,
-		        u.email, u.payout_phone, u.payout_operator, u.payout_country
+		        p.is_manual, p.manual_note, p.fee_cfa, p.paypal_email, p.paypal_batch_id,
+		        u.email, u.payout_phone, u.payout_operator, u.payout_country, u.payout_paypal_email
 		 FROM payouts p JOIN users u ON u.id = p.user_id
 		 ORDER BY p.requested_at DESC`)
 	if err != nil {
@@ -102,8 +122,8 @@ func (r *PayoutRepo) ListAllAdmin(ctx context.Context) ([]*PayoutWithUser, error
 		p := &PayoutWithUser{}
 		if err := rows.Scan(&p.ID, &p.UserID, &p.AmountCFA, &p.Status, &p.PhoneNumber, &p.Operator,
 			&p.Provider, &p.ProviderReference, &p.FailureReason, &p.RequestedAt, &p.PaidAt,
-			&p.IsManual, &p.ManualNote, &p.FeeCFA,
-			&p.UserEmail, &p.VendorPayoutPhone, &p.VendorPayoutOperator, &p.VendorPayoutCountry); err != nil {
+			&p.IsManual, &p.ManualNote, &p.FeeCFA, &p.PayPalEmail, &p.PayPalBatchID,
+			&p.UserEmail, &p.VendorPayoutPhone, &p.VendorPayoutOperator, &p.VendorPayoutCountry, &p.VendorPayoutPayPalEmail); err != nil {
 			return nil, err
 		}
 		out = append(out, p)

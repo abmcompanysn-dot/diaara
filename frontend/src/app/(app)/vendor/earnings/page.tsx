@@ -39,10 +39,12 @@ interface Payout {
 }
 
 interface PayoutMethod {
+  active_channel?: 'mobile_money' | 'paypal';
   phone: string | null;
   operator: string | null;
   operator_label: string;
   country: string | null;
+  paypal_email?: string | null;
 }
 
 interface VendorSale {
@@ -88,11 +90,20 @@ export default function VendorEarningsPage() {
   const [methodError, setMethodError] = useState('');
   const [payoutLimits, setPayoutLimits] = useState<Record<string, { min: number; max: number }>>({});
 
+  const [editingPayPal, setEditingPayPal] = useState(false);
+  const [paypalEmail, setPaypalEmail] = useState('');
+  const [paypalSubmitting, setPaypalSubmitting] = useState(false);
+  const [paypalError, setPaypalError] = useState('');
+
   const { toasts, toast, dismiss } = useToast();
   const { user } = useAuth();
 
-  const hasPayoutMethod = Boolean(payoutMethod?.operator);
-  const phoneVerified = Boolean(user?.phone_verified_at);
+  const hasPayPal = Boolean(payoutMethod?.paypal_email);
+  const hasMobileMoney = Boolean(payoutMethod?.operator);
+  // Un versement est possible dès qu'un canal (mobile money OU PayPal) est en
+  // place. PayPal ne nécessite pas de vérification de téléphone.
+  const hasPayoutMethod = hasMobileMoney || hasPayPal;
+  const phoneVerified = Boolean(user?.phone_verified_at) || hasPayPal;
   const operatorLimit = payoutMethod?.operator ? payoutLimits[payoutMethod.operator] : undefined;
 
   useEffect(() => {
@@ -135,6 +146,7 @@ export default function VendorEarningsPage() {
     try {
       const result = await api.getPayoutMethod();
       setPayoutMethod(result.payout_method);
+      setPaypalEmail(result.payout_method.paypal_email || '');
     } catch {
       // Pas grave si l'appel échoue au chargement initial : le formulaire sera vide.
     }
@@ -158,14 +170,29 @@ export default function VendorEarningsPage() {
     setMethodError('');
     setMethodSubmitting(true);
     try {
-      const result = await api.setPayoutMethod(data);
-      setPayoutMethod(result.payout_method);
+      await api.setPayoutMethod({ channel: 'mobile_money', ...data });
+      await loadPayoutMethod();
       setEditingMethod(false);
-      toast({ variant: 'success', title: 'Moyen de versement enregistré', description: `${result.payout_method.operator_label} — vos prochains versements y seront envoyés.` });
+      toast({ variant: 'success', title: 'Moyen de versement enregistré', description: 'Vos prochains versements mobile money y seront envoyés.' });
     } catch (err: any) {
       setMethodError(friendlyError(err));
     } finally {
       setMethodSubmitting(false);
+    }
+  };
+
+  const handleSavePayPal = async () => {
+    setPaypalError('');
+    setPaypalSubmitting(true);
+    try {
+      await api.setPayoutMethod({ channel: 'paypal', paypal_email: paypalEmail.trim() });
+      await loadPayoutMethod();
+      setEditingPayPal(false);
+      toast({ variant: 'success', title: 'Compte PayPal enregistré', description: 'PayPal est prioritaire : vos prochains versements y seront envoyés.' });
+    } catch (err: any) {
+      setPaypalError(friendlyError(err));
+    } finally {
+      setPaypalSubmitting(false);
     }
   };
 
@@ -297,22 +324,24 @@ export default function VendorEarningsPage() {
           </div>
         </div>
 
-        {/* Moyen de versement */}
+        {/* Moyen de versement — mobile money */}
         <Card className="border-green-900/5">
           <CardHeader className="pb-3 flex flex-row items-center justify-between">
             <div>
-              <CardTitle className="text-lg">Moyen de versement</CardTitle>
-              <CardDescription>Le compte mobile money qui recevra vos versements</CardDescription>
+              <CardTitle className="text-lg">Mobile Money</CardTitle>
+              <CardDescription>
+                Le compte mobile money qui recevra vos versements{hasPayPal ? ' (secondaire — PayPal est prioritaire)' : ''}
+              </CardDescription>
             </div>
             {!editingMethod && (
               <Button variant="outline" size="sm" onClick={openEditMethod}>
-                {hasPayoutMethod ? 'Modifier' : 'Ajouter'}
+                {hasMobileMoney ? 'Modifier' : 'Ajouter'}
               </Button>
             )}
           </CardHeader>
           <CardContent>
             {!editingMethod ? (
-              hasPayoutMethod ? (
+              hasMobileMoney ? (
                 <div className="flex items-center gap-3 flex-wrap">
                   {operatorLogo(payoutMethod!.country, payoutMethod!.operator) ? (
                     <img
@@ -361,6 +390,63 @@ export default function VendorEarningsPage() {
                 saving={methodSubmitting}
                 error={methodError}
               />
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Moyen de versement — PayPal (prioritaire quand renseigné) */}
+        <Card className="border-green-900/5">
+          <CardHeader className="pb-3 flex flex-row items-center justify-between">
+            <div>
+              <CardTitle className="text-lg">PayPal</CardTitle>
+              <CardDescription>
+                Recevez vos versements sur votre compte PayPal (converti en USD). Prioritaire sur le mobile money.
+              </CardDescription>
+            </div>
+            {!editingPayPal && (
+              <Button variant="outline" size="sm" onClick={() => { setPaypalError(''); setEditingPayPal(true); }}>
+                {hasPayPal ? 'Modifier' : 'Ajouter'}
+              </Button>
+            )}
+          </CardHeader>
+          <CardContent>
+            {!editingPayPal ? (
+              hasPayPal ? (
+                <div className="flex items-center gap-3 flex-wrap">
+                  <Badge className="bg-[#003087]/10 text-[#003087] hover:bg-[#003087]/10">PayPal</Badge>
+                  <span className="font-mono text-sm text-green-900/70">{payoutMethod!.paypal_email}</span>
+                </div>
+              ) : (
+                <div className="flex flex-col items-start gap-3 py-2">
+                  <p className="text-sm text-muted-foreground">
+                    Aucun compte PayPal enregistré. Ajoutez votre email PayPal pour être payé par ce canal.
+                  </p>
+                  <Button size="sm" onClick={() => { setPaypalError(''); setEditingPayPal(true); }}>
+                    Ajouter mon email PayPal
+                  </Button>
+                </div>
+              )
+            ) : (
+              <div className="space-y-3">
+                <Input
+                  type="email"
+                  inputMode="email"
+                  autoFocus
+                  placeholder="email@exemple.com (compte PayPal)"
+                  value={paypalEmail}
+                  onChange={(e) => setPaypalEmail(e.target.value)}
+                  className="bg-white"
+                />
+                {paypalError && <p className="text-xs text-red-600">{paypalError}</p>}
+                <div className="flex gap-2">
+                  <Button size="sm" onClick={handleSavePayPal} disabled={paypalSubmitting || !paypalEmail.trim()}>
+                    {paypalSubmitting ? 'Enregistrement…' : 'Enregistrer'}
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => { setEditingPayPal(false); setPaypalEmail(payoutMethod?.paypal_email || ''); }}>
+                    Annuler
+                  </Button>
+                </div>
+              </div>
             )}
           </CardContent>
         </Card>
@@ -542,7 +628,15 @@ export default function VendorEarningsPage() {
               </div>
 
               <div className="rounded-lg bg-green-50/60 border border-green-900/5 p-3 space-y-1.5 text-sm">
-                {payoutMethod?.operator && (
+                {hasPayPal ? (
+                  <div className="flex justify-between text-green-900/70">
+                    <span>Envoyé sur</span>
+                    <span className="font-medium text-green-950">
+                      PayPal
+                      <span className="font-mono text-green-900/60"> · {payoutMethod!.paypal_email}</span>
+                    </span>
+                  </div>
+                ) : payoutMethod?.operator ? (
                   <div className="flex justify-between text-green-900/70">
                     <span>Envoyé sur</span>
                     <span className="font-medium text-green-950">
@@ -555,7 +649,7 @@ export default function VendorEarningsPage() {
                       ) : null}
                     </span>
                   </div>
-                )}
+                ) : null}
                 <div className="flex justify-between text-green-900/70">
                   <span>Frais de transfert</span>
                   <span className="font-mono">0 FCFA</span>

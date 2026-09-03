@@ -4,10 +4,25 @@ Plateforme de vente de fichiers numériques (PDF, formations, templates…) avec
 achat en mobile money (PawaPay), affiliation (« closer »), modération admin et
 livraison sécurisée par URL signée.
 
-**Domaines** : `diarra.app` (frontend, Cloudflare Worker) et `abmcy.com` /
-`diarra.abmcy.com` / `origin.abmcy.com` (backend + mail Mailcow, VPS) sont
-des propriétés de l'entreprise **MAHU** — à ne pas confondre avec `mahu.app`,
-un autre produit de la même entreprise, dans un dépôt séparé.
+**Domaines de production** :
+
+| Rôle | Domaine | Servi par |
+|------|---------|-----------|
+| Site (frontend Next.js statique) | `https://diarra.app` | Cloudflare Worker `diaara` (assets + proxy) |
+| API + WebSocket (`/api/*`, `/ws/*`, `/p/*`, `/feed/*`, `/sitemap.xml`) | `https://api.diarra.app` | Backend Go sur le VPS (`169.58.214.115`), derrière Caddy |
+| Webhooks entrants (PawaPay, PayPal) | `https://api.diarra.app/api/webhooks/*` | Backend Go directement (ne passe pas par le Worker) |
+| Stockage MinIO (liens de téléchargement signés) | `https://files.diarra.app` | MinIO auto-hébergé sur le VPS |
+
+Chemin d'une requête navigateur : `diarra.app` → le Worker route `/api/*`,
+`/ws/*`, `/p/*`, `/feed/*`, `/sitemap.xml` vers `BACKEND_URL`
+(`https://api.diarra.app`, sous-domaine Cloudflare *proxied*) et sert le reste
+depuis les assets statiques. Les webhooks des prestataires appellent
+`api.diarra.app` en direct.
+
+`diarra.app` est une propriété de l'entreprise **MAHU** — à ne pas confondre
+avec `mahu.app`, un autre produit de la même entreprise, dans un dépôt séparé.
+`diarra.abmcy.com` / `origin.abmcy.com` sont d'anciens points d'entrée, hors
+service (le mail Mailcow reste sur `abmcy.com`, inchangé).
 
 ## Architecture
 
@@ -105,23 +120,23 @@ Le repo inclut `backend/Dockerfile` : il construit le binaire, applique les
 migrations (via `docker-entrypoint.sh`) puis démarre le serveur. Health check :
 `/health`.
 
-Variables d'environnement (dans le dashboard Render, un `.env` VPS, ou
-`backend/.env.local` en local) :
+Variables d'environnement (dans le `.env` du VPS, ou `backend/.env.local` en
+local) :
 
 ```env
-DATABASE_URL=<chaîne Neon>          # obligatoire
+DATABASE_URL=postgres://…              # obligatoire
 JWT_SECRET=<openssl rand -base64 48>      # obligatoire, ≥ 32 car.
 REFRESH_SECRET=<openssl rand -base64 48>  # obligatoire, distinct
-FRONTEND_URL=https://diarra-worker.sabel.workers.dev   # liens emails + /r/
+FRONTEND_URL=https://diarra.app        # liens emails + /r/ + return_url PayPal
 PORT=8080
 # Origines autorisées par CORS (séparées par des virgules)
-CORS_ALLOWED_ORIGINS=https://diarra-worker.sabel.workers.dev,http://localhost:3000,http://localhost:3001,http://localhost:3002
+CORS_ALLOWED_ORIGINS=https://diarra.app,http://localhost:3000,http://localhost:3001,http://localhost:3002
 # Stockage (fichiers produits) — si absent, l'upload S3 est désactivé
-S3_ENDPOINT=https://fly.storage.tigris.dev
+S3_ENDPOINT=https://files.diarra.app
 S3_ACCESS_KEY_ID=…
 S3_SECRET_ACCESS_KEY=…
 S3_BUCKET=diarra-files
-S3_REGION=auto
+S3_REGION=us-east-1
 # Emails — un seul fournisseur
 SMTP_HOST=…  SMTP_PORT=…  SMTP_USER=…  SMTP_PASS=…  SMTP_FROM=…        # prod
 # (alternative) RESEND_API_KEY=…  RESEND_FROM=…
@@ -129,8 +144,13 @@ SMTP_HOST=…  SMTP_PORT=…  SMTP_USER=…  SMTP_PASS=…  SMTP_FROM=…       
 # Paiement mobile money (optionnel en dev)
 PAWAPAY_API_KEY=…
 PAWAPAY_BASE_URL=https://api.sandbox.pawapay.io   # sandbox
-PAWAPAY_CALLBACK_URL=https://diarra-backend.onrender.com/api/webhooks/pawapay
+PAWAPAY_CALLBACK_URL=https://api.diarra.app/api/webhooks/pawapay
 PAWAPAY_CALLBACK_IPS=…   # IP PawaPay autorisées (sécurité)
+# Paiement carte / PayPal (checkout + versements vendeur)
+PAYPAL_CLIENT_ID=…
+PAYPAL_CLIENT_SECRET=…
+PAYPAL_BASE_URL=https://api-m.sandbox.paypal.com  # sandbox ; api-m.paypal.com en prod
+PAYPAL_WEBHOOK_ID=…   # ID du webhook PayPal → https://api.diarra.app/api/webhooks/paypal
 ```
 
 Génération des secrets :
@@ -164,37 +184,50 @@ Le backend implémente une vérification d'identité à deux canaux :
 - L'inscription **redirige vers la vérification d'email obligatoire** avant de
   pouvoir créer un produit (middleware `RequireVerifiedEmail` sur les routes vendeur).
 
-## 4. Frontend + Worker (Cloudflare)
+## 4. Frontend (build statique)
 
 Les variables `NEXT_PUBLIC_*` sont **embarquées au build** : toute modification
-d'URL impose un rebuild avant redéploiement du worker.
+d'URL impose un rebuild du conteneur `frontend` (voir `frontend/Dockerfile`,
+qui reçoit `NEXT_PUBLIC_API_URL` et `NEXT_PUBLIC_WS_URL` en build args).
 
 ```bash
-# 1. Builder le frontend avec les URL de production
 cd frontend
-NEXT_PUBLIC_API_URL=https://diarra-worker.sabel.workers.dev \
-NEXT_PUBLIC_WS_URL=wss://diarra-worker.sabel.workers.dev \
-npm run build          # → out/ (statique)
-
-# 2. Déployer le worker (sert out/ + proxy API/WS + cron anti-sleep)
-cd ../worker
-npx wrangler login
-npx wrangler deploy
+NEXT_PUBLIC_API_URL=https://api.diarra.app \
+NEXT_PUBLIC_WS_URL=wss://api.diarra.app \
+NEXT_PUBLIC_SITE_URL=https://diarra.app \
+npm run build          # → out/ (statique, servi par nginx dans le conteneur)
 ```
 
-`worker/wrangler.jsonc` : `assets` → `../frontend/out` (avec `run_worker_first`),
-`BACKEND_URL` → URL du backend (Render ou VPS), binding KV `RATE_LIMITS`,
-cron `*/5 * * * *`.
+En production, ces valeurs sont passées via le `.env` du VPS et
+`docker compose build frontend` (voir §7). Le dossier `worker/` (ancien Worker
+Cloudflare) n'est plus déployé.
 
-## 5. Paiement PawaPay (à configurer)
+## 5. Paiements (PawaPay + PayPal)
 
-Aujourd'hui la plateforme fonctionne sans : une commande peut être créée mais le
-paiement reste en attente si `PAWAPAY_API_KEY` est absent.
+**PawaPay** (mobile money, encaissement + versements vendeur) :
 
-1. Créer un compte marchand PawaPay, récupérer la clé API (et les IP de callback).
-2. Ajouter au backend (Render ou VPS) les variables `PAWAPAY_*` vues plus haut.
-3. Le webhook de confirmation est `POST /api/webhooks/pawapay` (vérifié par
-   Content-Digest + IP autorisées).
+1. Créer un compte marchand PawaPay, récupérer la clé API et les IP de callback.
+2. Renseigner les variables `PAWAPAY_*` dans le `.env` du VPS.
+3. Webhook de confirmation : `POST https://api.diarra.app/api/webhooks/pawapay`
+   (vérifié par Content-Digest + IP autorisées). `PAWAPAY_CALLBACK_URL` doit
+   pointer exactement dessus, sinon PawaPay ne pousse jamais le statut final.
+
+**PayPal** (carte bancaire + compte PayPal au checkout ; versements vendeur vers
+un email PayPal — KPay a été suspendu de ce flux le 2026-09-03) :
+
+1. Créer une app sur developer.paypal.com (Sandbox puis Live), récupérer
+   `PAYPAL_CLIENT_ID` / `PAYPAL_CLIENT_SECRET`.
+2. Créer un webhook pointant vers
+   `POST https://api.diarra.app/api/webhooks/paypal`, écoutant :
+   `CHECKOUT.ORDER.APPROVED`, `PAYMENT.CAPTURE.COMPLETED`,
+   `PAYMENT.CAPTURE.DECLINED`, `PAYMENT.CAPTURE.REFUNDED`,
+   `PAYMENT.PAYOUTS-ITEM.SUCCEEDED`, `PAYMENT.PAYOUTS-ITEM.FAILED`,
+   `PAYMENT.PAYOUTS-ITEM.BLOCKED`.
+3. Copier l'**ID du webhook** créé dans `PAYPAL_WEBHOOK_ID` (sert à vérifier les
+   webhooks entrants auprès de l'API PayPal — pas de HMAC local). Les IDs
+   sandbox et Live sont distincts : recréer le webhook au passage en prod.
+4. Activer les **Payouts** sur le compte PayPal Business (peut nécessiter une
+   demande selon le pays du compte).
 
 ## 6. Compte administrateur
 
@@ -239,13 +272,13 @@ frontend** sur un VPS. Deux options :
      session ne sont pas marqués `Secure`.
    - `POSTGRES_PASSWORD`, `JWT_SECRET`, `REFRESH_SECRET` (générés avec
      `openssl rand -base64 48`).
-   - `FRONTEND_URL`, `CORS_ALLOWED_ORIGINS`, `NEXT_PUBLIC_API_URL`,
-     `NEXT_PUBLIC_WS_URL` → votre domaine (ex. `https://diarra.abmcy.com`,
-     `wss://diarra.abmcy.com`).
-   - `NEXT_PUBLIC_SITE_URL=https://diarra.abmcy.com` — URL publique du site,
-     utilisée pour générer `sitemap.xml`, `robots.ts` et les URLs canoniques
-     (SEO). Sans elle, ces fichiers retombent sur `https://diarra.abmcy.com`
-     par défaut.
+   - `FRONTEND_URL=https://diarra.app`, `CORS_ALLOWED_ORIGINS=https://diarra.app`.
+   - `NEXT_PUBLIC_API_URL=https://api.diarra.app`,
+     `NEXT_PUBLIC_WS_URL=wss://api.diarra.app` (build args du frontend — le
+     navigateur passe par le Worker `diarra.app`, qui proxifie vers
+     `api.diarra.app`).
+   - `NEXT_PUBLIC_SITE_URL=https://diarra.app` — URL publique du site, utilisée
+     pour générer `sitemap.xml`, `robots.ts` et les URLs canoniques (SEO).
    - `BACKEND_HOST_PORT` / `BACKEND2_HOST_PORT` / `FRONTEND_HOST_PORT` /
      `MINIO_API_HOST_PORT` / `MINIO_CONSOLE_HOST_PORT` : uniquement si les
      ports par défaut (`8080`, `8082`, `3000`, `9000`, `9001`) sont déjà pris
@@ -289,20 +322,21 @@ frontend** sur un VPS. Deux options :
        }
    }
 
-   diarra.abmcy.com {
-       handle /api/* { import backend_lb }
-       handle /ws/*  { import backend_lb }
-       # Liens de partage produit, redirection d'affiliation, flux produits
-       # (Google Merchant / Facebook, sitemap) : servis par le backend Go,
-       # pas le build statique du frontend.
+   # api.diarra.app : point d'entrée du backend Go. Le navigateur passe par le
+   # Worker Cloudflare (diarra.app), qui proxifie /api/*, /ws/*, /p/*, /feed/*,
+   # /sitemap.xml ici ; les webhooks PawaPay/PayPal appellent ce domaine en
+   # direct. Le frontend statique est servi par le Worker, pas par Caddy.
+   api.diarra.app {
+       handle /api/*         { import backend_lb }
+       handle /ws/*          { import backend_lb }
        handle /p/*           { import backend_lb }
        handle /r/*           { import backend_lb }
        handle /feed/*        { import backend_lb }
        handle /sitemap.xml   { import backend_lb }
-       handle                { reverse_proxy 127.0.0.1:3001 }
+       handle                { import backend_lb }
    }
 
-   s3.diarra.abmcy.com {
+   files.diarra.app {
        reverse_proxy 127.0.0.1:9000
    }
    ```
@@ -343,7 +377,7 @@ Compose, inchangés.
    existante (Postgres + MinIO) vers la nouvelle stack k3s, **sans jamais
    modifier la source**. À ne lancer qu'une fois la stack k3s vérifiée
    saine (`kubectl -n diarra get pods`).
-6. Bascule : modifier le Caddyfile pour pointer `diarra.abmcy.com` vers
+6. Bascule : modifier le Caddyfile pour pointer `api.diarra.app` vers
    `127.0.0.1:30080` (le NodePort nginx) au lieu des ports Docker Compose —
    même méthode que d'habitude (sauvegarde, `diff`, `caddy validate`,
    `reload`).
@@ -365,22 +399,22 @@ Compose, inchangés.
 
 ```bash
 # Backend vivant
-curl -s https://diarra.abmcy.com/api/products
+curl -s https://api.diarra.app/api/products
 
 # Frontend servi
-curl -s -o /dev/null -w "%{http_code}\n" https://diarra.abmcy.com/
+curl -s -o /dev/null -w "%{http_code}\n" https://diarra.app/
 
 # Stockage MinIO joignable publiquement
-curl -s https://s3.diarra.abmcy.com/minio/health/live
+curl -s https://files.diarra.app/minio/health/live
 
 # WebSocket temps réel (token d'un utilisateur connecté)
-node -e "new WebSocket('wss://diarra.abmcy.com/ws/order/<sale_id>?token=<JWT>').onopen=()=>console.log('OK')"
+node -e "new WebSocket('wss://api.diarra.app/ws/order/<sale_id>?token=<JWT>').onopen=()=>console.log('OK')"
 ```
 
 ## URLs actuelles
 
-- Application : https://diarra.abmcy.com
-- Stockage (MinIO) : https://s3.diarra.abmcy.com
+- Application : https://diarra.app
+- Stockage (MinIO) : https://files.diarra.app
 - Dépôt : https://github.com/idrissoualanni/diarra (privé, branche `master`)
 
 ## Références clés dans le repo

@@ -32,6 +32,13 @@ interface Product {
 
 const formatPrice = (price: number) => `${price.toLocaleString()} FCFA`;
 
+// Paiement carte bancaire / compte PayPal : géré par l'intégration PayPal
+// (Orders API v2, flux hosted redirect — voir resolveCheckoutProvider et
+// initiatePayPalCheckout côté backend). Nécessite PAYPAL_CLIENT_ID /
+// PAYPAL_CLIENT_SECRET (+ PAYPAL_WEBHOOK_ID) dans le .env du serveur ; sans
+// eux le backend renvoie payment_init_failed sur cette voie.
+const CARD_PAYMENT_ENABLED = true;
+
 export default function CheckoutView() {
   const searchParams = useSearchParams();
   const productId = searchParams.get('product') || '';
@@ -259,7 +266,7 @@ export default function CheckoutView() {
 
             <div className="space-y-2">
               <Label>Moyen de paiement</Label>
-              <div className="grid grid-cols-2 gap-2">
+              <div className={`grid gap-2 ${CARD_PAYMENT_ENABLED ? 'grid-cols-2' : 'grid-cols-1'}`}>
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('mobile_money')}
@@ -274,20 +281,22 @@ export default function CheckoutView() {
                     Orange, Wave, MTN, Moov…
                   </span>
                 </button>
-                <button
-                  type="button"
-                  onClick={() => setPaymentMethod('card')}
-                  className={`rounded-lg border p-3 text-sm font-medium text-left transition-colors ${
-                    paymentMethod === 'card' || paymentMethod === 'paypal'
-                      ? 'border-green-700 bg-green-50 text-green-900'
-                      : 'border-border bg-white text-green-900/70'
-                  }`}
-                >
-                  💳 Carte bancaire / PayPal
-                  <span className="block text-xs font-normal text-green-900/50 mt-0.5">
-                    Visa, Mastercard, PayPal
-                  </span>
-                </button>
+                {CARD_PAYMENT_ENABLED && (
+                  <button
+                    type="button"
+                    onClick={() => setPaymentMethod('card')}
+                    className={`rounded-lg border p-3 text-sm font-medium text-left transition-colors ${
+                      paymentMethod === 'card' || paymentMethod === 'paypal'
+                        ? 'border-green-700 bg-green-50 text-green-900'
+                        : 'border-border bg-white text-green-900/70'
+                    }`}
+                  >
+                    💳 Carte bancaire / PayPal
+                    <span className="block text-xs font-normal text-green-900/50 mt-0.5">
+                      Visa, Mastercard, PayPal
+                    </span>
+                  </button>
+                )}
               </div>
             </div>
 

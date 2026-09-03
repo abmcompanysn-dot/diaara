@@ -37,6 +37,7 @@ type SaleHandler struct {
 	settingsRepo  *repository.SettingsRepo
 	pawapay       *payment.PawaPayClient
 	kpay          *payment.KPayClient
+	paypal        *payment.PayPalClient
 	commissionSvc *service.CommissionService
 	notifications *email.NotificationService
 	frontendURL   string
@@ -50,6 +51,7 @@ func NewSaleHandler(
 	settingsRepo *repository.SettingsRepo,
 	pawapay *payment.PawaPayClient,
 	kpay *payment.KPayClient,
+	paypal *payment.PayPalClient,
 	notifications *email.NotificationService,
 	frontendURL string,
 ) *SaleHandler {
@@ -61,6 +63,7 @@ func NewSaleHandler(
 		settingsRepo:  settingsRepo,
 		pawapay:       pawapay,
 		kpay:          kpay,
+		paypal:        paypal,
 		commissionSvc: service.NewCommissionService(),
 		notifications: notifications,
 		frontendURL:   strings.TrimSuffix(frontendURL, "/"),
@@ -72,24 +75,42 @@ func NewSaleHandler(
 // déjà enregistré sur une vente — jamais recalculé après coup, contrairement
 // à la sélection faite à l'initiation (resolveCheckoutProvider).
 func (h *SaleHandler) resolveDepositProvider(providerName string) payment.PaymentProvider {
-	if providerName == "kpay" && h.kpay != nil {
-		return h.kpay.AsProvider()
+	switch providerName {
+	case "kpay":
+		if h.kpay != nil {
+			return h.kpay.AsProvider()
+		}
+	case "paypal":
+		if h.paypal != nil {
+			return h.paypal.AsProvider()
+		}
 	}
 	return h.pawapay.AsProvider()
 }
 
 // resolveCheckoutProvider détermine le prestataire à utiliser pour un NOUVEAU
-// paiement. Carte/PayPal forcent KPay (route de capacité : PawaPay n'a pas
-// carte/PayPal, ce n'est pas un choix) ; sinon (mobile money) on lit le
-// réglage admin par pays (model.CheckoutProviderSettingKey) — le checkout en
-// mode GATEWAY ne connaît que le pays de l'acheteur, jamais l'opérateur
-// exact (choisi ensuite sur la page hébergée), contrairement aux versements
-// vendeur qui, eux, routent par opérateur exact (voir PayoutHandler).
+// paiement. Carte/PayPal forcent PayPal (route de capacité : PawaPay n'a pas
+// carte/PayPal, ce n'est pas un choix — KPay a été désactivé de ce flux le
+// 2026-09-03, voir kpay.go) ; sinon (mobile money) on lit le réglage admin
+// par pays (model.CheckoutProviderSettingKey) — le checkout en mode GATEWAY
+// ne connaît que le pays de l'acheteur, jamais l'opérateur exact (choisi
+// ensuite sur la page hébergée), contrairement aux versements vendeur qui,
+// eux, routent par opérateur exact (voir PayoutHandler).
+//
+// Verrou d'intégration : KPay n'est pas prêt pour le checkout mobile money.
+// Si le réglage en base vaut malgré tout "kpay" (valeur posée avant qu'on
+// sache l'intégration incomplète, ou modifiée directement en base), on
+// l'ignore et on retombe sur pawapay — AdminHandler.UpdateSettings refuse déjà
+// d'écrire "kpay" pour ce réglage, ceci est la deuxième barrière côté lecture.
 func (h *SaleHandler) resolveCheckoutProvider(ctx context.Context, country, paymentMethod string) string {
 	if paymentMethod == "card" || paymentMethod == "paypal" {
-		return "kpay"
+		return "paypal"
 	}
-	return h.settingsRepo.Get(ctx, model.CheckoutProviderSettingKey(country), "pawapay")
+	provider := h.settingsRepo.Get(ctx, model.CheckoutProviderSettingKey(country), "pawapay")
+	if provider == "kpay" {
+		return "pawapay"
+	}
+	return provider
 }
 
 // Create — l'acheteur crée une commande et initie un dépôt mobile money PawaPay
@@ -293,13 +314,20 @@ func (h *SaleHandler) CheckoutStatus(w http.ResponseWriter, r *http.Request) {
 	// Si le webhook n'est pas (encore) arrivé, on demande le statut frais au
 	// prestataire qui a réellement traité cette vente (sale.PaymentProvider).
 	providerConfigured := (sale.PaymentProvider == "kpay" && h.kpay != nil) ||
-		(sale.PaymentProvider != "kpay" && h.pawapay != nil)
+		(sale.PaymentProvider == "paypal" && h.paypal != nil) ||
+		(sale.PaymentProvider != "kpay" && sale.PaymentProvider != "paypal" && h.pawapay != nil)
 	if status == string(model.SalePending) && providerConfigured {
 		ref := sale.PaymentReference
-		if sale.PaymentProvider == "kpay" && sale.ProviderTransactionID != nil {
+		if (sale.PaymentProvider == "kpay" || sale.PaymentProvider == "paypal") && sale.ProviderTransactionID != nil {
 			ref = *sale.ProviderTransactionID
 		}
 		if outcome, err := h.resolveDepositProvider(sale.PaymentProvider).GetDepositStatus(r.Context(), ref); err == nil {
+			// PayPal seulement : l'order ID de départ devient l'ID de CAPTURE
+			// une fois la commande capturée — nécessaire pour un remboursement
+			// ultérieur (voir DepositOutcome.UpdatedProviderRef).
+			if outcome.UpdatedProviderRef != "" {
+				h.saleRepo.SetProviderTransactionID(r.Context(), sale.ID, outcome.UpdatedProviderRef)
+			}
 			switch outcome.Status {
 			case "completed":
 				status = string(model.SalePaid)
@@ -493,14 +521,46 @@ func newUUID() string {
 // résolu par resolveCheckoutProvider et persisté sur sale.PaymentProvider),
 // et renvoie l'URL de redirection vers la page de paiement hébergée.
 func (h *SaleHandler) initiateCheckout(ctx context.Context, sale *model.Sale, product *model.Product, country, providerName string) (string, error) {
-	if providerName == "kpay" {
+	switch providerName {
+	case "kpay":
 		return h.initiateKPayCheckout(ctx, sale, product)
+	case "paypal":
+		return h.initiatePayPalCheckout(ctx, sale, product)
 	}
 	page, err := h.initiatePaymentPage(ctx, sale, product, country)
 	if err != nil || page == nil {
 		return "", err
 	}
 	return page.RedirectUrl, nil
+}
+
+// initiatePayPalCheckout — mode "hosted redirect" (comme KPay/PawaPay) :
+// l'acheteur est redirigé vers la page PayPal pour payer par carte ou son
+// compte PayPal, puis revient sur ReturnUrl où le statut est vérifié/capturé
+// (voir CheckoutStatus + paypalAdapter.GetDepositStatus).
+func (h *SaleHandler) initiatePayPalCheckout(ctx context.Context, sale *model.Sale, product *model.Product) (string, error) {
+	if h.paypal == nil {
+		return "", errors.New("PayPal non configuré")
+	}
+	returnURL := h.frontendURL + "/checkout/return?token=" + *sale.CheckoutToken
+	cancelURL := h.frontendURL + "/checkout/return?token=" + *sale.CheckoutToken + "&cancelled=1"
+
+	resp, err := h.paypal.CreateOrder(ctx, payment.PayPalOrderRequest{
+		SaleID:      sale.ID,
+		AmountXOF:   sale.AmountCFA,
+		ReturnURL:   returnURL,
+		CancelURL:   cancelURL,
+		Description: product.Title,
+	})
+	if err != nil {
+		return "", err
+	}
+	if resp.ID != "" {
+		if err := h.saleRepo.SetProviderTransactionID(ctx, sale.ID, resp.ID); err != nil {
+			return "", err
+		}
+	}
+	return resp.ApproveURL, nil
 }
 
 // initiateKPayCheckout — mode GATEWAY (page hébergée par KPay) : pas de

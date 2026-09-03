@@ -47,6 +47,7 @@ type AdminHandler struct {
 	startTime     time.Time
 	pawapay       *payment.PawaPayClient
 	kpay          *payment.KPayClient
+	paypal        *payment.PayPalClient
 	notifications *email.NotificationService // nil si aucun fournisseur email configuré
 	cache         *cache.Client
 	// webhook : réutilisé pour ConfirmPaidSale (statut + emails + notifs +
@@ -70,6 +71,7 @@ func NewAdminHandler(
 	startTime time.Time,
 	pawapay *payment.PawaPayClient,
 	kpay *payment.KPayClient,
+	paypal *payment.PayPalClient,
 	notifications *email.NotificationService,
 	cacheClient *cache.Client,
 	webhook *WebhookHandler,
@@ -88,6 +90,7 @@ func NewAdminHandler(
 		files:         files,
 		startTime:     startTime,
 		kpay:          kpay,
+		paypal:        paypal,
 		pawapay:       pawapay,
 		notifications: notifications,
 		cache:         cacheClient,
@@ -551,25 +554,24 @@ func (h *AdminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// Réglages par opérateur (versements) et par pays (checkout) — voir
-	// model.GatewayOperatorSettingKey / CheckoutProviderSettingKey. Empêche
-	// notamment d'assigner KPay à un opérateur qu'il ne supporte pas (ex.
-	// Wave, suspendu côté KPay).
+	// model.GatewayOperatorSettingKey / CheckoutProviderSettingKey. KPay est
+	// suspendu (2026-09-03) : "kpay" est refusé pour les deux familles de
+	// réglages, seuls "off"/"pawapay" (versements) et "pawapay" (checkout)
+	// sont acceptés. Le code KPay reste dormant, réactivable en retirant ces
+	// deux gardes + en réintroduisant la construction du client dans main.go.
 	for key, value := range input {
 		switch {
 		case strings.HasPrefix(key, "gateway_op_"):
-			if value != "off" && value != "pawapay" && value != "kpay" {
+			if value != "off" && value != "pawapay" {
 				http.Error(w, `{"error":"invalid_gateway_provider"}`, http.StatusBadRequest)
 				return
 			}
-			if value == "kpay" {
-				code := strings.ToUpper(strings.TrimPrefix(key, "gateway_op_"))
-				if !payment.KPayProviderCodes[code] {
-					http.Error(w, fmt.Sprintf(`{"error":"kpay_unsupported_operator","operator":"%s"}`, code), http.StatusBadRequest)
-					return
-				}
-			}
 		case strings.HasPrefix(key, "checkout_provider_"):
-			if value != "pawapay" && value != "kpay" {
+			// KPay désactivé de ce flux depuis le 2026-09-03 (intégration
+			// incomplète — voir SaleHandler.resolveCheckoutProvider, qui ignore
+			// de toute façon ce réglage) : refusé ici aussi pour ne pas laisser
+			// un admin croire que le choix a un effet.
+			if value != "pawapay" {
 				http.Error(w, `{"error":"invalid_checkout_provider"}`, http.StatusBadRequest)
 				return
 			}
@@ -646,6 +648,37 @@ func (h *AdminHandler) Payouts(w http.ResponseWriter, r *http.Request) {
 // de rejet prestataire, marque le versement "failed" avec la raison et renvoie
 // une erreur (destinée à l'admin uniquement — le vendeur ne voit jamais ça).
 func (h *AdminHandler) initiatePayoutWithProvider(w http.ResponseWriter, r *http.Request, payout *model.Payout) bool {
+	if payout.Provider == "paypal" {
+		if h.paypal == nil {
+			http.Error(w, `{"error":"payment_not_configured"}`, http.StatusServiceUnavailable)
+			return false
+		}
+		if payout.PayPalEmail == nil || *payout.PayPalEmail == "" {
+			http.Error(w, `{"error":"payout_missing_paypal_email"}`, http.StatusBadRequest)
+			return false
+		}
+		out, err := h.paypal.AsProvider().InitiatePayout(r.Context(), payment.PayoutOp{
+			Email:     *payout.PayPalEmail,
+			AmountXOF: payout.AmountCFA,
+			ClientRef: payout.ID,
+		})
+		if err != nil || !out.Accepted {
+			reason := "payout_init_failed"
+			if err != nil {
+				reason = "provider_error"
+			}
+			h.payoutRepo.UpdateStatus(r.Context(), payout.ID, "failed", &reason)
+			h.cache.Del(r.Context(), vendorBalanceCacheKey(payout.UserID))
+			http.Error(w, fmt.Sprintf(`{"error":"payout_rejected","reason":"%s"}`, reason), http.StatusBadGateway)
+			return false
+		}
+		if err := h.payoutRepo.SetPayPalBatchID(r.Context(), payout.ID, out.ProviderRef); err != nil {
+			http.Error(w, `{"error":"payout_update_failed"}`, http.StatusInternalServerError)
+			return false
+		}
+		return true
+	}
+
 	if payout.Provider == "kpay" {
 		if h.kpay == nil {
 			http.Error(w, `{"error":"payment_not_configured"}`, http.StatusServiceUnavailable)
@@ -782,7 +815,29 @@ func (h *AdminHandler) CheckPayoutProvider(w http.ResponseWriter, r *http.Reques
 	resp := map[string]string{"provider": payout.Provider, "payout_status": payout.Status}
 	providerStatus := ""
 
+	// Statut prestataire normalisé au vocabulaire commun ("completed"/"failed"/
+	// "processing"/…) pour PayPal ; brut ("COMPLETED"/"FAILED") pour PawaPay/KPay.
+	// Le switch de décision plus bas accepte les deux.
 	switch payout.Provider {
+	case "paypal":
+		if h.paypal == nil {
+			http.Error(w, `{"error":"payment_not_configured"}`, http.StatusServiceUnavailable)
+			return
+		}
+		st, err := h.paypal.AsProvider().GetPayoutStatus(r.Context(), *payout.ProviderReference)
+		if err != nil {
+			http.Error(w, `{"error":"provider_unreachable"}`, http.StatusBadGateway)
+			return
+		}
+		// Remonte "completed"/"failed"/"processing" — mappé ci-dessous.
+		switch st.Status {
+		case "completed":
+			providerStatus = "COMPLETED"
+		case "failed":
+			providerStatus = "FAILED"
+		default:
+			providerStatus = "PROCESSING"
+		}
 	case "kpay":
 		if h.kpay == nil {
 			http.Error(w, `{"error":"payment_not_configured"}`, http.StatusServiceUnavailable)
@@ -1007,6 +1062,45 @@ func (h *AdminHandler) CheckSaleProvider(w http.ResponseWriter, r *http.Request)
 		http.Error(w, `{"error":"provider_check_unsupported","provider":"kpay"}`, http.StatusBadRequest)
 		return
 	}
+
+	if sale.PaymentProvider == "paypal" {
+		if h.paypal == nil {
+			http.Error(w, `{"error":"payment_not_configured"}`, http.StatusServiceUnavailable)
+			return
+		}
+		if sale.ProviderTransactionID == nil {
+			http.Error(w, `{"error":"missing_provider_transaction_id"}`, http.StatusInternalServerError)
+			return
+		}
+		outcome, err := h.paypal.AsProvider().GetDepositStatus(r.Context(), *sale.ProviderTransactionID)
+		if err != nil {
+			http.Error(w, `{"error":"provider_unreachable"}`, http.StatusBadGateway)
+			return
+		}
+		if outcome.UpdatedProviderRef != "" {
+			_ = h.saleRepo.SetProviderTransactionID(r.Context(), sale.ID, outcome.UpdatedProviderRef)
+		}
+		resp := map[string]string{
+			"provider":        "paypal",
+			"sale_status":     sale.Status,
+			"provider_status": outcome.Status,
+		}
+		if outcome.Status == "completed" && sale.Status == string(model.SalePending) && h.webhook != nil {
+			if err := h.webhook.ConfirmPaidSale(r.Context(), sale); err != nil {
+				http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
+				return
+			}
+			resp["sale_status"] = string(model.SalePaid)
+		} else if outcome.Status == "failed" && sale.Status == string(model.SalePending) {
+			if err := h.saleRepo.UpdateStatus(r.Context(), sale.ID, string(model.SaleFailed)); err == nil {
+				resp["sale_status"] = string(model.SaleFailed)
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
+		return
+	}
+
 	if h.pawapay == nil {
 		http.Error(w, `{"error":"payment_not_configured"}`, http.StatusServiceUnavailable)
 		return
@@ -1230,6 +1324,45 @@ func (h *AdminHandler) RefundSale(w http.ResponseWriter, r *http.Request) {
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "refund_pending"})
+		return
+	}
+
+	// PayPal : ProviderTransactionID a déjà été remplacé par l'ID de CAPTURE
+	// (pas l'ID de commande) au moment où le paiement a été confirmé — voir
+	// DepositOutcome.UpdatedProviderRef dans paypalAdapter.GetDepositStatus.
+	// Contrairement à KPay/PawaPay, PayPal confirme le remboursement en
+	// synchrone dans la réponse HTTP (pas de webhook à attendre pour savoir
+	// si c'est accepté) — on peut donc marquer la vente remboursée tout de
+	// suite si le statut renvoyé est COMPLETED.
+	if sale.PaymentProvider == "paypal" {
+		if h.paypal == nil {
+			http.Error(w, `{"error":"payment_not_configured"}`, http.StatusServiceUnavailable)
+			return
+		}
+		if sale.ProviderTransactionID == nil {
+			http.Error(w, `{"error":"missing_provider_transaction_id"}`, http.StatusInternalServerError)
+			return
+		}
+		resp, err := h.paypal.RefundCapture(r.Context(), *sale.ProviderTransactionID)
+		if err != nil {
+			http.Error(w, `{"error":"refund_rejected","reason":"refund_init_failed"}`, http.StatusBadGateway)
+			return
+		}
+		if err := h.saleRepo.SetRefundReference(r.Context(), sale.ID, resp.ID); err != nil {
+			http.Error(w, `{"error":"refund_update_failed"}`, http.StatusInternalServerError)
+			return
+		}
+		status := "refund_pending"
+		if resp.Status == "COMPLETED" {
+			if err := h.saleRepo.UpdateStatus(r.Context(), sale.ID, string(model.SaleRefunded)); err == nil {
+				status = "refunded"
+				if h.webhook != nil {
+					go h.webhook.notifyRefunded(context.Background(), sale)
+				}
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": status})
 		return
 	}
 

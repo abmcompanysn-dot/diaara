@@ -59,15 +59,6 @@ const OPERATORS: { code: string; country: string; countryLabel: string; label: s
   { code: 'MPESA_ETH', country: 'ETH', countryLabel: 'Éthiopie', label: 'Safaricom M-Pesa' },
 ];
 
-// Miroir de backend/internal/payment/kpay.go KPayProviderCodes — WAVE_SEN et
-// WAVE_CIV volontairement absents (suspendus côté KPay).
-const KPAY_SUPPORTED = new Set([
-  'MTN_MOMO_BEN', 'MOOV_BEN', 'MTN_MOMO_CMR', 'ORANGE_CMR', 'MTN_MOMO_CIV',
-  'ORANGE_CIV', 'VODACOM_MPESA_COD', 'AIRTEL_COD', 'ORANGE_COD', 'AIRTEL_GAB',
-  'MPESA_KEN', 'AIRTEL_COG', 'MTN_MOMO_COG', 'AIRTEL_RWA', 'MTN_MOMO_RWA',
-  'FREE_SEN', 'ORANGE_SEN', 'ORANGE_SLE', 'AIRTEL_OAPI_UGA', 'MTN_MOMO_UGA',
-  'AIRTEL_OAPI_ZMB', 'MTN_MOMO_ZMB', 'ZAMTEL_ZMB',
-]);
 
 // Miroir de backend/internal/payment/pawapay.go CountryCurrency (pays du
 // checkout Payment Page).
@@ -166,8 +157,10 @@ export default function AdminSettingsPage() {
     try {
       const values: Record<string, string> = { commission_rate_pct: String(rate) };
       for (const op of OPERATORS) values[gatewayOpKey(op.code)] = gatewayOps[op.code] || 'pawapay';
-      for (const country of CHECKOUT_COUNTRIES)
-        values[checkoutProviderKey(country.iso3)] = checkoutProviders[country.iso3] || 'pawapay';
+      // KPay pas encore activé sur ce flux (voir la carte "Paiement à l'achat —
+      // par pays" ci-dessous, non modifiable) : on envoie toujours "pawapay",
+      // même si une valeur "kpay" existait en base — l'enregistrement la corrige.
+      for (const country of CHECKOUT_COUNTRIES) values[checkoutProviderKey(country.iso3)] = 'pawapay';
       values[WHATSAPP_GENERAL_KEY] = (whatsappLinks.general || '').trim();
       for (const country of CHECKOUT_COUNTRIES)
         values[whatsappKey(country.iso3)] = (whatsappLinks[country.iso3] || '').trim();
@@ -244,10 +237,10 @@ export default function AdminSettingsPage() {
           <CardHeader>
             <CardTitle>Versements vendeur — par opérateur</CardTitle>
             <CardDescription>
-              Pour chaque opérateur mobile money, choisis le prestataire qui traite les
-              versements vendeur, ou désactive-le. « Désactivé » bloque les nouvelles demandes
-              de versement (les versements déjà enregistrés ne sont pas affectés). Un opérateur
-              non pris en charge par KPay ne propose pas cette option.
+              Pour chaque opérateur mobile money, active ou désactive les versements vendeur.
+              « Désactivé » bloque les nouvelles demandes de versement (les versements déjà
+              enregistrés ne sont pas affectés). Tous les versements automatiques passent par
+              PawaPay ; KPay est suspendu.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
@@ -258,7 +251,6 @@ export default function AdminSettingsPage() {
                 </h3>
                 <div className="space-y-2">
                   {group.items.map((op) => {
-                    const kpaySupported = KPAY_SUPPORTED.has(op.code);
                     const value = gatewayOps[op.code] || 'pawapay';
                     return (
                       <div
@@ -267,16 +259,16 @@ export default function AdminSettingsPage() {
                       >
                         <div>
                           <span className="text-sm font-medium">{op.label}</span>
-                          {!kpaySupported && (
-                            <span className="ml-2 text-xs text-muted-foreground">
-                              (non pris en charge par KPay)
+                          {value === 'kpay' && (
+                            <span className="ml-2 text-xs text-amber-700">
+                              (réglage KPay ignoré — KPay suspendu, remis à PawaPay au prochain enregistrement)
                             </span>
                           )}
                         </div>
                         <div className="flex gap-1 shrink-0">
-                          {(['off', 'pawapay', 'kpay'] as GatewayValue[]).map((opt) => {
-                            if (opt === 'kpay' && !kpaySupported) return null;
-                            const optLabel = opt === 'off' ? 'Désactivé' : opt === 'pawapay' ? 'PawaPay' : 'KPay';
+                          {/* KPay suspendu (2026-09-03) : seuls Désactivé / PawaPay. */}
+                          {(['off', 'pawapay'] as GatewayValue[]).map((opt) => {
+                            const optLabel = opt === 'off' ? 'Désactivé' : 'PawaPay';
                             return (
                               <Button
                                 key={opt}
@@ -306,8 +298,9 @@ export default function AdminSettingsPage() {
             <CardTitle>Paiement à l&apos;achat — par pays</CardTitle>
             <CardDescription>
               Prestataire mobile money utilisé au moment du paiement, par pays de
-              l&apos;acheteur (le paiement par carte bancaire ou PayPal passe toujours par
-              KPay, quel que soit ce réglage).
+              l&apos;acheteur. KPay n&apos;est pas encore activé sur ce flux (intégration en
+              cours) : PawaPay est utilisé pour tous les pays, ce choix n&apos;est pas
+              modifiable pour l&apos;instant.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
@@ -319,20 +312,15 @@ export default function AdminSettingsPage() {
                   className="flex items-center justify-between gap-3 p-3 rounded-lg border border-border"
                 >
                   <span className="text-sm font-medium">{country.label}</span>
-                  <div className="flex gap-1 shrink-0">
-                    {(['pawapay', 'kpay'] as CheckoutValue[]).map((opt) => (
-                      <Button
-                        key={opt}
-                        type="button"
-                        size="sm"
-                        variant={value === opt ? 'default' : 'outline'}
-                        onClick={() =>
-                          setCheckoutProviders((prev) => ({ ...prev, [country.iso3]: opt }))
-                        }
-                      >
-                        {opt === 'pawapay' ? 'PawaPay' : 'KPay'}
-                      </Button>
-                    ))}
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Button type="button" size="sm" variant="default" disabled>
+                      PawaPay
+                    </Button>
+                    {value === 'kpay' && (
+                      <span className="text-xs text-amber-700">
+                        (réglage KPay existant ignoré — sera remis à PawaPay au prochain enregistrement)
+                      </span>
+                    )}
                   </div>
                 </div>
               );

@@ -32,6 +32,7 @@ type WebhookHandler struct {
 	pawapay           *payment.PawaPayClient
 	kpay              *payment.KPayClient
 	kpayWebhookSecret string
+	paypal            *payment.PayPalClient
 	commissionSvc     *service.CommissionService
 	donationSvc       *service.DonationService
 	notifications     *email.NotificationService
@@ -49,6 +50,7 @@ func NewWebhookHandler(
 	pawapay *payment.PawaPayClient,
 	kpay *payment.KPayClient,
 	kpayWebhookSecret string,
+	paypal *payment.PayPalClient,
 	donationSvc *service.DonationService,
 	notifications *email.NotificationService,
 	notificationRepo *repository.NotificationRepo,
@@ -68,6 +70,7 @@ func NewWebhookHandler(
 		pawapay:           pawapay,
 		kpay:              kpay,
 		kpayWebhookSecret: kpayWebhookSecret,
+		paypal:            paypal,
 		commissionSvc:     service.NewCommissionService(),
 		donationSvc:       donationSvc,
 		notifications:     notifications,
@@ -543,6 +546,200 @@ func (h *WebhookHandler) KPayRefundWebhook(w http.ResponseWriter, r *http.Reques
 	json.NewEncoder(w).Encode(map[string]string{"status": payloadStatus.Status})
 }
 
+// PayPalWebhook reçoit les événements PayPal (paiement approuvé/capturé,
+// remboursement). Sert de filet de sécurité si l'acheteur ferme l'onglet
+// avant que le polling depuis checkout/return (SaleHandler.CheckoutStatus)
+// n'ait capturé la commande — la vérification de signature se fait auprès de
+// PayPal lui-même (pas de HMAC local possible, voir VerifyWebhookSignature).
+func (h *WebhookHandler) PayPalWebhook(w http.ResponseWriter, r *http.Request) {
+	if h.paypal == nil {
+		http.Error(w, `{"error":"paypal_not_configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, `{"error":"read_failed"}`, http.StatusBadRequest)
+		return
+	}
+	valid, err := h.paypal.VerifyWebhookSignature(r.Context(), r.Header, body)
+	if err != nil || !valid {
+		http.Error(w, `{"error":"invalid_signature"}`, http.StatusUnauthorized)
+		return
+	}
+
+	var event struct {
+		EventType string `json:"event_type"`
+		Resource  struct {
+			ID            string `json:"id"`
+			CustomID      string `json:"custom_id"`
+			PurchaseUnits []struct {
+				ReferenceID string `json:"reference_id"`
+				CustomID    string `json:"custom_id"`
+			} `json:"purchase_units"`
+			// Événements PAYMENT.PAYOUTS-ITEM.* : sender_item_id = ID du
+			// versement DIARRA ; payout_item.sender_item_id sur certains formats.
+			SenderItemID string `json:"sender_item_id"`
+			PayoutItem   struct {
+				SenderItemID string `json:"sender_item_id"`
+			} `json:"payout_item"`
+			TransactionStatus string `json:"transaction_status"`
+		} `json:"resource"`
+	}
+	if err := json.Unmarshal(body, &event); err != nil {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+
+	switch event.EventType {
+	case "PAYMENT.PAYOUTS-ITEM.SUCCEEDED", "PAYMENT.PAYOUTS-ITEM.FAILED",
+		"PAYMENT.PAYOUTS-ITEM.BLOCKED", "PAYMENT.PAYOUTS-ITEM.RETURNED",
+		"PAYMENT.PAYOUTS-ITEM.DENIED":
+		payoutID := event.Resource.SenderItemID
+		if payoutID == "" {
+			payoutID = event.Resource.PayoutItem.SenderItemID
+		}
+		if payoutID == "" {
+			w.WriteHeader(http.StatusOK) // rien à rapprocher
+			return
+		}
+		payout, err := h.payoutRepo.FindByID(r.Context(), payoutID)
+		if err != nil {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if payout.Status == "paid" || payout.Status == "failed" {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"status": payout.Status})
+			return
+		}
+		if event.EventType == "PAYMENT.PAYOUTS-ITEM.SUCCEEDED" {
+			if err := h.payoutRepo.UpdateStatus(r.Context(), payout.ID, "paid", nil); err == nil {
+				h.cache.Del(r.Context(), vendorBalanceCacheKey(payout.UserID))
+				if h.notifications != nil {
+					uid, amt := payout.UserID, payout.AmountCFA
+					go func() {
+						ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+						defer cancel()
+						if u, uerr := h.userRepo.FindByID(ctx, uid); uerr == nil && u.Email != "" {
+							_ = h.notifications.SendPayoutConfirmed(ctx, u.Email, amt)
+						}
+					}()
+				}
+			}
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"status": "paid"})
+			return
+		}
+		reason := event.Resource.TransactionStatus
+		if reason == "" {
+			reason = "paypal_payout_failed"
+		}
+		if err := h.payoutRepo.UpdateStatus(r.Context(), payout.ID, "failed", &reason); err == nil {
+			h.cache.Del(r.Context(), vendorBalanceCacheKey(payout.UserID))
+			h.notifyAdminsPayoutFailed(r.Context(), payout, reason)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "failed"})
+		return
+	}
+
+	switch event.EventType {
+	case "CHECKOUT.ORDER.APPROVED", "PAYMENT.CAPTURE.COMPLETED":
+		saleID := event.Resource.CustomID
+		if saleID == "" && len(event.Resource.PurchaseUnits) > 0 {
+			saleID = event.Resource.PurchaseUnits[0].CustomID
+		}
+		if saleID == "" {
+			http.Error(w, `{"error":"missing_sale_id"}`, http.StatusBadRequest)
+			return
+		}
+		sale, err := h.saleRepo.FindByID(r.Context(), saleID)
+		if err != nil {
+			http.Error(w, `{"error":"sale_not_found"}`, http.StatusNotFound)
+			return
+		}
+		if sale.Status != string(model.SalePending) {
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]string{"status": sale.Status})
+			return
+		}
+		if sale.ProviderTransactionID == nil {
+			http.Error(w, `{"error":"missing_provider_transaction_id"}`, http.StatusInternalServerError)
+			return
+		}
+
+		outcome, err := h.paypal.AsProvider().GetDepositStatus(r.Context(), *sale.ProviderTransactionID)
+		if err != nil {
+			http.Error(w, `{"error":"status_check_failed"}`, http.StatusBadGateway)
+			return
+		}
+		if outcome.UpdatedProviderRef != "" {
+			h.saleRepo.SetProviderTransactionID(r.Context(), sale.ID, outcome.UpdatedProviderRef)
+		}
+		if outcome.Status == "completed" {
+			if err := h.ConfirmPaidSale(r.Context(), sale); err != nil {
+				http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
+				return
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": outcome.Status})
+		return
+
+	case "PAYMENT.CAPTURE.DECLINED":
+		// Paiement carte refusé par la banque / PayPal après redirection : la
+		// vente reste sinon "pending" indéfiniment (le polling checkout/return
+		// ne voit qu'un ordre non capturé). On la passe "failed" et on prévient
+		// l'acheteur, comme pour un échec PawaPay.
+		saleID := event.Resource.CustomID
+		if saleID == "" && len(event.Resource.PurchaseUnits) > 0 {
+			saleID = event.Resource.PurchaseUnits[0].CustomID
+		}
+		if saleID == "" {
+			http.Error(w, `{"error":"missing_sale_id"}`, http.StatusBadRequest)
+			return
+		}
+		sale, err := h.saleRepo.FindByID(r.Context(), saleID)
+		if err != nil {
+			http.Error(w, `{"error":"sale_not_found"}`, http.StatusNotFound)
+			return
+		}
+		if sale.Status == string(model.SalePending) {
+			h.saleRepo.UpdateStatus(r.Context(), sale.ID, string(model.SaleFailed))
+			if h.notifications != nil {
+				go h.notifyFailed(context.Background(), sale)
+			}
+			h.notify(r.Context(), sale.BuyerID, "order_failed", "Paiement échoué",
+				"Votre paiement par carte n'a pas abouti, réessayez.", "/orders")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "failed"})
+		return
+
+	case "PAYMENT.CAPTURE.REFUNDED":
+		// event.Resource.ID est l'ID du REMBOURSEMENT PayPal — celui-là même
+		// stocké par AdminHandler.RefundSale via SetRefundReference.
+		sale, err := h.saleRepo.FindByRefundReference(r.Context(), event.Resource.ID)
+		if err != nil {
+			// Remboursement initié ailleurs que par RefundSale (depuis le
+			// dashboard PayPal directement) : rien à rapprocher côté DIARRA.
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		if sale.Status != string(model.SaleRefunded) {
+			h.saleRepo.UpdateStatus(r.Context(), sale.ID, string(model.SaleRefunded))
+			go h.notifyRefunded(context.Background(), sale)
+			h.notify(r.Context(), sale.BuyerID, "refund", "Remboursement effectué",
+				fmt.Sprintf("Votre remboursement de %d FCFA a été traité.", sale.AmountCFA), "/orders")
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"status": "refunded"})
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
 // notifyFailed envoie l'email d'échec de paiement à l'acheteur.
 func (h *WebhookHandler) notifyFailed(ctx context.Context, sale *model.Sale) {
 	buyer, err := h.userRepo.FindByID(ctx, sale.BuyerID)
@@ -733,6 +930,22 @@ func (h *WebhookHandler) reconcilePayoutsPass(ctx context.Context) {
 		}
 		var providerStatus, failReason string
 		switch p.Provider {
+		case "paypal":
+			if h.paypal == nil {
+				continue
+			}
+			st, err := h.paypal.AsProvider().GetPayoutStatus(ctx, *p.ProviderReference)
+			if err != nil {
+				continue
+			}
+			// Vocabulaire commun → brut attendu par le switch ci-dessous.
+			switch st.Status {
+			case "completed":
+				providerStatus = "COMPLETED"
+			case "failed":
+				providerStatus = "FAILED"
+			}
+			failReason = st.FailureReason
 		case "kpay":
 			if h.kpay == nil {
 				continue

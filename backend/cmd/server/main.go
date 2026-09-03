@@ -194,21 +194,34 @@ func main() {
 		allowedIPs = strings.Split(ips, ",")
 	}
 
-	// Paiement KPay (mobile money 12 pays + carte/PayPal, en complément de
-	// PawaPay — voir plan d'intégration). Optionnel comme PawaPay : sans
-	// KPAY_API_KEY/KPAY_SECRET_KEY, kpay reste nil et le checkout carte/
-	// PayPal ainsi que le routage mobile money vers KPay sont désactivés,
-	// tout continue de fonctionner via PawaPay seul.
+	// KPay — SUSPENDU le 2026-09-03. L'intégration n'a jamais été finalisée
+	// (webhooks/statuts incertains) ; le flux carte/PayPal est repris par
+	// PayPal (voir ci-dessous) et le mobile money reste sur PawaPay. Le client
+	// n'est plus instancié : `kpay` vaut toujours nil, tout le code KPay
+	// (kpay.go, adaptateur, handlers) reste en place mais dormant, prêt à être
+	// réactivé en réintroduisant cette construction. Les réglages admin
+	// pointant vers "kpay" (checkout par pays, passerelles par opérateur) sont
+	// ignorés et refusés à l'écriture — voir SaleHandler.resolveCheckoutProvider
+	// et AdminHandler.UpdateSettings.
 	var kpay *payment.KPayClient
-	if os.Getenv("KPAY_API_KEY") != "" && os.Getenv("KPAY_SECRET_KEY") != "" {
-		kpay = payment.NewKPayClient(payment.KPayConfig{
-			APIKey:        os.Getenv("KPAY_API_KEY"),
-			SecretKey:     os.Getenv("KPAY_SECRET_KEY"),
-			BaseURL:       os.Getenv("KPAY_BASE_URL"), // défaut: https://admin.kpay.site
-			WebhookSecret: os.Getenv("KPAY_WEBHOOK_SECRET"),
+	log.Println("INFO: KPay suspendu (2026-09-03) — checkout carte via PayPal, mobile money via PawaPay")
+
+	// Paiement PayPal (carte bancaire + compte PayPal au checkout ; versements
+	// vendeur vers un compte PayPal). Remplace KPay pour le flux carte/PayPal
+	// (KPay désactivé du checkout le 2026-09-03). Optionnel : sans
+	// PAYPAL_CLIENT_ID/PAYPAL_CLIENT_SECRET, paypal reste nil et le checkout
+	// carte ainsi que les versements PayPal sont désactivés — tout continue via
+	// PawaPay (mobile money) + versement manuel.
+	var paypal *payment.PayPalClient
+	if os.Getenv("PAYPAL_CLIENT_ID") != "" && os.Getenv("PAYPAL_CLIENT_SECRET") != "" {
+		paypal = payment.NewPayPalClient(payment.PayPalConfig{
+			ClientID:     os.Getenv("PAYPAL_CLIENT_ID"),
+			ClientSecret: os.Getenv("PAYPAL_CLIENT_SECRET"),
+			BaseURL:      os.Getenv("PAYPAL_BASE_URL"), // défaut: https://api-m.sandbox.paypal.com
+			WebhookID:    os.Getenv("PAYPAL_WEBHOOK_ID"),
 		})
 	} else {
-		log.Println("WARNING: KPay non configuré, paiement carte/PayPal et mobile money KPay désactivés")
+		log.Println("WARNING: PayPal non configuré, paiement carte/PayPal et versements PayPal désactivés")
 	}
 
 	// Notifications in-app
@@ -226,10 +239,10 @@ func main() {
 	healthHandler := handler.NewHealthHandler(pool)
 	authHandler := handler.NewAuthHandler(authService, firebaseVerifier)
 	productHandler := handler.NewProductHandler(productRepo, userRepo, saleRepo, storageService, os.Getenv("FRONTEND_URL"), redisCache)
-	saleHandler := handler.NewSaleHandler(saleRepo, productRepo, referralRepo, userRepo, settingsRepo, pawapay, kpay, notifications, os.Getenv("FRONTEND_URL"))
+	saleHandler := handler.NewSaleHandler(saleRepo, productRepo, referralRepo, userRepo, settingsRepo, pawapay, kpay, paypal, notifications, os.Getenv("FRONTEND_URL"))
 	closerHandler := handler.NewCloserHandler(referralRepo, productRepo, os.Getenv("FRONTEND_URL"))
 	bundleHandler := handler.NewBundleHandler(bundleRepo, productRepo)
-	webhookHandler := handler.NewWebhookHandler(saleRepo, userRepo, productRepo, payoutRepo, pawapay, kpay, os.Getenv("KPAY_WEBHOOK_SECRET"), donationService, notifications, notificationRepo, s3, allowedIPs, redisCache)
+	webhookHandler := handler.NewWebhookHandler(saleRepo, userRepo, productRepo, payoutRepo, pawapay, kpay, os.Getenv("KPAY_WEBHOOK_SECRET"), paypal, donationService, notifications, notificationRepo, s3, allowedIPs, redisCache)
 	feedHandler := handler.NewFeedHandler(productRepo, os.Getenv("FRONTEND_URL"))
 	donationHandler := handler.NewDonationHandler(donationRepo, settingsRepo, donationService)
 
@@ -259,7 +272,7 @@ func main() {
 	supportContactHandler := handler.NewSupportContactHandler(supportContactRepo, notifications)
 
 	// Administration
-	adminHandler := handler.NewAdminHandler(productRepo, saleRepo, userRepo, referralRepo, adminPermRepo, payoutRepo, settingsRepo, ticketRepo, pool, storageHealthPinger, storageService, startTime, pawapay, kpay, notifications, redisCache, webhookHandler)
+	adminHandler := handler.NewAdminHandler(productRepo, saleRepo, userRepo, referralRepo, adminPermRepo, payoutRepo, settingsRepo, ticketRepo, pool, storageHealthPinger, storageService, startTime, pawapay, kpay, paypal, notifications, redisCache, webhookHandler)
 
 	r := chi.NewRouter()
 
@@ -407,9 +420,11 @@ func main() {
 		r.Post("/pawapay", webhookHandler.PawaPayWebhook)
 		r.Post("/pawapay/payout", webhookHandler.PawaPayPayoutWebhook)
 		r.Post("/pawapay/refund", webhookHandler.PawaPayRefundWebhook)
-		r.Post("/kpay", webhookHandler.KPayPaymentWebhook)
-		r.Post("/kpay/payout", webhookHandler.KPayPayoutWebhook)
-		r.Post("/kpay/refund", webhookHandler.KPayRefundWebhook)
+		// KPay suspendu (2026-09-03) : routes retirées. Les handlers
+		// KPay*Webhook restent définis (code dormant) mais ne sont plus exposés.
+		// PayPal : un seul endpoint pour tous les événements (paiement capturé,
+		// remboursement…) — le type est lu dans le corps (voir PayPalWebhook).
+		r.Post("/paypal", webhookHandler.PayPalWebhook)
 	})
 
 	// WebSocket temps réel

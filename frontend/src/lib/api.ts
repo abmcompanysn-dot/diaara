@@ -348,15 +348,28 @@ export const api = {
     }),
 
   getPayoutMethod: () =>
-    fetchApi<{ payout_method: { phone: string | null; operator: string | null; operator_label: string; country: string | null } }>(
-      '/api/vendor/payout-method'
-    ),
+    fetchApi<{
+      payout_method: {
+        active_channel: 'mobile_money' | 'paypal';
+        phone: string | null;
+        operator: string | null;
+        operator_label: string;
+        country: string | null;
+        paypal_email: string | null;
+      };
+    }>('/api/vendor/payout-method'),
 
-  setPayoutMethod: (data: { phone: string; operator: string; country: string }) =>
-    fetchApi<{ payout_method: { phone: string; operator: string; operator_label: string; country: string } }>(
-      '/api/vendor/payout-method',
-      { method: 'PUT', body: JSON.stringify(data) }
-    ),
+  // Canal "mobile_money" : phone + operator + country. Canal "paypal" :
+  // paypal_email. Les deux coexistent, PayPal prioritaire au règlement.
+  setPayoutMethod: (
+    data:
+      | { channel: 'mobile_money'; phone: string; operator: string; country: string }
+      | { channel: 'paypal'; paypal_email: string }
+  ) =>
+    fetchApi<{ payout_method: Record<string, unknown> }>('/api/vendor/payout-method', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
 
   // Compte (libre-service, tout utilisateur connecté)
   addRole: (role: string) =>
@@ -380,15 +393,26 @@ export const api = {
   // Moyen de versement/retrait — accessible à tout utilisateur connecté
   // (client ou vendeur), contrairement à /api/vendor/payout-method.
   getAccountPayoutMethod: () =>
-    fetchApi<{ payout_method: { phone: string | null; operator: string | null; operator_label: string; country: string | null } }>(
-      '/api/account/payout-method'
-    ),
+    fetchApi<{
+      payout_method: {
+        active_channel: 'mobile_money' | 'paypal';
+        phone: string | null;
+        operator: string | null;
+        operator_label: string;
+        country: string | null;
+        paypal_email: string | null;
+      };
+    }>('/api/account/payout-method'),
 
-  setAccountPayoutMethod: (data: { phone: string; operator: string; country: string }) =>
-    fetchApi<{ payout_method: { phone: string; operator: string; operator_label: string; country: string } }>(
-      '/api/account/payout-method',
-      { method: 'PUT', body: JSON.stringify(data) }
-    ),
+  setAccountPayoutMethod: (
+    data:
+      | { channel: 'mobile_money'; phone: string; operator: string; country: string }
+      | { channel: 'paypal'; paypal_email: string }
+  ) =>
+    fetchApi<{ payout_method: Record<string, unknown> }>('/api/account/payout-method', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
 
   // Closer (affiliation)
   getCloserLinks: () => fetchApi<{ links: any[] }>('/api/closer/links'),

@@ -1,8 +1,10 @@
 # Reproduit les règles du Caddyfile du VPS : /api, /ws, /p, /r, /feed,
 # /sitemap.xml vers le backend. Le frontend n'est plus servi par le VPS
-# (déplacé sur Cloudflare Worker, voir worker/) — diarra.abmcy.com ne sert
-# donc plus que l'API ; la racine "/" devient à terme une redirection vers
-# diarra.app (gérée côté utilisateur, hors de ce fichier).
+# (déplacé sur Cloudflare Worker "diaara", voir worker/) : ce host ne sert que
+# l'API. Le Worker (diarra.app) proxifie /api/* etc. vers `api.diarra.app`
+# (BACKEND_URL dans worker/wrangler.jsonc) ; les webhooks PawaPay/PayPal
+# appellent aussi `api.diarra.app` en direct. `origin.abmcy.com` a été
+# abandonné (fetch Worker en 526 : validation stricte du certificat d'origine).
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -25,7 +27,7 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
-    - host: diarra.abmcy.com
+    - host: api.diarra.app
       http:
         paths:
           - path: /api
@@ -70,12 +72,9 @@ spec:
                 name: backend
                 port:
                   number: 8080
-    # Adresse dédiée au backend seul — diarra.abmcy.com devient à terme une
-    # redirection vers diarra.app (frontend, servi par Cloudflare Worker),
-    # qui proxy /api/* etc. vers ce host pour joindre le backend.
-    - host: origin.abmcy.com
-      http:
-        paths:
+          # Racine "/" : webhooks des prestataires (/api/webhooks/* est déjà
+          # couvert par /api, mais on garde "/" pour /health et les curl de
+          # vérif directs). Le frontend est servi par le Worker, pas ici.
           - path: /
             pathType: Prefix
             backend:

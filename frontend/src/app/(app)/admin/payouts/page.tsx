@@ -34,18 +34,27 @@ interface Payout {
   failure_reason?: string | null;
   requested_at: string;
   paid_at?: string | null;
-  // Moyen de versement enregistré par le vendeur (repli quand le versement
-  // lui-même n'a pas d'opérateur/numéro — cas d'un versement manuel créé de
-  // toutes pièces) — voir PayoutRepo.ListAllAdmin côté backend.
+  // Versement PayPal : email figé sur le versement + email enregistré par le
+  // vendeur (repli). provider === "paypal" quand ce canal a été retenu.
+  paypal_email?: string | null;
+  vendor_payout_paypal_email?: string | null;
+  // Moyen de versement mobile money enregistré par le vendeur (repli quand le
+  // versement lui-même n'a pas d'opérateur/numéro — cas d'un versement manuel
+  // créé de toutes pièces) — voir PayoutRepo.ListAllAdmin côté backend.
   vendor_payout_phone?: string | null;
   vendor_payout_operator?: string | null;
   vendor_payout_country?: string | null;
 }
 
-// paymentMethodOf — le moyen de paiement à afficher pour un versement : celui
-// du versement lui-même s'il en a un, sinon celui enregistré par le vendeur
-// (versement manuel créé sans numéro saisi), sinon "non renseigné".
+// paymentMethodOf — le moyen de paiement à afficher pour un versement : PayPal
+// si c'est ce canal, sinon l'opérateur/numéro (du versement, ou à défaut celui
+// enregistré par le vendeur), sinon "non renseigné".
 function paymentMethodOf(p: Payout): { label: string; phone: string } | null {
+  const paypalEmail = p.paypal_email || p.vendor_payout_paypal_email || '';
+  if (p.provider === 'paypal' || (paypalEmail && !p.operator && !p.phone_number)) {
+    if (!paypalEmail) return null;
+    return { label: 'PayPal', phone: paypalEmail };
+  }
   const operator = p.operator || p.vendor_payout_operator || '';
   const phone = p.phone_number || p.vendor_payout_phone || '';
   if (!operator && !phone) return null;
@@ -379,6 +388,8 @@ export default function AdminPayoutsPage() {
                     <TableCell className="text-xs">
                       {p.is_manual || p.provider === 'manual' ? (
                         <Badge className="bg-slate-100 text-slate-700 hover:bg-slate-100">Manuel</Badge>
+                      ) : p.provider === 'paypal' ? (
+                        <Badge className="bg-[#003087]/10 text-[#003087] hover:bg-[#003087]/10">PayPal</Badge>
                       ) : (
                         <span className="text-green-900/60">{p.provider}</span>
                       )}
@@ -397,7 +408,11 @@ export default function AdminPayoutsPage() {
                             disabled={busyId === p.id}
                             onClick={() => setAutoTarget(p)}
                           >
-                            {busyId === p.id ? '…' : `Régler via ${p.provider}`}
+                            {busyId === p.id
+                              ? '…'
+                              : p.provider === 'paypal'
+                                ? 'Régler via PayPal'
+                                : `Régler via ${p.provider}`}
                           </Button>
                         )}
                         {p.status === 'processing' && p.provider !== 'manual' && (
@@ -460,7 +475,12 @@ export default function AdminPayoutsPage() {
         title="Régler ce versement automatiquement ?"
         description={
           autoTarget
-            ? `${formatPrice(autoTarget.amount_cfa)} seront envoyés à ${autoTarget.user_email} via ${autoTarget.provider} (${autoTarget.operator} · ${autoTarget.phone_number}). Le versement passera « en traitement » puis « payé » à la confirmation du prestataire.`
+            ? (() => {
+                const m = paymentMethodOf(autoTarget);
+                const dest = m ? `${m.label} · ${m.phone}` : autoTarget.provider;
+                const via = autoTarget.provider === 'paypal' ? 'PayPal (montant converti en USD)' : autoTarget.provider;
+                return `${formatPrice(autoTarget.amount_cfa)} seront envoyés à ${autoTarget.user_email} via ${via} (${dest}). Le versement passera « en traitement » puis « payé » à la confirmation du prestataire.`;
+              })()
             : undefined
         }
         confirmLabel="Envoyer le versement"

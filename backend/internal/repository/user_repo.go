@@ -56,8 +56,9 @@ func (r *UserRepo) SetProfile(ctx context.Context, userID string, displayName, s
 	return err
 }
 
-// GetPayoutMethod retourne le moyen de versement enregistré du vendeur
-// (nil si jamais renseigné).
+// GetPayoutMethod retourne le moyen de versement mobile money enregistré du
+// vendeur (nil si jamais renseigné). Signature conservée pour les nombreux
+// appelants existants ; l'email PayPal se lit via GetPayoutPayPalEmail.
 func (r *UserRepo) GetPayoutMethod(ctx context.Context, userID string) (phone, operator, country *string, err error) {
 	err = r.pool.QueryRow(ctx,
 		`SELECT payout_phone, payout_operator, payout_country FROM users WHERE id = $1`, userID,
@@ -65,12 +66,33 @@ func (r *UserRepo) GetPayoutMethod(ctx context.Context, userID string) (phone, o
 	return
 }
 
-// SetPayoutMethod enregistre/remplace le moyen de versement du vendeur.
-// phone et operator sont déjà normalisés/validés par l'appelant.
+// GetPayoutPayPalEmail retourne l'email PayPal enregistré par le vendeur pour
+// ses versements (nil si jamais renseigné). Coexiste avec le mobile money :
+// PayPal est prioritaire quand les deux sont présents (voir PayoutHandler).
+func (r *UserRepo) GetPayoutPayPalEmail(ctx context.Context, userID string) (*string, error) {
+	var email *string
+	err := r.pool.QueryRow(ctx,
+		`SELECT payout_paypal_email FROM users WHERE id = $1`, userID,
+	).Scan(&email)
+	return email, err
+}
+
+// SetPayoutMethod enregistre/remplace le moyen de versement MOBILE MONEY du
+// vendeur. phone et operator sont déjà normalisés/validés par l'appelant.
+// N'affecte pas l'email PayPal (voir SetPayoutPayPalEmail).
 func (r *UserRepo) SetPayoutMethod(ctx context.Context, userID, phone, operator, country string) error {
 	_, err := r.pool.Exec(ctx,
 		`UPDATE users SET payout_phone = $2, payout_operator = $3, payout_country = $4 WHERE id = $1`,
 		userID, phone, operator, country)
+	return err
+}
+
+// SetPayoutPayPalEmail enregistre/remplace l'email PayPal de versement du
+// vendeur (chaîne vide = effacer). N'affecte pas le mobile money.
+func (r *UserRepo) SetPayoutPayPalEmail(ctx context.Context, userID, email string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE users SET payout_paypal_email = NULLIF($2, '') WHERE id = $1`,
+		userID, email)
 	return err
 }
 
