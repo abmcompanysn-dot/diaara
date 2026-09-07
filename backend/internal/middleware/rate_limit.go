@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/diarra/backend/internal/cache"
@@ -43,6 +44,15 @@ func NewRateLimiter(cacheClient *cache.Client, rate, burst float64) *RateLimiter
 }
 
 func (l *RateLimiter) allow(ctx context.Context, key string) bool {
+	return l.allowKey(ctx, key, l.burst)
+}
+
+// allowKey applique le même mécanisme que allow (fenêtre glissante de
+// l.window, dérivée du rate/burst de CE limiter) mais sous une clé Redis et
+// un plafond différents — sert à donner à une route spécifique (voir
+// "/api/orders/status" dans Middleware) un quota bien plus large que le
+// reste du trafic de la même IP, sans instancier un second *RateLimiter.
+func (l *RateLimiter) allowKey(ctx context.Context, key string, burst float64) bool {
 	count, err := l.cache.IncrWithExpire(ctx, "ratelimit:"+key, l.window)
 	if err != nil {
 		log.Printf("WARNING: rate limiter Redis indisponible, requête laissée passer: %v", err)
@@ -52,7 +62,7 @@ func (l *RateLimiter) allow(ctx context.Context, key string) bool {
 	if count == 0 {
 		return true
 	}
-	return count <= int64(l.burst)
+	return count <= int64(burst)
 }
 
 func (l *RateLimiter) Middleware(next http.Handler) http.Handler {
@@ -68,6 +78,36 @@ func (l *RateLimiter) Middleware(next http.Handler) http.Handler {
 			return
 		}
 		ip := clientIP(r)
+		// Garde-fou : si l'IP résolue n'identifie pas un vrai visiteur mais un
+		// maillon de l'infra (ingress-nginx, Caddy... tous en réseau privé),
+		// c'est que les en-têtes de proxy ne remontent pas l'IP d'origine.
+		// Rate-limiter sur cette IP reviendrait à compter TOUS les visiteurs
+		// dans un seul compteur et à écrouler tout le monde d'un coup
+		// (incident 2026-09-07 : 429 généralisés sur /api/auth/* après la
+		// migration k3s). Dans ce cas on laisse passer — mieux vaut pas de
+		// limitation qu'une limitation qui bloque tout le site.
+		if isInfraIP(ip) {
+			next.ServeHTTP(w, r)
+			return
+		}
+		// /api/orders/status : suivi de paiement, interrogé toutes les 3s
+		// depuis checkout/return pendant que l'acheteur attend la
+		// confirmation. Partageait le même quota (40 req/4s par IP) que
+		// TOUT le reste du trafic de cette IP — plusieurs onglets ouverts en
+		// parallèle (ou une IP mutualisée, courante derrière un NAT
+		// opérateur mobile) suffisaient à le vider et à bloquer l'acheteur
+		// en plein paiement avec des 429 (incident 2026-09-04). Clé Redis
+		// dédiée, quota bien plus large, pour ne plus jamais entrer en
+		// compétition avec le reste du trafic de cette IP.
+		if r.URL.Path == "/api/orders/status" {
+			if !l.allowKey(r.Context(), "checkout:"+ip, 100) {
+				w.Header().Set("X-RateLimit-Limit", "100")
+				http.Error(w, `{"error":"too_many_requests"}`, http.StatusTooManyRequests)
+				return
+			}
+			next.ServeHTTP(w, r)
+			return
+		}
 		if !l.allow(r.Context(), ip) {
 			w.Header().Set("X-RateLimit-Limit", "40")
 			http.Error(w, `{"error":"too_many_requests"}`, http.StatusTooManyRequests)
@@ -77,17 +117,79 @@ func (l *RateLimiter) Middleware(next http.Handler) http.Handler {
 	})
 }
 
+// clientIP tente de retrouver l'IP réelle du visiteur à travers la chaîne de
+// proxys de production : Cloudflare -> Caddy -> ingress-nginx -> backend.
+//
+// Ordre de préférence :
+//  1. CF-Connecting-IP : posé par Cloudflare, contient l'IP du visiteur et
+//     rien d'autre (pas une liste). C'est la source la plus fiable ici.
+//  2. X-Real-IP : posé par ingress-nginx, une seule IP.
+//  3. X-Forwarded-For : liste "client, proxy1, proxy2..." — on prend le
+//     PREMIER élément (le client d'origine). Selon la config des proxys
+//     intermédiaires cet élément peut être réécrit, d'où sa position après
+//     CF-Connecting-IP.
+//  4. r.RemoteAddr : dernier recours (= IP de l'ingress en prod k3s, donc
+//     partagée entre tous les visiteurs — à éviter pour le rate limiting,
+//     mais mieux que rien en dev/local sans proxy).
+//
+// Chaque candidat est nettoyé d'un éventuel ":port" et validé comme IP ; un
+// candidat invalide est ignoré au profit du suivant.
 func clientIP(r *http.Request) string {
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		host, _, err := net.SplitHostPort(xff)
-		if err == nil {
-			return host
+	candidates := []string{
+		r.Header.Get("CF-Connecting-IP"),
+		r.Header.Get("X-Real-IP"),
+		firstForwardedFor(r.Header.Get("X-Forwarded-For")),
+	}
+	for _, c := range candidates {
+		if ip := parseIPMaybePort(c); ip != "" {
+			return ip
 		}
-		return xff
 	}
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
+	if ip := parseIPMaybePort(r.RemoteAddr); ip != "" {
+		return ip
 	}
-	return host
+	return r.RemoteAddr
+}
+
+// isInfraIP indique si l'IP correspond à un maillon d'infrastructure plutôt
+// qu'à un visiteur : loopback, ou réseau privé (RFC 1918 / unique-local IPv6).
+// En prod k3s, l'ingress-nginx et Caddy sont tous deux sur 10.42.x/127.0.0.1 ;
+// une requête vue avec une telle IP signifie que l'IP réelle du visiteur n'a
+// pas été propagée. En dev local (sans proxy), r.RemoteAddr vaut aussi
+// 127.0.0.1 — la limitation y est donc de fait désactivée, ce qui est sans
+// conséquence pour un poste de développement.
+func isInfraIP(ipStr string) bool {
+	ip := net.ParseIP(ipStr)
+	if ip == nil {
+		return true // non résolue : on ne peut pas limiter dessus de façon fiable
+	}
+	return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsUnspecified()
+}
+
+// firstForwardedFor retourne le premier élément d'un en-tête X-Forwarded-For
+// ("client, proxy1, proxy2") — l'IP du client d'origine.
+func firstForwardedFor(xff string) string {
+	if xff == "" {
+		return ""
+	}
+	if i := strings.IndexByte(xff, ','); i >= 0 {
+		return strings.TrimSpace(xff[:i])
+	}
+	return strings.TrimSpace(xff)
+}
+
+// parseIPMaybePort accepte "1.2.3.4", "1.2.3.4:5678", "[::1]" ou "[::1]:5678"
+// et renvoie l'IP seule si elle est valide, sinon "".
+func parseIPMaybePort(s string) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	if net.ParseIP(s) != nil {
+		return s
+	}
+	if host, _, err := net.SplitHostPort(s); err == nil && net.ParseIP(host) != nil {
+		return host
+	}
+	return ""
 }
