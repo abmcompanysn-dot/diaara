@@ -13,7 +13,7 @@ import { PageLoader } from '@/components/page-loader';
 import { EmptyState } from '@/components/empty-state';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { formatPrice, PAYOUT_STATUS_BADGE, PAYOUT_STATUS_LABELS } from '@/lib/constants';
-import { findPayoutOperator, maskPhone } from '@/lib/operators';
+import { findPayoutOperator } from '@/lib/operators';
 import { friendlyError } from '@/lib/error-messages';
 import { openPayoutReceipt } from '@/lib/payout-receipt';
 import { SearchIcon, FileIcon } from '@/components/icons';
@@ -46,14 +46,33 @@ interface Payout {
   vendor_payout_country?: string | null;
 }
 
+// formatPhoneClear — numéro complet en clair (jamais masqué) : côté admin,
+// c'est justement le numéro à composer/vérifier/envoyer l'argent — un numéro
+// tronqué (+221 76 *** 99, utile côté vendeur pour sa propre confidentialité)
+// est inutilisable ici. Juste un espacement pour la lisibilité.
+function formatPhoneClear(msisdn: string, dialCode: string | undefined): string {
+  const local = dialCode && msisdn.startsWith(dialCode) ? msisdn.slice(dialCode.length) : msisdn;
+  const groups = local.match(/.{1,2}/g) || [local];
+  return `+${dialCode || ''} ${groups.join(' ')}`.trim();
+}
+
+// waLink — lien de discussion WhatsApp direct vers un numéro (chiffres seuls,
+// indicatif compris, sans "+"), pour contacter/confirmer avant un envoi manuel.
+function waLink(msisdn: string | null | undefined): string | null {
+  if (!msisdn) return null;
+  const digits = msisdn.replace(/\D/g, '');
+  return digits.length >= 8 ? `https://wa.me/${digits}` : null;
+}
+
 // paymentMethodOf — le moyen de paiement à afficher pour un versement : PayPal
 // si c'est ce canal, sinon l'opérateur/numéro (du versement, ou à défaut celui
-// enregistré par le vendeur), sinon "non renseigné".
-function paymentMethodOf(p: Payout): { label: string; phone: string } | null {
+// enregistré par le vendeur), sinon "non renseigné". Le numéro est renvoyé en
+// clair (waRaw) pour permettre un lien WhatsApp — jamais masqué ici.
+function paymentMethodOf(p: Payout): { label: string; phone: string; waRaw: string | null } | null {
   const paypalEmail = p.paypal_email || p.vendor_payout_paypal_email || '';
   if (p.provider === 'paypal' || (paypalEmail && !p.operator && !p.phone_number)) {
     if (!paypalEmail) return null;
-    return { label: 'PayPal', phone: paypalEmail };
+    return { label: 'PayPal', phone: paypalEmail, waRaw: null };
   }
   const operator = p.operator || p.vendor_payout_operator || '';
   const phone = p.phone_number || p.vendor_payout_phone || '';
@@ -61,7 +80,8 @@ function paymentMethodOf(p: Payout): { label: string; phone: string } | null {
   const op = findPayoutOperator(operator);
   return {
     label: op ? `${op.label} (${op.countryName})` : operator || '—',
-    phone: maskPhone(phone, op?.dialCode) || phone || '—',
+    phone: phone ? formatPhoneClear(phone, op?.dialCode) : '—',
+    waRaw: phone || null,
   };
 }
 
@@ -370,7 +390,21 @@ export default function AdminPayoutsPage() {
                       {method ? (
                         <>
                           {method.label}
-                          <span className="block text-[11px] text-green-900/40">{method.phone}</span>
+                          <span className="block text-[11px] font-mono">
+                            {waLink(method.waRaw) ? (
+                              <a
+                                href={waLink(method.waRaw)!}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-green-700 hover:underline"
+                                title="Ouvrir la discussion WhatsApp"
+                              >
+                                {method.phone}
+                              </a>
+                            ) : (
+                              <span className="text-green-900/40">{method.phone}</span>
+                            )}
+                          </span>
                         </>
                       ) : (
                         <>
@@ -514,11 +548,21 @@ export default function AdminPayoutsPage() {
             {(() => {
               const method = paymentMethodOf(settleTarget);
               return method ? (
-                <div className="p-3 rounded-lg bg-green-900/5 text-sm">
+                <div className="p-3 rounded-lg bg-green-900/5 text-sm space-y-1.5">
                   <p className="font-medium text-green-950">Où envoyer l'argent</p>
                   <p className="text-green-900/70">
-                    {method.label} · {method.phone}
+                    {method.label} · <span className="font-mono font-semibold text-green-950">{method.phone}</span>
                   </p>
+                  {waLink(method.waRaw) && (
+                    <a
+                      href={waLink(method.waRaw)!}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-block text-xs text-green-700 underline"
+                    >
+                      Contacter sur WhatsApp pour confirmer le numéro
+                    </a>
+                  )}
                 </div>
               ) : (
                 <div className="p-3 rounded-lg bg-amber-50 text-amber-800 text-sm">
