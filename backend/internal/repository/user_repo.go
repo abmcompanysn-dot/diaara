@@ -104,9 +104,29 @@ func (r *UserRepo) GetPayoutPayPalEmail(ctx context.Context, userID string) (*st
 // SetPayoutMethod enregistre/remplace le moyen de versement MOBILE MONEY du
 // vendeur. phone et operator sont déjà normalisés/validés par l'appelant.
 // N'affecte pas l'email PayPal (voir SetPayoutPayPalEmail).
+//
+// Ce numéro devient AUSSI le numéro du compte (colonne phone) : un seul
+// numéro à gérer pour le vendeur, qui sert à la fois d'identité vérifiée et
+// de destination des versements — deux numéros séparés (un "numéro du
+// compte" distinct du "numéro de retrait") ne faisaient que semer la
+// confusion sans bénéfice réel. Si ce numéro diffère de celui déjà
+// enregistré, phone_verified_at repart à NULL (le nouveau numéro doit être
+// re-vérifié avant tout versement — voir PayoutRepo côté versements pour
+// l'application de cette règle, et AuthService.SetProfileWithPhone pour le
+// même principe côté profil).
 func (r *UserRepo) SetPayoutMethod(ctx context.Context, userID, phone, operator, country string) error {
 	_, err := r.pool.Exec(ctx,
-		`UPDATE users SET payout_phone = $2, payout_operator = $3, payout_country = $4 WHERE id = $1`,
+		`UPDATE users
+		 SET payout_phone = $2,
+		     payout_operator = $3,
+		     payout_country = $4,
+		     phone = $2,
+		     phone_verified_at = CASE
+		         WHEN phone IS DISTINCT FROM $2 THEN NULL
+		         ELSE phone_verified_at
+		     END,
+		     updated_at = NOW()
+		 WHERE id = $1`,
 		userID, phone, operator, country)
 	return err
 }

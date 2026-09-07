@@ -183,6 +183,14 @@ func (h *PayoutHandler) SetPayoutMethod(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if err := h.userRepo.SetPayoutMethod(r.Context(), userID, msisdn, op.Provider, input.Country); err != nil {
+		// SetPayoutMethod fait aussi de ce numéro celui du compte (colonne
+		// phone, contrainte unique) : un numéro déjà rattaché à un autre
+		// compte DIARRA doit être signalé clairement plutôt qu'en 500 (même
+		// principe que AuthService.UpdateProfile pour /account/profile).
+		if repository.IsUniqueViolation(err) {
+			http.Error(w, `{"error":"phone_already_used"}`, http.StatusConflict)
+			return
+		}
 		http.Error(w, `{"error":"payout_method_save_failed"}`, http.StatusInternalServerError)
 		return
 	}
