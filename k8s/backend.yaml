@@ -22,6 +22,15 @@ spec:
         - ip: "187.77.178.170"
           hostnames:
             - "srv1790747.hstgr.cloud"
+      # Laisse le temps à l'ingress-nginx de retirer ce pod de son pool de
+      # destinations avant que le conteneur ne reçoive SIGTERM et referme ses
+      # connexions — sans ça, un scale-down du HPA (ou un rollout) peut tuer
+      # un pod qui vient tout juste de recevoir une requête déjà routée vers
+      # lui, provoquant un 502 sporadique côté client (observé 2026-09-07 sur
+      # /api/admin/payouts/{id}/retry pendant un scale-down 3→2). Doit rester
+      # cohérent avec le shutdownCtx de 30s dans main.go (préStop + délai de
+      # grâce du pod doivent tenir dans cette fenêtre).
+      terminationGracePeriodSeconds: 40
       containers:
         - name: backend
           # Construite localement puis importée dans containerd via
@@ -35,6 +44,13 @@ spec:
                 name: diarra-config
             - secretRef:
                 name: diarra-secrets
+          lifecycle:
+            preStop:
+              exec:
+                # sleep, pas de dépendance à un shell exotique dans l'image
+                # (voir Dockerfile) — juste attendre que kube-proxy/ingress
+                # propagent le retrait de l'endpoint avant SIGTERM.
+                command: ["sleep", "5"]
           readinessProbe:
             httpGet:
               path: /health
