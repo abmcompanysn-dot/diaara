@@ -30,6 +30,16 @@ interface Notification {
   created_at: string;
 }
 
+// Le solde et l'activité récente ne se rafraîchissaient qu'au montage de la
+// page : après une vente, le vendeur recevait bien la notification (email +
+// in-app) mais le dashboard restait figé sur les anciens chiffres tant qu'il
+// ne rechargeait pas la page à la main. Comme NotificationBell (même
+// cadence), on republie en polling léger pendant que la page est ouverte, et
+// on force un refetch immédiat quand l'onglet redevient visible (cas
+// fréquent : le vendeur ouvre l'app depuis une notification alors que
+// l'onglet était déjà en arrière-plan).
+const POLL_INTERVAL_MS = 30_000;
+
 const SHORTCUTS = [
   { href: '/vendor/products', label: 'Produits', Icon: StoreIcon, bg: '#DFF3E7', fg: '#0A4F35' },
   { href: '/vendor/products/bundles', label: 'Packs', Icon: PackageIcon, bg: '#FFF3D6', fg: '#B8860B' },
@@ -51,19 +61,46 @@ export default function VendorHomePage() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    (async () => {
+    let cancelled = false;
+
+    const load = async (showSpinner: boolean) => {
+      if (showSpinner) setLoading(true);
       try {
         const [earnings, notifs] = await Promise.all([api.getVendorEarnings(), api.getNotifications()]);
+        if (cancelled) return;
         setAvailable(earnings.available);
         setTotalEarned(earnings.total_earned);
         setTier(earnings.tier || '');
         setActivity(notifs.notifications.slice(0, 5));
       } catch {
-        // Le tableau de bord reste utilisable même si une des deux requêtes échoue.
+        // Le tableau de bord reste utilisable même si une des deux requêtes échoue
+        // (on garde les dernières valeurs connues plutôt que de les effacer).
       } finally {
-        setLoading(false);
+        if (showSpinner && !cancelled) setLoading(false);
       }
-    })();
+    };
+
+    load(true);
+
+    // Rafraîchit pendant que la page reste ouverte (même cadence que la
+    // clochette de notifications), pour que le solde et l'activité récente
+    // suivent une vente sans que le vendeur ait à recharger la page.
+    const interval = setInterval(() => load(false), POLL_INTERVAL_MS);
+
+    // Et surtout au retour sur l'onglet : le cas courant est que le vendeur
+    // reçoit la notification (email/push) pendant que l'app est en arrière-
+    // plan, puis rouvre l'onglet déjà ouvert — sans ce listener, il faudrait
+    // attendre jusqu'à 30s ou recharger manuellement pour voir la vente.
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') load(false);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
   }, []);
 
   if (loading || !user) return <PageLoader />;
