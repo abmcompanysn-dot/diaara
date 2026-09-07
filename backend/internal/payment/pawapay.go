@@ -366,15 +366,23 @@ func (c *PawaPayClient) InitiatePayout(ctx context.Context, req PayoutRequest) (
 	if err != nil {
 		return nil, err
 	}
+	// PawaPay renvoie souvent un statut HTTP non-200 (ex: 403) sur un rejet
+	// (status: "REJECTED") tout en documentant la vraie raison dans le corps
+	// (failureReason.failureCode/failureMessage, ex: "PAYOUTS_NOT_ALLOWED" —
+	// compte non configuré pour cet opérateur). Avant ce correctif, ce corps
+	// n'était jamais lu sur les codes non-200 : l'appelant ne recevait qu'un
+	// message générique ("status 403: {...}"), perdant l'information utile
+	// pour l'admin (voir failure_reason en base, incident 2026-09-07 : un
+	// versement WAVE_SEN rejeté affichait juste "payout_init_failed" au lieu
+	// de la vraie cause côté PawaPay).
+	var result PayoutInitiationResponse
+	if jsonErr := json.Unmarshal(respBody, &result); jsonErr == nil && result.Status != "" {
+		return &result, nil
+	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("%w: status %d: %s", ErrPaymentFailed, resp.StatusCode, string(respBody))
 	}
-
-	var result PayoutInitiationResponse
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		return nil, err
-	}
-	return &result, nil
+	return nil, fmt.Errorf("%w: réponse illisible: %s", ErrPaymentFailed, string(respBody))
 }
 
 // GetPayoutStatus — GET /v2/payouts/{payoutId}
