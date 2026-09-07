@@ -45,6 +45,7 @@ export default function AccountPage() {
   // la vérification exigée avant tout versement.
   const [phone, setPhone] = useState('');
   const [phoneSaving, setPhoneSaving] = useState(false);
+  const [phoneError, setPhoneError] = useState('');
   const [showPhoneVerify, setShowPhoneVerify] = useState(false);
   const phoneVerified = Boolean(user?.phone_verified_at);
 
@@ -61,8 +62,9 @@ export default function AccountPage() {
 
   const handleSavePhone = async () => {
     const trimmed = phone.trim();
+    setPhoneError('');
     if (!trimmed) {
-      toast({ variant: 'error', title: 'Numéro requis', description: 'Saisissez votre numéro de téléphone.' });
+      setPhoneError('Saisissez votre numéro de téléphone.');
       return;
     }
     setPhoneSaving(true);
@@ -74,7 +76,12 @@ export default function AccountPage() {
       setShowPhoneVerify(true);
       toast({ variant: 'success', title: 'Numéro enregistré', description: 'Vérifiez-le maintenant pour activer les versements.' });
     } catch (err: any) {
-      toast({ variant: 'error', title: 'Numéro invalide', description: friendlyError(err) });
+      // Message affiché en dur sous le champ (pas seulement en toast, qui
+      // disparaît tout seul) : une erreur bloquante comme « numéro déjà pris
+      // par un autre compte » doit rester visible tant qu'elle n'est pas
+      // corrigée, sinon on obtient exactement le symptôme "je ne comprends
+      // pas, rien ne se passe" alors qu'un message était bien envoyé.
+      setPhoneError(friendlyError(err));
     } finally {
       setPhoneSaving(false);
     }
@@ -227,7 +234,10 @@ export default function AccountPage() {
                     type="tel"
                     inputMode="tel"
                     value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    onChange={(e) => {
+                      setPhone(e.target.value);
+                      if (phoneError) setPhoneError('');
+                    }}
                     placeholder="+221 77 123 45 67"
                   />
                 </div>
@@ -240,6 +250,12 @@ export default function AccountPage() {
                   {phoneSaving ? 'Enregistrement…' : 'Enregistrer'}
                 </Button>
               </div>
+
+              {phoneError && (
+                <div className="p-3 bg-destructive/10 text-destructive rounded-lg text-sm" role="alert">
+                  {phoneError}
+                </div>
+              )}
 
               {user?.phone && !phoneVerified && !showPhoneVerify && (
                 <Button className="h-10" onClick={() => setShowPhoneVerify(true)}>
