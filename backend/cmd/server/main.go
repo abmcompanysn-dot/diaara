@@ -143,6 +143,12 @@ func main() {
 			From:   os.Getenv("RESEND_FROM"),
 		})
 		notifications = email.NewNotificationService(resend, os.Getenv("FRONTEND_URL"))
+		// Seul ce cas ne loguait rien au démarrage (SMTP et Mailtrap, eux,
+		// le font juste en dessous) — impossible de confirmer depuis les
+		// logs que Resend était bien le fournisseur actif (incident du
+		// 2026-09-05, diagnostic ralenti en cherchant "email"/"resend" dans
+		// des logs qui n'en contenaient tout simplement pas).
+		log.Printf("Emails via Resend (from=%s)", os.Getenv("RESEND_FROM"))
 	case os.Getenv("MAILTRAP_API_KEY") != "":
 		fromEmail := os.Getenv("MAILTRAP_FROM")
 		if fromEmail == "" {
@@ -238,11 +244,16 @@ func main() {
 	// Handlers
 	healthHandler := handler.NewHealthHandler(pool)
 	authHandler := handler.NewAuthHandler(authService, firebaseVerifier)
-	productHandler := handler.NewProductHandler(productRepo, userRepo, saleRepo, storageService, os.Getenv("FRONTEND_URL"), redisCache)
+	productHandler := handler.NewProductHandler(productRepo, userRepo, saleRepo, storageService, os.Getenv("FRONTEND_URL"), redisCache, notificationRepo)
 	saleHandler := handler.NewSaleHandler(saleRepo, productRepo, referralRepo, userRepo, settingsRepo, pawapay, kpay, paypal, notifications, os.Getenv("FRONTEND_URL"))
 	closerHandler := handler.NewCloserHandler(referralRepo, productRepo, os.Getenv("FRONTEND_URL"))
 	bundleHandler := handler.NewBundleHandler(bundleRepo, productRepo)
 	webhookHandler := handler.NewWebhookHandler(saleRepo, userRepo, productRepo, payoutRepo, pawapay, kpay, os.Getenv("KPAY_WEBHOOK_SECRET"), paypal, donationService, notifications, notificationRepo, s3, allowedIPs, redisCache)
+	// Référence circulaire évitée par un setter (voir SaleHandler.SetWebhookHandler) :
+	// CheckoutStatus doit pouvoir persister un paiement confirmé par polling
+	// exactement comme le ferait le webhook (statut + emails + notifs + cagnotte +
+	// cache), pas juste l'afficher (incident 2026-09-05).
+	saleHandler.SetWebhookHandler(webhookHandler)
 	feedHandler := handler.NewFeedHandler(productRepo, os.Getenv("FRONTEND_URL"))
 	donationHandler := handler.NewDonationHandler(donationRepo, settingsRepo, donationService)
 
@@ -273,6 +284,8 @@ func main() {
 
 	// Administration
 	adminHandler := handler.NewAdminHandler(productRepo, saleRepo, userRepo, referralRepo, adminPermRepo, payoutRepo, settingsRepo, ticketRepo, pool, storageHealthPinger, storageService, startTime, pawapay, kpay, paypal, notifications, redisCache, webhookHandler)
+	// Journal d'activité admin (backoffice 360°) — voir migration 028.
+	adminHandler.SetActivityRepo(repository.NewAdminActivityRepo(pool))
 
 	r := chi.NewRouter()
 
@@ -296,23 +309,30 @@ func main() {
 
 	r.Get("/health", healthHandler.ServeHTTP)
 
-	// Auth routes. authRateLimiter est volontairement bien plus strict que la
-	// limite globale (10 req/s) : le brute-force sur mot de passe/OTP se
-	// mesure en tentatives par minute, pas par seconde — 0.2 req/s (1 toutes
-	// les 5s en régime soutenu) avec une rafale de 8 laisse une marge pour un
-	// utilisateur qui se trompe plusieurs fois de suite, sans laisser un
-	// script tenter des centaines de mots de passe par minute.
+	// authRateLimiter : strict, réservé aux routes NON authentifiées sensibles
+	// au brute-force (mot de passe, réinitialisation). 0.2 req/s (1 toutes les
+	// 5s en régime soutenu) avec une rafale de 8 laisse la marge d'un
+	// utilisateur qui se trompe plusieurs fois sans laisser un script tenter
+	// des centaines de mots de passe par minute. Il ne s'applique PAS à
+	// /me, /refresh, /logout, /send-otp, /verify-otp, /verify-phone-firebase :
+	// ces routes sont soit déjà authentifiées, soit appelées légitimement en
+	// rafale par un client normal (rafraîchissement de token, plusieurs
+	// onglets, plusieurs essais de code) — les y soumettre renvoyait des 429
+	// à de vrais utilisateurs qui se croyaient déconnectés (incident
+	// 2026-09-07). Elles restent couvertes par la limite globale (10 req/s).
 	authRateLimiter := middleware.NewRateLimiter(redisCache, 0.2, 8)
 	r.Route("/api/auth", func(r chi.Router) {
-		r.Use(authRateLimiter.Middleware)
-		r.Post("/register", authHandler.Register)
-		r.Post("/login", authHandler.Login)
-		r.Post("/google", authHandler.GoogleLogin)
+		r.Group(func(r chi.Router) {
+			r.Use(authRateLimiter.Middleware)
+			r.Post("/register", authHandler.Register)
+			r.Post("/login", authHandler.Login)
+			r.Post("/google", authHandler.GoogleLogin)
+			r.Post("/verify-email", authHandler.VerifyEmail) // Ancien flux (lien) — conservé
+			r.Post("/forgot-password", authHandler.ForgotPassword)
+			r.Post("/reset-password", authHandler.ResetPassword)
+		})
 		r.Post("/logout", authHandler.Logout)
 		r.Post("/refresh", authHandler.Refresh)
-		r.Post("/verify-email", authHandler.VerifyEmail) // Ancien flux (lien) — conservé
-		r.Post("/forgot-password", authHandler.ForgotPassword)
-		r.Post("/reset-password", authHandler.ResetPassword)
 		r.With(middleware.RequireAuth(jwtManager)).Post("/send-otp", authHandler.SendOTP)
 		r.With(middleware.RequireAuth(jwtManager)).Post("/verify-otp", authHandler.VerifyOTP)
 		r.With(middleware.RequireAuth(jwtManager)).Post("/verify-phone-firebase", authHandler.VerifyPhoneFirebase)
@@ -369,6 +389,10 @@ func main() {
 	})
 
 	// Orders
+	// Public : indique au checkout si le bouton carte/PayPal doit être affiché
+	// (voir model.SettingCardPaymentEnabled et SaleHandler.CheckoutConfig).
+	r.Get("/api/checkout/config", saleHandler.CheckoutConfig)
+
 	r.Route("/api/orders", func(r chi.Router) {
 		// OptionalAuth : accessible sans compte (guest checkout), mais si un
 		// token valide est envoyé, l'acheteur est bien identifié comme
@@ -516,6 +540,7 @@ func main() {
 			r.Post("/payouts/{id}/settle-manual", adminHandler.SettlePayoutManual)
 			r.Post("/payouts/manual", adminHandler.CreateManualPayout)
 			r.Get("/activity", adminHandler.ActivityFeed)
+			r.Get("/activity-log", adminHandler.ActivityLog)
 			// Clé pour la création de produit automatisée (voir /api/automation/products ci-dessous).
 			r.Get("/automation/key", adminHandler.GetAutomationKey)
 			r.Post("/automation/key/regenerate", adminHandler.RegenerateAutomationKey)
