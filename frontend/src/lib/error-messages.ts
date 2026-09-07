@@ -31,6 +31,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   payment_details_required: 'Merci de renseigner votre numéro et votre opérateur mobile money.',
   unsupported_operator: "Cet opérateur n'est pas disponible pour ce pays.",
   invalid_phone_number: 'Numéro de téléphone invalide.',
+  invalid_phone: "Numéro de téléphone invalide (indicatif pays requis, ex : +221 77 123 45 67).",
+  phone_already_used: 'Ce numéro est déjà associé à un autre compte DIARRA.',
   product_not_found: 'Produit introuvable.',
   product_not_available: "Ce produit n'est plus disponible à la vente.",
   referral_link_not_found: "Lien d'affiliation introuvable.",
@@ -48,6 +50,8 @@ const ERROR_MESSAGES: Record<string, string> = {
   update_failed: 'Échec de la mise à jour, réessayez.',
   forbidden: "Vous n'avez pas accès à cette action.",
   not_found: 'Introuvable.',
+  product_in_use:
+    'Impossible de supprimer ce produit : il a déjà des ventes, des liens d\'affiliation ou fait partie d\'un pack. Refusez la demande de suppression à la place.',
 
   // Versements
   invalid_amount: 'Montant invalide.',

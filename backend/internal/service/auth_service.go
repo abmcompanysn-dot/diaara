@@ -23,6 +23,7 @@ var (
 	ErrInvalidOrExpiredToken = errors.New("invalid or expired token")
 	ErrInvalidRole           = errors.New("invalid role")
 	ErrInvalidPhone          = errors.New("invalid phone number")
+	ErrPhoneAlreadyUsed      = errors.New("phone number already used by another account")
 )
 
 const (
@@ -501,7 +502,13 @@ func (s *AuthService) UpdateProfile(ctx context.Context, userID string, input mo
 		}
 		phone = &normalized
 	}
-	return s.userRepo.SetProfileWithPhone(ctx, userID, input.DisplayName, input.ShopName, phone)
+	err := s.userRepo.SetProfileWithPhone(ctx, userID, input.DisplayName, input.ShopName, phone)
+	if err != nil && repository.IsUniqueViolation(err) {
+		// La seule contrainte unique sur ce UPDATE est users_phone_key : le
+		// numéro appartient déjà à un autre compte.
+		return ErrPhoneAlreadyUsed
+	}
+	return err
 }
 
 // normalizeAccountPhone met un numéro saisi librement au format international
