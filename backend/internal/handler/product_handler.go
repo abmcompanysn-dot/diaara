@@ -25,12 +25,16 @@ import (
 )
 
 type ProductHandler struct {
-	productRepo *repository.ProductRepo
-	userRepo    *repository.UserRepo
-	saleRepo    *repository.SaleRepo
-	storage     StorageService
-	frontendURL string
-	cache       *cache.Client
+	productRepo      *repository.ProductRepo
+	userRepo         *repository.UserRepo
+	saleRepo         *repository.SaleRepo
+	storage          StorageService
+	frontendURL      string
+	cache            *cache.Client
+	// notificationRepo : nil-safe, utilisé pour prévenir les admins quand une
+	// modification repasse un produit approuvé en attente (voir Update) —
+	// même mécanisme que WebhookHandler.notifyAdminsPayoutFailed.
+	notificationRepo *repository.NotificationRepo
 }
 
 // StorageService est l'interface minimale dont le handler a besoin.
@@ -40,8 +44,8 @@ type StorageService interface {
 	GenerateSignedURL(ctx context.Context, key string, expiry time.Duration) (string, error)
 }
 
-func NewProductHandler(productRepo *repository.ProductRepo, userRepo *repository.UserRepo, saleRepo *repository.SaleRepo, storage StorageService, frontendURL string, cacheClient *cache.Client) *ProductHandler {
-	return &ProductHandler{productRepo: productRepo, userRepo: userRepo, saleRepo: saleRepo, storage: storage, frontendURL: frontendURL, cache: cacheClient}
+func NewProductHandler(productRepo *repository.ProductRepo, userRepo *repository.UserRepo, saleRepo *repository.SaleRepo, storage StorageService, frontendURL string, cacheClient *cache.Client, notificationRepo *repository.NotificationRepo) *ProductHandler {
+	return &ProductHandler{productRepo: productRepo, userRepo: userRepo, saleRepo: saleRepo, storage: storage, frontendURL: frontendURL, cache: cacheClient, notificationRepo: notificationRepo}
 }
 
 // Shop — GET /api/vendors/{id}/shop (public). Boutique publique d'un
@@ -967,16 +971,45 @@ func (h *ProductHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	// Un produit déjà approuvé repasse en attente après modification : le
 	// contenu a changé, il doit être revalidé avant de redevenir visible.
-	if product.ModerationStatus == "approved" {
+	// Personne n'était prévenu que ça venait d'arriver (ni l'admin, ni même
+	// le vendeur au-delà du bandeau d'avertissement affiché AVANT la
+	// sauvegarde) — le produit disparaissait juste silencieusement du
+	// catalogue. On notifie maintenant les deux (voir notifyAdminsProductPending).
+	wentBackToPending := product.ModerationStatus == "approved"
+	if wentBackToPending {
 		if err := h.productRepo.UpdateModerationStatus(r.Context(), id, "pending", nil); err != nil {
 			http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
 			return
 		}
 		updated.ModerationStatus = "pending"
+		h.notifyAdminsProductPending(r.Context(), updated.ID, updated.Title)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"product": updated})
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"product":           updated,
+		"reverted_to_pending": wentBackToPending,
+	})
+}
+
+// notifyAdminsProductPending prévient tous les admins qu'un produit
+// auparavant approuvé vient de repasser en attente suite à une modification
+// vendeur — sans ça, rien ne distingue ce cas d'une simple nouvelle
+// soumission dans le compteur "en attente" (AdminHandler.Notifications),
+// et le produit peut rester invisible du catalogue sans que personne ne le
+// remarque. Best-effort, comme notifyAdminsPayoutFailed (webhook_handler.go).
+func (h *ProductHandler) notifyAdminsProductPending(ctx context.Context, productID, title string) {
+	if h.notificationRepo == nil || h.userRepo == nil {
+		return
+	}
+	adminIDs, err := h.userRepo.ListAdminIDs(ctx)
+	if err != nil {
+		return
+	}
+	msg := fmt.Sprintf("« %s » a été modifié par son vendeur et attend une nouvelle validation.", title)
+	for _, adminID := range adminIDs {
+		h.notificationRepo.Create(ctx, adminID, "product_pending_revalidation", "Produit à revalider", msg, "/admin/products")
+	}
 }
 
 // Delete — vendeur propriétaire ou admin. Un vendeur ne supprime jamais

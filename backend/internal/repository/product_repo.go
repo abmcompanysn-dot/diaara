@@ -9,10 +9,36 @@ import (
 
 	"github.com/diarra/backend/internal/model"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 var ErrProductNotFound = errors.New("product not found")
+
+// ErrProductInUse — suppression bloquée par une contrainte de clé étrangère
+// (le produit a des ventes, des liens d'affiliation, ou fait partie d'un
+// pack — jamais supprimés en cascade : ce sont des données financières/
+// historiques, voir migrations 001_init.sql/014_product_bundles.sql).
+// Table nomme la table qui bloque, pour un message admin explicite (voir
+// AdminHandler.ConfirmDeletion) plutôt qu'un 500 générique.
+type ErrProductInUse struct {
+	Table string
+}
+
+func (e *ErrProductInUse) Error() string {
+	return "product referenced by " + e.Table
+}
+
+// foreignKeyViolationTable renvoie la table qui bloque une suppression via
+// une contrainte de clé étrangère Postgres (23503), ou "" si err n'en est
+// pas une.
+func foreignKeyViolationTable(err error) string {
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) && pgErr.Code == "23503" {
+		return pgErr.TableName
+	}
+	return ""
+}
 
 type ProductRepo struct {
 	pool *pgxpool.Pool
@@ -401,6 +427,9 @@ func (r *ProductRepo) SetPreview(ctx context.Context, id string, keys []string, 
 func (r *ProductRepo) Delete(ctx context.Context, id string) error {
 	tag, err := r.pool.Exec(ctx, `DELETE FROM products WHERE id = $1`, id)
 	if err != nil {
+		if table := foreignKeyViolationTable(err); table != "" {
+			return &ErrProductInUse{Table: table}
+		}
 		return err
 	}
 	if tag.RowsAffected() == 0 {

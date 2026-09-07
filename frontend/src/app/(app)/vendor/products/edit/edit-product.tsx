@@ -60,6 +60,12 @@ export default function EditProduct() {
   const [coverPreview, setCoverPreview] = useState('');
   const [uploadingCover, setUploadingCover] = useState(false);
 
+  // Si la modif repasse un produit approuvé en attente, on ne redirige plus
+  // tout de suite (le vendeur ne voyait jamais cette info, le produit
+  // disparaissait juste du catalogue sans explication) — on affiche cette
+  // confirmation à la place, avec un bouton pour repartir volontairement.
+  const [revertedToPending, setRevertedToPending] = useState(false);
+
   useEffect(() => {
     if (!id) return;
     api
@@ -135,7 +141,7 @@ export default function EditProduct() {
         setUploadingFile(false);
       }
 
-      await api.updateProduct(id, {
+      const result = await api.updateProduct(id, {
         title,
         description,
         price_cfa: priceNum,
@@ -147,7 +153,16 @@ export default function EditProduct() {
         affiliate_enabled: affiliateEnabled,
         max_closer_commission_pct: affiliateEnabled ? parseInt(maxCommission, 10) || 0 : 0,
       });
-      router.push('/vendor/products');
+      if (result.reverted_to_pending) {
+        // On reste sur place le temps que le vendeur voie clairement ce qui
+        // vient de se passer, plutôt que de rediriger direct et le laisser
+        // découvrir plus tard, sans explication, que son produit a disparu
+        // du catalogue.
+        setStatus('pending');
+        setRevertedToPending(true);
+      } else {
+        router.push('/vendor/products');
+      }
     } catch (err: any) {
       setError(friendlyError(err));
     } finally {
@@ -190,6 +205,28 @@ export default function EditProduct() {
         {error && (
           <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded text-sm" role="alert">
             {error}
+          </div>
+        )}
+
+        {revertedToPending && (
+          <div
+            className="mb-4 p-4 bg-amber-50 border border-amber-200 text-amber-900 rounded-lg text-sm space-y-3"
+            role="status"
+          >
+            <p>
+              <span className="font-semibold">Modification enregistrée.</span> Comme ce produit
+              était déjà approuvé, il repasse en{' '}
+              <Badge className={PRODUCT_STATUS_BADGE.pending}>{PRODUCT_STATUS_LABELS.pending}</Badge>{' '}
+              et n&apos;est <strong>plus visible dans le catalogue</strong> le temps qu&apos;un
+              administrateur le revalide. Vous serez prévenu par email dès que ce sera fait.
+            </p>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => router.push('/vendor/products')}
+            >
+              Retour à mes produits
+            </Button>
           </div>
         )}
 

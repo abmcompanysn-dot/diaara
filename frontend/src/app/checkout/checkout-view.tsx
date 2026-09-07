@@ -32,13 +32,6 @@ interface Product {
 
 const formatPrice = (price: number) => `${price.toLocaleString()} FCFA`;
 
-// Paiement carte bancaire / compte PayPal : géré par l'intégration PayPal
-// (Orders API v2, flux hosted redirect — voir resolveCheckoutProvider et
-// initiatePayPalCheckout côté backend). Nécessite PAYPAL_CLIENT_ID /
-// PAYPAL_CLIENT_SECRET (+ PAYPAL_WEBHOOK_ID) dans le .env du serveur ; sans
-// eux le backend renvoie payment_init_failed sur cette voie.
-const CARD_PAYMENT_ENABLED = true;
-
 export default function CheckoutView() {
   const searchParams = useSearchParams();
   const productId = searchParams.get('product') || '';
@@ -55,6 +48,14 @@ export default function CheckoutView() {
   const [paymentMethod, setPaymentMethod] = useState<'mobile_money' | 'card' | 'paypal'>('mobile_money');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Paiement carte bancaire / compte PayPal (Orders API v2, flux hosted
+  // redirect — voir resolveCheckoutProvider côté backend). Piloté par un
+  // réglage admin (model.SettingCardPaymentEnabled, /admin/settings) plutôt
+  // qu'un flag figé ici : un admin peut couper ce flux à la volée sans
+  // redéploiement (ex. souci PayPal, retour forcé sur PawaPay seul). Par
+  // défaut false le temps du chargement pour ne pas afficher puis
+  // faire disparaître le bouton.
+  const [cardPaymentEnabled, setCardPaymentEnabled] = useState(false);
 
   const guest = !isLoggedIn();
   const selectedCountry = CHECKOUT_COUNTRIES.find((c) => c.code === country);
@@ -74,6 +75,13 @@ export default function CheckoutView() {
       if (user.display_name && !name) setName(user.display_name);
     }
   }, [user, guest]);
+
+  useEffect(() => {
+    api
+      .getCheckoutConfig()
+      .then((res) => setCardPaymentEnabled(!!res.card_payment_enabled))
+      .catch(() => setCardPaymentEnabled(false));
+  }, []);
 
   useEffect(() => {
     if (!productId) {
@@ -266,7 +274,7 @@ export default function CheckoutView() {
 
             <div className="space-y-2">
               <Label>Moyen de paiement</Label>
-              <div className={`grid gap-2 ${CARD_PAYMENT_ENABLED ? 'grid-cols-2' : 'grid-cols-1'}`}>
+              <div className={`grid gap-2 ${cardPaymentEnabled ? 'grid-cols-2' : 'grid-cols-1'}`}>
                 <button
                   type="button"
                   onClick={() => setPaymentMethod('mobile_money')}
@@ -281,7 +289,7 @@ export default function CheckoutView() {
                     Orange, Wave, MTN, Moov…
                   </span>
                 </button>
-                {CARD_PAYMENT_ENABLED && (
+                {cardPaymentEnabled && (
                   <button
                     type="button"
                     onClick={() => setPaymentMethod('card')}

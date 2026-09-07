@@ -41,6 +41,15 @@ type SaleHandler struct {
 	commissionSvc *service.CommissionService
 	notifications *email.NotificationService
 	frontendURL   string
+	// webhook : réutilisé pour ConfirmPaidSale (statut persisté + emails +
+	// notifs + cagnotte + cache) quand CheckoutStatus détecte un paiement
+	// confirmé par polling plutôt que par webhook — voir SetWebhookHandler.
+	// Sans ça, CheckoutStatus se contentait de RENVOYER "paid" au client
+	// (l'écran affichait "Paiement confirmé") sans jamais l'ÉCRIRE en base :
+	// la vente restait "pending" indéfiniment, bloquant le téléchargement
+	// (order_not_paid) et empêchant l'email de confirmation de partir
+	// (incident 2026-09-05).
+	webhook *WebhookHandler
 }
 
 func NewSaleHandler(
@@ -68,6 +77,13 @@ func NewSaleHandler(
 		notifications: notifications,
 		frontendURL:   strings.TrimSuffix(frontendURL, "/"),
 	}
+}
+
+// SetWebhookHandler branche WebhookHandler après coup (référence circulaire
+// évitée : WebhookHandler n'a pas besoin de SaleHandler, mais l'inverse
+// oui — appelé une fois dans main.go juste après la construction des deux).
+func (h *SaleHandler) SetWebhookHandler(webhook *WebhookHandler) {
+	h.webhook = webhook
 }
 
 // resolveDepositProvider retourne l'adaptateur PaymentProvider (statut/
@@ -104,13 +120,32 @@ func (h *SaleHandler) resolveDepositProvider(providerName string) payment.Paymen
 // d'écrire "kpay" pour ce réglage, ceci est la deuxième barrière côté lecture.
 func (h *SaleHandler) resolveCheckoutProvider(ctx context.Context, country, paymentMethod string) string {
 	if paymentMethod == "card" || paymentMethod == "paypal" {
-		return "paypal"
+		// Coupe-circuit admin (model.SettingCardPaymentEnabled) : si désactivé,
+		// on replie silencieusement sur PawaPay plutôt que d'échouer — le
+		// frontend est censé avoir déjà masqué le bouton (voir CheckoutConfig),
+		// ceci est le filet de sécurité si un client web périmé envoie quand
+		// même "card"/"paypal".
+		if h.settingsRepo.GetBool(ctx, model.SettingCardPaymentEnabled, true) {
+			return "paypal"
+		}
+		return h.settingsRepo.Get(ctx, model.CheckoutProviderSettingKey(country), "pawapay")
 	}
 	provider := h.settingsRepo.Get(ctx, model.CheckoutProviderSettingKey(country), "pawapay")
 	if provider == "kpay" {
 		return "pawapay"
 	}
 	return provider
+}
+
+// CheckoutConfig — GET /api/checkout/config (public, pas d'auth) : indique au
+// frontend si le bouton "Carte bancaire / PayPal" doit être affiché.
+// Interrupteur indépendant de la config serveur PAYPAL_CLIENT_ID/SECRET —
+// permet à un admin de couper ce flux à la volée (voir
+// model.SettingCardPaymentEnabled) sans redéployer.
+func (h *SaleHandler) CheckoutConfig(w http.ResponseWriter, r *http.Request) {
+	enabled := h.paypal != nil && h.settingsRepo.GetBool(r.Context(), model.SettingCardPaymentEnabled, true)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"card_payment_enabled": enabled})
 }
 
 // Create — l'acheteur crée une commande et initie un dépôt mobile money PawaPay
@@ -328,11 +363,36 @@ func (h *SaleHandler) CheckoutStatus(w http.ResponseWriter, r *http.Request) {
 			if outcome.UpdatedProviderRef != "" {
 				h.saleRepo.SetProviderTransactionID(r.Context(), sale.ID, outcome.UpdatedProviderRef)
 			}
-			switch outcome.Status {
-			case "completed":
-				status = string(model.SalePaid)
-			case "failed", "cancelled":
+			switch {
+			case outcome.Status == "completed":
+				// Persisté via ConfirmPaidSale (statut + emails + notifs +
+				// cagnotte + cache), pas un simple UpdateStatus : jusqu'ici
+				// rien n'était écrit en base ici, seul le JSON de réponse
+				// affichait "paid" — la vente restait "pending" en base pour
+				// de vrai tant qu'aucun webhook n'arrivait, bloquant le
+				// téléchargement (order_not_paid) et l'email de confirmation
+				// (incident 2026-09-05). ConfirmPaidSale est lui-même
+				// idempotent (no-op si déjà "paid").
+				if h.webhook != nil {
+					if err := h.webhook.ConfirmPaidSale(r.Context(), sale); err == nil {
+						status = string(model.SalePaid)
+					}
+				} else {
+					status = string(model.SalePaid)
+				}
+			case outcome.Status == "failed" || outcome.Status == "cancelled":
 				status = string(model.SaleFailed)
+				h.saleRepo.UpdateStatus(r.Context(), sale.ID, status)
+			// NotFound (PawaPay) : l'acheteur n'a jamais validé sur leur page
+			// hébergée. Un NOT_FOUND immédiatement après création peut juste
+			// être un léger décalage côté PawaPay — on laisse une marge de 3
+			// minutes avant de le considérer définitivement abandonné, sinon
+			// l'écran d'attente du checkout tournerait indéfiniment (incident
+			// 2026-09-04, voir DepositOutcome.NotFound). Persisté une fois
+			// pour ne plus refaire cet appel prestataire à chaque poll suivant.
+			case outcome.NotFound && time.Since(sale.CreatedAt) > 3*time.Minute:
+				status = string(model.SaleFailed)
+				h.saleRepo.UpdateStatus(r.Context(), sale.ID, status)
 			}
 		}
 	}
@@ -340,12 +400,17 @@ func (h *SaleHandler) CheckoutStatus(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"order": map[string]interface{}{
-			"id":          sale.ID,
-			"status":      status,
-			"amount_cfa":  sale.AmountCFA,
-			"product_id":  sale.ProductID,
-			"created_at":  sale.CreatedAt,
+			"id":           sale.ID,
+			"status":       status,
+			"amount_cfa":   sale.AmountCFA,
+			"product_id":   sale.ProductID,
+			"created_at":   sale.CreatedAt,
 			"delivered_at": sale.DeliveredAt,
+			// payment_provider : affiché sur l'écran d'attente (checkout/return)
+			// pour que le message reflète le VRAI prestataire ("PayPal" au lieu
+			// de "PawaPay" codé en dur, incident 2026-09-04) — jamais exposé
+			// avant, alors que resolveCheckoutProvider connaît déjà cette info.
+			"payment_provider": sale.PaymentProvider,
 		},
 	})
 }
@@ -633,9 +698,6 @@ func (h *SaleHandler) initiatePaymentPage(ctx context.Context, sale *model.Sale,
 		Reason:          reason,
 		CustomerMessage: "PAIEMENT DIARRA",
 		Language:        "FR",
-		// Sans callbackUrl, PawaPay ne pousse jamais le statut final : la vente
-		// reste "pending" même après paiement (voir PaymentPageRequest.CallbackUrl).
-		CallbackUrl: h.pawapay.CallbackURL(),
 		Metadata: []payment.MetadataItem{
 			{"saleId": sale.ID},
 			{"product": product.Title},

@@ -326,6 +326,12 @@ export default function AdminDashboardPage() {
               >
                 <span className="text-sm font-medium text-green-950">Support (tickets en direct)</span>
               </Link>
+              <Link
+                href="/admin/activity-log"
+                className="flex items-center justify-between p-3 rounded-lg hover:bg-green-900/5 transition-colors"
+              >
+                <span className="text-sm font-medium text-green-950">Journal d&apos;activité admin</span>
+              </Link>
             </div>
           </div>
 

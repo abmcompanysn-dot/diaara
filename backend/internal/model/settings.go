@@ -30,6 +30,14 @@ const (
 	// pays peut le surcharger (voir WhatsAppCommunitySettingKey) ; à défaut on
 	// retombe sur ce lien général.
 	SettingWhatsAppCommunityURL = "whatsapp_community_url"
+
+	// SettingCardPaymentEnabled — interrupteur admin pour le paiement carte
+	// bancaire/PayPal au checkout (valeurs "true"/"false", "true" par défaut
+	// si absent). Coupe-circuit indépendant de PAYPAL_CLIENT_ID/SECRET : sert
+	// à désactiver ce flux à la volée (ex. souci PayPal) sans toucher au
+	// serveur, en repliant le checkout sur PawaPay (mobile money) seul — voir
+	// SaleHandler.resolveCheckoutProvider et SaleHandler.CheckoutConfig.
+	SettingCardPaymentEnabled = "card_payment_enabled"
 )
 
 // WhatsAppCommunitySettingKey — lien communauté WhatsApp spécifique à un pays

@@ -239,16 +239,23 @@ type PaymentPageRequest struct {
 	CustomerMessage string         `json:"customerMessage,omitempty"` // 4-22 caractères
 	Language        string         `json:"language,omitempty"`        // "EN" ou "FR"
 	Metadata        []MetadataItem `json:"metadata,omitempty"`
-	// CallbackUrl : URL de notre webhook où PawaPay pousse le statut final du
-	// dépôt. SANS ce champ, PawaPay ne rappelle jamais et la vente reste
-	// "pending" indéfiniment même après un paiement réussi (incident du
-	// 2026-09-02 : plus aucune vente confirmée depuis le 18/08 faute de ce
-	// champ ici). Renseigné depuis PAWAPAY_CALLBACK_URL — voir CallbackURL().
-	CallbackUrl string `json:"callbackUrl,omitempty"`
+	// Pas de champ callbackUrl ici : contrairement à DepositRequest (dépôt
+	// direct), l'API Payment Page (POST /v2/paymentpage) REJETTE ce paramètre
+	// (UNSUPPORTED_PARAMETER, incident 2026-09-03 — retiré après l'avoir
+	// ajouté par erreur suite à l'incident du 2026-09-02, qui avait la bonne
+	// cause — "aucun webhook reçu" — mais le mauvais remède). L'URL de
+	// callback pour les Payment Pages se configure UNE FOIS, côté tableau de
+	// bord PawaPay (Merchant settings > Callback URL), pas par requête — voir
+	// PAWAPAY_CALLBACK_URL en commentaire dans .env.example pour le rappel.
+	// Le filet de sécurité (RunDepositReconcileLoop + bouton admin "Vérifier
+	// chez PawaPay") reste actif si jamais ce réglage dashboard n'est pas fait.
 }
 
-// CallbackURL expose l'URL de webhook configurée (PAWAPAY_CALLBACK_URL), pour
-// que l'appelant la place dans DepositRequest.CallbackUrl / PaymentPageRequest.
+// CallbackURL expose l'URL de webhook configurée (PAWAPAY_CALLBACK_URL) —
+// PLUS utilisée dans aucune requête PawaPay (voir PaymentPageRequest, qui
+// n'a plus de champ callbackUrl), gardée pour affichage diagnostic éventuel
+// (ex. une page admin rappelant l'URL à configurer côté tableau de bord
+// PawaPay).
 func (c *PawaPayClient) CallbackURL() string {
 	return c.cfg.CallbackURL
 }

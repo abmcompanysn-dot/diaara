@@ -3,12 +3,14 @@ package handler
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"mime"
 	"net/http"
 	"path/filepath"
 	"runtime"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -54,6 +56,33 @@ type AdminHandler struct {
 	// cagnotte + cache) depuis la vérification manuelle d'une vente chez le
 	// prestataire — même effet exact qu'un webhook PawaPay reçu.
 	webhook *WebhookHandler
+	// activityRepo : journal d'activité admin (backoffice 360°) — nil-safe,
+	// injecté après coup (voir SetActivityRepo) pour ne pas allonger encore
+	// la liste de paramètres de NewAdminHandler.
+	activityRepo *repository.AdminActivityRepo
+}
+
+// SetActivityRepo branche le journal d'activité admin après construction.
+func (h *AdminHandler) SetActivityRepo(repo *repository.AdminActivityRepo) {
+	h.activityRepo = repo
+}
+
+// logActivity enregistre une action admin en tâche de fond — jamais
+// bloquant, jamais une cause d'échec de l'action réelle qu'il décrit (voir
+// AdminActivityRepo.Log). adminID vient de middleware.GetUserID ; passer ""
+// pour une action automatique (cron) sans admin humain.
+func (h *AdminHandler) logActivity(adminID, action, targetType, targetID, description string) {
+	if h.activityRepo == nil {
+		return
+	}
+	var adminIDPtr, targetIDPtr *string
+	if adminID != "" {
+		adminIDPtr = &adminID
+	}
+	if targetID != "" {
+		targetIDPtr = &targetID
+	}
+	go h.activityRepo.Log(context.Background(), adminIDPtr, action, targetType, targetIDPtr, description)
 }
 
 func NewAdminHandler(
@@ -152,6 +181,13 @@ func (h *AdminHandler) Moderate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	verb := "approuvé"
+	if input.Status == "rejected" {
+		verb = "refusé"
+	}
+	h.logActivity(middleware.GetUserID(r.Context()), "product_"+input.Status, "product", id,
+		fmt.Sprintf("Produit « %s » %s", product.Title, verb))
+
 	// Notifie le vendeur de la décision par email (best-effort, non bloquant :
 	// la modération est déjà enregistrée, un échec d'envoi ne doit pas la
 	// faire échouer).
@@ -209,15 +245,43 @@ func (h *AdminHandler) DownloadProductFile(w http.ResponseWriter, r *http.Reques
 	json.NewEncoder(w).Encode(map[string]string{"signed_url": url})
 }
 
+// productInUseLabels traduit la table bloquante (voir repository.ErrProductInUse)
+// en explication compréhensible côté admin.
+var productInUseLabels = map[string]string{
+	"sales":           "il a déjà des ventes enregistrées",
+	"referral_links":  "il a des liens d'affiliation créés par un closer",
+	"bundle_products": "il fait partie d'un pack de produits",
+}
+
 // ConfirmDeletion — DELETE /api/admin/products/{id} : supprime
 // définitivement un produit dont le vendeur a demandé la suppression.
+//
+// La suppression est refusée par la base (contrainte de clé étrangère, pas
+// de cascade) dès que le produit a une vente, un lien d'affiliation, ou
+// appartient à un pack — volontaire : ce sont des données financières/
+// historiques (commissions, comptabilité) qu'on ne veut jamais perdre
+// silencieusement. Avant ce correctif, l'admin voyait juste un 500 générique
+// sans explication (incident du 2026-09-04) ; on renvoie maintenant une
+// raison claire, à charge pour l'admin de refuser la suppression (via
+// CancelDeletion) plutôt que d'insister.
 func (h *AdminHandler) ConfirmDeletion(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
 	if err := h.productRepo.Delete(r.Context(), id); err != nil {
+		var inUse *repository.ErrProductInUse
+		if errors.As(err, &inUse) {
+			reason := productInUseLabels[inUse.Table]
+			if reason == "" {
+				reason = "il est référencé ailleurs (" + inUse.Table + ")"
+			}
+			http.Error(w, fmt.Sprintf(`{"error":"product_in_use","reason":%q}`, reason), http.StatusConflict)
+			return
+		}
 		http.Error(w, `{"error":"delete_failed"}`, http.StatusInternalServerError)
 		return
 	}
+
+	h.logActivity(middleware.GetUserID(r.Context()), "product_deleted", "product", id, "Produit supprimé définitivement")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "deleted"})
@@ -252,6 +316,8 @@ func (h *AdminHandler) SuspendUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"suspension_failed"}`, http.StatusInternalServerError)
 		return
 	}
+
+	h.logActivity(middleware.GetUserID(r.Context()), "user_suspended", "user", id, "Compte suspendu 30 jours")
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "suspended"})
@@ -428,6 +494,7 @@ func (h *AdminHandler) ReactivateUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"reactivation_failed"}`, http.StatusInternalServerError)
 		return
 	}
+	h.logActivity(middleware.GetUserID(r.Context()), "user_reactivated", "user", id, "Compte réactivé")
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "active"})
 }
@@ -553,6 +620,12 @@ func (h *AdminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if enabled, ok := input[model.SettingCardPaymentEnabled]; ok {
+		if enabled != "true" && enabled != "false" {
+			http.Error(w, `{"error":"invalid_card_payment_enabled"}`, http.StatusBadRequest)
+			return
+		}
+	}
 	// Réglages par opérateur (versements) et par pays (checkout) — voir
 	// model.GatewayOperatorSettingKey / CheckoutProviderSettingKey. KPay est
 	// suspendu (2026-09-03) : "kpay" est refusé pour les deux familles de
@@ -587,6 +660,12 @@ func (h *AdminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"settings_update_failed"}`, http.StatusInternalServerError)
 		return
 	}
+	keys := make([]string, 0, len(input))
+	for k := range input {
+		keys = append(keys, k)
+	}
+	h.logActivity(middleware.GetUserID(r.Context()), "settings_updated", "settings", strings.Join(keys, ","),
+		fmt.Sprintf("Réglages modifiés : %s", strings.Join(keys, ", ")))
 	settings, err := h.settingsRepo.All(r.Context())
 	if err != nil {
 		http.Error(w, `{"error":"settings_failed"}`, http.StatusInternalServerError)
@@ -935,6 +1014,44 @@ func (h *AdminHandler) ActivityFeed(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"activity": items})
+}
+
+// ActivityLog — GET /api/admin/activity-log?page=1&per_page=30
+// Journal des actions ADMIN (qui a approuvé/refusé/remboursé/suspendu quoi),
+// à distinguer de ActivityFeed ci-dessus (événements plateforme : nouvelles
+// ventes/utilisateurs/versements, sans notion d'auteur). Backoffice 360°.
+func (h *AdminHandler) ActivityLog(w http.ResponseWriter, r *http.Request) {
+	if h.activityRepo == nil {
+		http.Error(w, `{"error":"activity_log_unavailable"}`, http.StatusServiceUnavailable)
+		return
+	}
+	page := 1
+	if p, err := strconv.Atoi(r.URL.Query().Get("page")); err == nil && p > 0 {
+		page = p
+	}
+	perPage := 30
+	if pp, err := strconv.Atoi(r.URL.Query().Get("per_page")); err == nil && pp > 0 && pp <= 100 {
+		perPage = pp
+	}
+
+	logs, err := h.activityRepo.List(r.Context(), perPage, (page-1)*perPage)
+	if err != nil {
+		http.Error(w, `{"error":"activity_log_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	total, err := h.activityRepo.Count(r.Context())
+	if err != nil {
+		http.Error(w, `{"error":"activity_log_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"logs":     logs,
+		"total":    total,
+		"page":     page,
+		"per_page": perPage,
+	})
 }
 
 // Notifications — GET /api/admin/notifications (tout admin, pas de scope
@@ -1302,6 +1419,9 @@ func (h *AdminHandler) RefundSale(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	h.logActivity(middleware.GetUserID(r.Context()), "sale_refund_initiated", "sale", id,
+		fmt.Sprintf("Remboursement initié : %d FCFA (%s)", sale.AmountCFA, sale.PaymentProvider))
+
 	if sale.PaymentProvider == "kpay" {
 		if h.kpay == nil {
 			http.Error(w, `{"error":"payment_not_configured"}`, http.StatusServiceUnavailable)
@@ -1467,6 +1587,13 @@ func (h *AdminHandler) SetAdminStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	_ = h.userRepo.RevokeAllUserRefreshTokens(r.Context(), id)
 
+	verb := "promu administrateur"
+	if !isAdmin {
+		verb = "rétrogradé"
+	}
+	h.logActivity(middleware.GetUserID(r.Context()), "admin_status_"+input.Action, "user", id,
+		fmt.Sprintf("Utilisateur %s", verb))
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "admin_status_updated"})
 }
@@ -1501,6 +1628,9 @@ func (h *AdminHandler) SetAdminPermission(w http.ResponseWriter, r *http.Request
 		return
 	}
 	_ = h.userRepo.RevokeAllUserRefreshTokens(r.Context(), id)
+
+	h.logActivity(middleware.GetUserID(r.Context()), "admin_permission_"+input.Action, "user", id,
+		fmt.Sprintf("Permission « %s » %s", input.Permission, map[string]string{"grant": "accordée", "revoke": "retirée"}[input.Action]))
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "permission_updated"})

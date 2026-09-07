@@ -15,6 +15,7 @@ import { CopyIcon, CheckIcon } from '@/components/icons';
 import { PRODUCT_STATUS_BADGE, PRODUCT_STATUS_LABELS, CATEGORY_LABELS } from '@/lib/constants';
 import { friendlyError } from '@/lib/error-messages';
 import { cn } from '@/lib/utils';
+import { ProductImage } from '@/components/product-image';
 
 interface Product {
   id: string;
@@ -27,6 +28,7 @@ interface Product {
   moderation_status: string;
   moderation_note?: string | null;
   file_key?: string;
+  cover_image_key?: string;
   image_prompt?: string | null;
   deletion_requested?: boolean;
   created_at: string;
@@ -196,20 +198,30 @@ export default function AdminProductsPage() {
           <div className="space-y-4">
             {displayedProducts.map((product) => (
               <div key={product.id} className="p-6 border rounded-xl bg-white shadow-card border-green-900/10">
-                <div className="flex justify-between items-start mb-2 gap-3">
-                  <h2 className="font-display font-bold text-lg text-green-950">{product.title}</h2>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <Badge className={PRODUCT_STATUS_BADGE[product.moderation_status]}>
-                      {PRODUCT_STATUS_LABELS[product.moderation_status] || product.moderation_status}
-                    </Badge>
-                    <span className="font-mono font-bold text-green-600">
-                      {product.price_cfa.toLocaleString('fr-FR')} FCFA
-                    </span>
+                <div className="flex gap-4">
+                  {/* Aperçu de la couverture : absent jusqu'ici, l'admin ne
+                      pouvait vérifier une image que via une modification
+                      apportée par le vendeur (ex. juste un changement de
+                      photo) qu'en téléchargeant le fichier livrable, quand il
+                      existait — ce qui n'a rien à voir avec la couverture. */}
+                  <div className="w-20 h-20 rounded-lg overflow-hidden shrink-0 bg-green-50">
+                    <ProductImage product={product} className="w-20 h-20" />
                   </div>
-                </div>
-                <p className="text-green-900/70 text-sm mb-4 leading-relaxed">
-                  {product.description || 'Pas de description'}
-                </p>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex justify-between items-start mb-2 gap-3">
+                      <h2 className="font-display font-bold text-lg text-green-950">{product.title}</h2>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <Badge className={PRODUCT_STATUS_BADGE[product.moderation_status]}>
+                          {PRODUCT_STATUS_LABELS[product.moderation_status] || product.moderation_status}
+                        </Badge>
+                        <span className="font-mono font-bold text-green-600">
+                          {product.price_cfa.toLocaleString('fr-FR')} FCFA
+                        </span>
+                      </div>
+                    </div>
+                    <p className="text-green-900/70 text-sm mb-4 leading-relaxed">
+                      {product.description || 'Pas de description'}
+                    </p>
                 {product.moderation_status === 'rejected' && product.moderation_note && (
                   <p className="text-sm text-red-600 mb-4">Raison du refus : {product.moderation_note}</p>
                 )}
@@ -300,6 +312,8 @@ export default function AdminProductsPage() {
                       Refuser
                     </Button>
                   )}
+                </div>
+                  </div>
                 </div>
               </div>
             ))}

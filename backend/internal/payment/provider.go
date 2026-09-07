@@ -49,6 +49,14 @@ type DepositOutcome struct {
 	// capturée). L'appelant doit alors persister cette valeur via
 	// SetProviderTransactionID — voir paypalAdapter.GetDepositStatus.
 	UpdatedProviderRef string
+	// NotFound — PawaPay uniquement : le dépôt n'existe pas chez eux
+	// (l'acheteur n'a jamais validé sur leur page hébergée, ou a fermé avant
+	// la fin). Sans ce champ, resp.Data == nil se confondait avec un dépôt
+	// "encore en cours" (Status: "pending" dans les deux cas) — l'écran
+	// d'attente du checkout tournait alors indéfiniment sans jamais afficher
+	// d'échec, même quand PawaPay ne verrait PLUS JAMAIS ce paiement aboutir
+	// (incident 2026-09-04). Voir SaleHandler.CheckoutStatus.
+	NotFound bool
 }
 
 type PayoutOp struct {
@@ -107,7 +115,7 @@ func (a pawaPayAdapter) GetDepositStatus(ctx context.Context, depositID string) 
 		return DepositOutcome{}, err
 	}
 	if resp.Data == nil {
-		return DepositOutcome{Status: "pending"}, nil
+		return DepositOutcome{Status: "pending", NotFound: true}, nil
 	}
 	out := DepositOutcome{Status: normalizePawaPayStatus(resp.Data.Status)}
 	if resp.Data.FailureReason != nil {

@@ -846,8 +846,28 @@ func (h *WebhookHandler) reconcileDepositsPass(ctx context.Context) {
 	confirmed, failed := 0, 0
 	for _, sale := range sales {
 		status, err := h.pawapay.GetDepositStatus(ctx, sale.PaymentReference)
-		if err != nil || status.Data == nil {
-			continue // NOT_FOUND (panier abandonné) ou erreur transitoire : on retentera
+		if err != nil {
+			continue // erreur transitoire : on retentera au prochain passage
+		}
+		if status.Data == nil {
+			// NOT_FOUND : l'acheteur n'a jamais validé sur la page PawaPay
+			// hébergée. Traité comme "encore en cours" indéfiniment jusqu'ici
+			// — ces ventes ne se résolvaient JAMAIS, ni ici ni via le
+			// checkout/return du client (même bug, corrigé là le 2026-09-04,
+			// oublié ici). Même délai de grâce de 3 minutes avant de
+			// considérer que ça n'aboutira plus (incident 2026-09-05,
+			// plusieurs ventes de test restées "En attente" indéfiniment).
+			if time.Since(sale.CreatedAt) > 3*time.Minute {
+				if err := h.saleRepo.UpdateStatus(ctx, sale.ID, string(model.SaleFailed)); err == nil {
+					if h.notifications != nil {
+						go h.notifyFailed(context.Background(), sale)
+					}
+					h.notify(ctx, sale.BuyerID, "order_failed", "Paiement échoué",
+						"Votre paiement n'a pas pu être traité, réessayez.", "/orders")
+					failed++
+				}
+			}
+			continue
 		}
 		switch status.Data.Status {
 		case "COMPLETED":
@@ -1034,7 +1054,13 @@ func (h *WebhookHandler) notifyPaid(ctx context.Context, sale *model.Sale) {
 
 	buyer, err := h.userRepo.FindByID(ctx, sale.BuyerID)
 	if err == nil && buyer.Email != "" && sale.CheckoutToken != nil {
-		h.notifications.SendOrderConfirmed(ctx, buyer.Email, sale.BuyerName, product.Title, sale.AmountCFA, *sale.CheckoutToken, h.fileAttachment(ctx, product.FileKey))
+		// Erreur ignorée jusqu'ici (sale=... sans aucune trace nulle part si
+		// Resend/SMTP échoue — incident 2026-09-05 : un acheteur payé n'a
+		// jamais reçu son email de confirmation, sans que rien ne le signale
+		// côté serveur). Désormais loguée explicitement.
+		if sendErr := h.notifications.SendOrderConfirmed(ctx, buyer.Email, sale.BuyerName, product.Title, sale.AmountCFA, *sale.CheckoutToken, h.fileAttachment(ctx, product.FileKey)); sendErr != nil {
+			log.Printf("email confirmation achat: échec envoi à %s pour sale=%s: %v", buyer.Email, sale.ID, sendErr)
+		}
 	}
 
 	vendor, err := h.userRepo.FindByID(ctx, product.VendorID)
@@ -1042,7 +1068,9 @@ func (h *WebhookHandler) notifyPaid(ctx context.Context, sale *model.Sale) {
 		return
 	}
 	if vendor.Email != "" {
-		h.notifications.SendVendorSale(ctx, vendor.Email, product.Title, sale.VendorAmountCFA)
+		if sendErr := h.notifications.SendVendorSale(ctx, vendor.Email, product.Title, sale.VendorAmountCFA); sendErr != nil {
+			log.Printf("email nouvelle vente vendeur: échec envoi à %s pour sale=%s: %v", vendor.Email, sale.ID, sendErr)
+		}
 	}
 }
 

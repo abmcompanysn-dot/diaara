@@ -1,0 +1,72 @@
+# =====================================================================
+# diarra — API servie par ce VPS (169.58.214.115), maintenant via k3s
+# (ingress-nginx, NodePort 30080) au lieu de docker-compose directement.
+# Frontend : Cloudflare Worker "diaara" (diarra.app).
+# API publique : https://api.diarra.app  (Cloudflare proxied, SSL mode Full)
+#   -> Cloudflare termine le TLS public et parle a ce VPS en HTTPS
+#      sur le certificat self-signed ci-dessous (accepte en mode Full).
+# docker-compose reste installe mais ETEINT (backend/backend2) — filet de
+# secours : `docker compose up -d backend backend2` + repointer ce fichier
+# vers 127.0.0.1:8080/8082 si besoin de revenir en arriere.
+# =====================================================================
+
+https://api.diarra.app, https://diarra.app, https://www.diarra.app {
+	tls /etc/caddy/certs/selfsigned.crt /etc/caddy/certs/selfsigned.key
+
+	encode zstd gzip
+
+	# ingress-nginx route par Host header (voir k8s/ingress.yaml, host:
+	# api.diarra.app) — sans header_up Host explicite, il recevrait "api.diarra.app"
+	# de toute facon ici (deja le Host entrant), mais on le fixe pour ne
+	# jamais dependre implicitement de {host} si un jour diarra.app/www est
+	# aussi route ici.
+	handle /api/* {
+		reverse_proxy 127.0.0.1:30080 {
+			header_up Host api.diarra.app
+			health_uri /health
+			health_interval 10s
+		}
+	}
+	handle /ws/* {
+		reverse_proxy 127.0.0.1:30080 {
+			header_up Host api.diarra.app
+			health_uri /health
+			health_interval 10s
+		}
+	}
+	handle /p/* {
+		reverse_proxy 127.0.0.1:30080 {
+			header_up Host api.diarra.app
+		}
+	}
+	handle /r/* {
+		reverse_proxy 127.0.0.1:30080 {
+			header_up Host api.diarra.app
+		}
+	}
+	handle /feed/* {
+		reverse_proxy 127.0.0.1:30080 {
+			header_up Host api.diarra.app
+		}
+	}
+	handle /sitemap.xml {
+		reverse_proxy 127.0.0.1:30080 {
+			header_up Host api.diarra.app
+		}
+	}
+	handle /health {
+		reverse_proxy 127.0.0.1:30080 {
+			header_up Host api.diarra.app
+		}
+	}
+}
+
+# --- Stockage objet MinIO (k3s, NodePort 30900) expose via Cloudflare ---
+# Les URL signees S3 sont calculees par le backend pour Host=files.diarra.app :
+# on DOIT transmettre ce Host tel quel a MinIO, sinon SignatureDoesNotMatch.
+https://files.diarra.app {
+	tls /etc/caddy/certs/selfsigned.crt /etc/caddy/certs/selfsigned.key
+	reverse_proxy 127.0.0.1:30900 {
+		header_up Host {host}
+	}
+}

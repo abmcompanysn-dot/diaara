@@ -103,6 +103,15 @@ async function checkRateLimit(request: Request, env: Env): Promise<boolean> {
 function getRateLimit(pathname: string): number {
   if (pathname.includes('/auth/login')) return 5;
   if (pathname.includes('/auth/register')) return 3;
+  // /orders/status : suivi de paiement, interrogé toutes les 3s depuis
+  // checkout/return pendant que l'acheteur attend la confirmation — 20
+  // requêtes/minute rien que pour ça. Confondu avec la création de commande
+  // (POST /api/orders, ci-dessous) sous la même limite de 10/min : le
+  // polling se faisait bloquer par CE Worker avant même d'atteindre le
+  // backend Go (dont le rate-limiter, lui, avait déjà été élargi pour cette
+  // route — incident 2026-09-05, la vraie cause du blocage était ici, un
+  // étage plus tôt). Vérifié AVANT le cas générique "/orders" ci-dessous.
+  if (pathname.includes('/orders/status')) return 40;
   if (pathname.includes('/orders')) return 10;
   return 30;
 }

@@ -21,6 +21,14 @@ interface PurchasedProduct {
 const POLL_INTERVAL_MS = 3000;
 const MAX_AUTO_POLLS = 20; // ~60s avant de proposer une vérification manuelle
 
+// Nom affiché du prestataire réel (sale.payment_provider) — le message
+// disait "PawaPay" en dur même pour un paiement PayPal (incident 2026-09-04).
+const PROVIDER_LABELS: Record<string, string> = {
+  pawapay: 'PawaPay',
+  paypal: 'PayPal',
+  kpay: 'KPay',
+};
+
 export default function CheckoutReturnView() {
   const searchParams = useSearchParams();
   const token = searchParams.get('token') || '';
@@ -31,6 +39,7 @@ export default function CheckoutReturnView() {
   const [delivering, setDelivering] = useState(false);
   const [productId, setProductId] = useState('');
   const [product, setProduct] = useState<PurchasedProduct | null>(null);
+  const [provider, setProvider] = useState('');
   const [timedOut, setTimedOut] = useState(false);
   const [checkingNow, setCheckingNow] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -60,6 +69,7 @@ export default function CheckoutReturnView() {
         const res = await api.getCheckoutStatus(token);
         const status = res.order?.status;
         if (res.order?.product_id) setProductId(res.order.product_id);
+        if (res.order?.payment_provider) setProvider(res.order.payment_provider);
         if (status === 'paid') {
           stopPolling();
           setStep('done');
@@ -110,6 +120,7 @@ export default function CheckoutReturnView() {
       const res = await api.getCheckoutStatus(token);
       const status = res.order?.status;
       if (res.order?.product_id) setProductId(res.order.product_id);
+      if (res.order?.payment_provider) setProvider(res.order.payment_provider);
       if (status === 'paid') {
         setStep('done');
       } else if (status === 'failed') {
@@ -128,17 +139,30 @@ export default function CheckoutReturnView() {
       <div className="w-full max-w-md bg-white rounded-xl shadow-card border border-green-900/5 p-6 sm:p-8">
         {step === 'pending' && (
           <div className="text-center py-8">
-            <div className="mx-auto w-12 h-12 rounded-full border-4 border-green-100 border-t-lime animate-spin" />
+            {/* L'icône continuait de tourner même après le délai de 60s (le
+                bandeau ci-dessous s'ajoutait sans rien changer en haut) —
+                donnait l'impression que ça restait bloqué indéfiniment
+                (incident 2026-09-04). Elle s'arrête dès que timedOut. */}
+            <div
+              className={`mx-auto w-12 h-12 rounded-full border-4 ${
+                timedOut ? 'border-amber-100 border-t-amber-400' : 'border-green-100 border-t-lime animate-spin'
+              }`}
+            />
             <h1 className="font-display text-lg font-bold mt-4 text-green-950">
-              Vérification du paiement
+              {timedOut ? 'Confirmation en retard' : 'Vérification du paiement'}
             </h1>
             <p className="mt-2 text-sm text-green-900/60 max-w-xs mx-auto">
-              Merci de patienter pendant que nous confirmons votre paiement auprès
-              de PawaPay.
+              {timedOut
+                ? 'Nous ne pouvons pas encore confirmer votre paiement.'
+                : `Merci de patienter pendant que nous confirmons votre paiement${
+                    provider ? ` auprès de ${PROVIDER_LABELS[provider] || provider}` : ''
+                  }.`}
             </p>
-            <p className="mt-4 font-mono text-xs text-green-900/40">
-              en attente de confirmation...
-            </p>
+            {!timedOut && (
+              <p className="mt-4 font-mono text-xs text-green-900/40">
+                en attente de confirmation...
+              </p>
+            )}
 
             {timedOut && (
               <div className="mt-6 pt-6 border-t border-green-900/10">

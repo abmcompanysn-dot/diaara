@@ -113,6 +113,7 @@ export default function AdminSettingsPage() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
   const [commissionRate, setCommissionRate] = useState('15');
+  const [cardPaymentEnabled, setCardPaymentEnabled] = useState(true);
   const [gatewayOps, setGatewayOps] = useState<Record<string, GatewayValue>>({});
   const [checkoutProviders, setCheckoutProviders] = useState<Record<string, CheckoutValue>>({});
   // Liens communauté WhatsApp : clé "general" + une clé par ISO3.
@@ -123,6 +124,7 @@ export default function AdminSettingsPage() {
       .getAdminSettings()
       .then(({ settings }) => {
         setCommissionRate(settings.commission_rate_pct || '15');
+        setCardPaymentEnabled(settings.card_payment_enabled !== 'false');
         const g: Record<string, GatewayValue> = {};
         for (const op of OPERATORS) {
           const v = settings[gatewayOpKey(op.code)];
@@ -155,7 +157,10 @@ export default function AdminSettingsPage() {
     }
     setSaving(true);
     try {
-      const values: Record<string, string> = { commission_rate_pct: String(rate) };
+      const values: Record<string, string> = {
+        commission_rate_pct: String(rate),
+        card_payment_enabled: String(cardPaymentEnabled),
+      };
       for (const op of OPERATORS) values[gatewayOpKey(op.code)] = gatewayOps[op.code] || 'pawapay';
       // KPay pas encore activé sur ce flux (voir la carte "Paiement à l'achat —
       // par pays" ci-dessous, non modifiable) : on envoie toujours "pawapay",
@@ -229,6 +234,32 @@ export default function AdminSettingsPage() {
                 value={commissionRate}
                 onChange={(e) => setCommissionRate(e.target.value)}
               />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-card border-green-900/5">
+          <CardHeader>
+            <CardTitle>Paiement carte bancaire / PayPal</CardTitle>
+            <CardDescription>
+              Active ou désactive le bouton « Carte bancaire / PayPal » au checkout (géré par
+              PayPal). Désactivé, seul Mobile Money (PawaPay) reste proposé aux acheteurs — utile
+              en cas de souci côté PayPal, sans avoir besoin de redéployer.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex gap-2">
+              {([true, false] as const).map((opt) => (
+                <Button
+                  key={String(opt)}
+                  type="button"
+                  size="sm"
+                  variant={cardPaymentEnabled === opt ? 'default' : 'outline'}
+                  onClick={() => setCardPaymentEnabled(opt)}
+                >
+                  {opt ? 'Activé' : 'Désactivé'}
+                </Button>
+              ))}
             </div>
           </CardContent>
         </Card>
