@@ -178,6 +178,12 @@ export const api = {
       skipAuth: true,
     }),
 
+  // Checkout : indique si le bouton "Carte bancaire / PayPal" doit être
+  // affiché (interrupteur admin, voir /admin/settings et
+  // model.SettingCardPaymentEnabled côté backend).
+  getCheckoutConfig: () =>
+    fetchApi<{ card_payment_enabled: boolean }>('/api/checkout/config', { skipAuth: true }),
+
   // Products
   getProducts: (params?: { category?: string; search?: string }) => {
     const query = new URLSearchParams(params as Record<string, string>).toString();
@@ -236,7 +242,7 @@ export const api = {
       max_closer_commission_pct?: number;
     }
   ) =>
-    fetchApi<{ product: any }>(`/api/vendor/products/${id}`, {
+    fetchApi<{ product: any; reverted_to_pending?: boolean }>(`/api/vendor/products/${id}`, {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
@@ -378,7 +384,10 @@ export const api = {
       body: JSON.stringify({ role }),
     }),
 
-  updateProfile: (data: { display_name?: string; shop_name?: string }) =>
+  // phone : numéro du compte (distinct du numéro du moyen de retrait). Le
+  // fournir remet phone_verified_at à NULL côté backend s'il change — il faut
+  // alors le re-vérifier via PhoneVerifyForm avant tout versement.
+  updateProfile: (data: { display_name?: string; shop_name?: string; phone?: string }) =>
     fetchApi<{ user: any }>('/api/account/profile', {
       method: 'PUT',
       body: JSON.stringify(data),
@@ -724,6 +733,25 @@ export const api = {
     fetchApi<{ activity: { kind: string; id: string; at: string; data: any }[] }>(
       '/api/admin/activity'
     ),
+
+  // Journal des actions admin (backoffice 360°) — distinct de getActivityFeed
+  // ci-dessus (événements plateforme sans auteur).
+  getActivityLog: (page = 1) =>
+    fetchApi<{
+      logs: {
+        id: string;
+        admin_id?: string;
+        admin_email?: string;
+        action: string;
+        target_type: string;
+        target_id?: string;
+        description: string;
+        created_at: string;
+      }[];
+      total: number;
+      page: number;
+      per_page: number;
+    }>(`/api/admin/activity-log?page=${page}`),
 
   getAdminNotifications: () =>
     fetchApi<{

@@ -14,6 +14,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Toaster } from '@/components/ui/toast';
 import { PageHeader } from '@/components/page-header';
 import { PayoutMethodForm } from '@/components/payout-method-form';
+import { PhoneVerifyForm } from '@/components/phone-verify-form';
 import { StoreIcon, CheckIcon, WalletIcon } from '@/components/icons';
 import { friendlyError } from '@/lib/error-messages';
 import { findPayoutOperator, maskPhone } from '@/lib/operators';
@@ -39,6 +40,14 @@ export default function AccountPage() {
   const [displayName, setDisplayName] = useState('');
   const [becomingVendor, setBecomingVendor] = useState(false);
 
+  // Numéro du compte : certains comptes (inscription email seule) n'en ont
+  // aucun et n'avaient jusqu'ici aucun moyen d'en ajouter un — ce qui bloquait
+  // la vérification exigée avant tout versement.
+  const [phone, setPhone] = useState('');
+  const [phoneSaving, setPhoneSaving] = useState(false);
+  const [showPhoneVerify, setShowPhoneVerify] = useState(false);
+  const phoneVerified = Boolean(user?.phone_verified_at);
+
   const [payoutMethod, setPayoutMethod] = useState<PayoutMethod | null>(null);
   const [editingMethod, setEditingMethod] = useState(false);
   const [methodSubmitting, setMethodSubmitting] = useState(false);
@@ -47,7 +56,29 @@ export default function AccountPage() {
   useEffect(() => {
     setDisplayName(user?.display_name || '');
     setShopName(user?.shop_name || '');
+    setPhone(user?.phone || '');
   }, [user]);
+
+  const handleSavePhone = async () => {
+    const trimmed = phone.trim();
+    if (!trimmed) {
+      toast({ variant: 'error', title: 'Numéro requis', description: 'Saisissez votre numéro de téléphone.' });
+      return;
+    }
+    setPhoneSaving(true);
+    try {
+      await api.updateProfile({ phone: trimmed });
+      await refresh();
+      // Changer de numéro remet phone_verified_at à NULL côté backend : on
+      // enchaîne directement sur la vérification.
+      setShowPhoneVerify(true);
+      toast({ variant: 'success', title: 'Numéro enregistré', description: 'Vérifiez-le maintenant pour activer les versements.' });
+    } catch (err: any) {
+      toast({ variant: 'error', title: 'Numéro invalide', description: friendlyError(err) });
+    } finally {
+      setPhoneSaving(false);
+    }
+  };
 
   useEffect(() => {
     api
@@ -167,6 +198,71 @@ export default function AccountPage() {
               </CardContent>
             </Card>
           )}
+
+          <Card className="border-green-900/5">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-lg flex items-center gap-2">
+                Numéro de téléphone
+                {user?.phone && phoneVerified && (
+                  <Badge className="bg-green-100 text-green-700 hover:bg-green-100 gap-1">
+                    <CheckIcon size={11} />
+                    Vérifié
+                  </Badge>
+                )}
+                {user?.phone && !phoneVerified && (
+                  <Badge className="bg-yellow-100 text-yellow-800 hover:bg-yellow-100">Non vérifié</Badge>
+                )}
+              </CardTitle>
+              <CardDescription>
+                Requis et vérifié avant de pouvoir demander un versement. Un code de confirmation
+                vous sera envoyé.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-col sm:flex-row gap-2 sm:items-end">
+                <div className="flex-1 space-y-2">
+                  <Label htmlFor="account-phone">Numéro (avec l&apos;indicatif pays)</Label>
+                  <Input
+                    id="account-phone"
+                    type="tel"
+                    inputMode="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="+221 77 123 45 67"
+                  />
+                </div>
+                <Button
+                  variant="outline"
+                  className="h-10"
+                  onClick={handleSavePhone}
+                  disabled={phoneSaving || phone.trim() === (user?.phone || '')}
+                >
+                  {phoneSaving ? 'Enregistrement…' : 'Enregistrer'}
+                </Button>
+              </div>
+
+              {user?.phone && !phoneVerified && !showPhoneVerify && (
+                <Button className="h-10" onClick={() => setShowPhoneVerify(true)}>
+                  Vérifier ce numéro
+                </Button>
+              )}
+
+              {showPhoneVerify && user?.phone && !phoneVerified && (
+                <div className="rounded-lg border border-green-900/10 p-4 bg-green-50/40">
+                  <PhoneVerifyForm
+                    phone={user.phone}
+                    onVerified={async () => {
+                      await refresh();
+                      setShowPhoneVerify(false);
+                      toast({ variant: 'success', title: 'Numéro vérifié', description: 'Vous pouvez maintenant demander un versement.' });
+                    }}
+                    onSkip={() => setShowPhoneVerify(false)}
+                    skipLabel="Fermer"
+                  />
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           <Card className="border-green-900/5">
             <CardHeader className="pb-3 flex flex-row items-center justify-between">

@@ -295,14 +295,18 @@ export default function VendorEarningsPage() {
             )}
             {hasPayoutMethod && !phoneVerified && (
               <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-white/80 bg-white/10 rounded-lg px-3 py-2.5">
-                <span>Numéro de téléphone non vérifié — requis pour les retraits.</span>
+                <span>
+                  {user?.phone
+                    ? 'Numéro de téléphone non vérifié — requis pour les retraits.'
+                    : 'Aucun numéro de téléphone sur votre compte — requis pour les retraits.'}
+                </span>
                 <Button
                   size="sm"
                   variant="outline"
                   className="h-7 px-3 text-xs bg-transparent border-white/30 text-white hover:bg-white/10 hover:text-white"
-                  render={<Link href={user?.phone ? '/auth/verify-phone' : '/account'} />}
+                  render={<Link href="/account" />}
                 >
-                  Vérifier maintenant
+                  {user?.phone ? 'Vérifier maintenant' : 'Ajouter mon numéro'}
                 </Button>
               </div>
             )}

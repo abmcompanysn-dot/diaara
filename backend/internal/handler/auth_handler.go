@@ -223,6 +223,10 @@ func (h *AuthHandler) UpdateProfile(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.authService.UpdateProfile(r.Context(), userID, input); err != nil {
+		if errors.Is(err, service.ErrInvalidPhone) {
+			http.Error(w, `{"error":"invalid_phone"}`, http.StatusBadRequest)
+			return
+		}
 		http.Error(w, `{"error":"profile_update_failed"}`, http.StatusInternalServerError)
 		return
 	}

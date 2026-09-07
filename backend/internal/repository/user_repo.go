@@ -56,6 +56,30 @@ func (r *UserRepo) SetProfile(ctx context.Context, userID string, displayName, s
 	return err
 }
 
+// SetProfileWithPhone met à jour nom/boutique ET le numéro du compte. Si le
+// numéro fourni diffère de celui déjà enregistré, phone_verified_at est remis
+// à NULL (le nouveau numéro doit être re-vérifié avant tout versement).
+// phone == nil laisse le numéro et sa vérification inchangés (cas d'un simple
+// enregistrement du nom).
+func (r *UserRepo) SetProfileWithPhone(ctx context.Context, userID string, displayName, shopName, phone *string) error {
+	if phone == nil {
+		return r.SetProfile(ctx, userID, displayName, shopName)
+	}
+	_, err := r.pool.Exec(ctx,
+		`UPDATE users
+		 SET display_name = $2,
+		     shop_name = $3,
+		     phone = $4,
+		     phone_verified_at = CASE
+		         WHEN phone IS DISTINCT FROM $4 THEN NULL
+		         ELSE phone_verified_at
+		     END,
+		     updated_at = NOW()
+		 WHERE id = $1`,
+		userID, displayName, shopName, *phone)
+	return err
+}
+
 // GetPayoutMethod retourne le moyen de versement mobile money enregistré du
 // vendeur (nil si jamais renseigné). Signature conservée pour les nombreux
 // appelants existants ; l'email PayPal se lit via GetPayoutPayPalEmail.

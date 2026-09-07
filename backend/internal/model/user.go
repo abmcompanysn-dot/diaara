@@ -45,9 +45,16 @@ type RegisterInput struct {
 
 // UpdateProfileInput — PUT /api/account/profile (nom + nom de boutique,
 // typiquement rempli au moment de devenir vendeur).
+//
+// Phone : numéro du compte, saisissable ici après l'inscription (certains
+// comptes sont créés sans numéro — inscription email seule — et n'avaient
+// alors aucun moyen d'en ajouter un, ce qui bloquait la vérification requise
+// pour les versements). Toute modification du numéro remet phone_verified_at
+// à NULL : le nouveau numéro doit être re-vérifié.
 type UpdateProfileInput struct {
 	DisplayName *string `json:"display_name,omitempty"`
 	ShopName    *string `json:"shop_name,omitempty"`
+	Phone       *string `json:"phone,omitempty"`
 }
 
 // UpdateAdTrackingInput — PUT /api/account/ad-tracking. Chaque vendeur gère

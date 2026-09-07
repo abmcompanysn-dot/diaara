@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/diarra/backend/internal/auth"
@@ -21,6 +22,7 @@ var (
 	ErrUserAlreadyExists     = errors.New("user already exists")
 	ErrInvalidOrExpiredToken = errors.New("invalid or expired token")
 	ErrInvalidRole           = errors.New("invalid role")
+	ErrInvalidPhone          = errors.New("invalid phone number")
 )
 
 const (
@@ -484,10 +486,42 @@ func (s *AuthService) loadAdminPermissions(ctx context.Context, isAdmin bool, us
 	return perms
 }
 
-// UpdateProfile enregistre le nom affiché et/ou le nom de boutique d'un
-// utilisateur (ex: formulaire "devenir vendeur").
+// UpdateProfile enregistre le nom affiché, le nom de boutique et/ou le numéro
+// du compte d'un utilisateur (ex: formulaire "devenir vendeur", ajout d'un
+// numéro pour pouvoir le vérifier avant un versement). Un numéro fourni est
+// normalisé en format international (chiffres + "+", zéro initial retiré) ; un
+// numéro vide (chaîne vide) est refusé plutôt qu'enregistré tel quel. Changer
+// de numéro remet la vérification à zéro (voir SetProfileWithPhone).
 func (s *AuthService) UpdateProfile(ctx context.Context, userID string, input model.UpdateProfileInput) error {
-	return s.userRepo.SetProfile(ctx, userID, input.DisplayName, input.ShopName)
+	var phone *string
+	if input.Phone != nil {
+		normalized := normalizeAccountPhone(*input.Phone)
+		if normalized == "" {
+			return ErrInvalidPhone
+		}
+		phone = &normalized
+	}
+	return s.userRepo.SetProfileWithPhone(ctx, userID, input.DisplayName, input.ShopName, phone)
+}
+
+// normalizeAccountPhone met un numéro saisi librement au format international
+// minimal attendu : chiffres uniquement, précédés d'un "+", indicatif pays
+// requis. Renvoie "" si le résultat n'a pas l'allure d'un numéro (moins de 8
+// chiffres). Volontairement permissif — la vraie preuve de possession vient
+// de la vérification par code (SMS/email), pas de ce nettoyage.
+func normalizeAccountPhone(raw string) string {
+	var digits strings.Builder
+	for _, r := range raw {
+		if r >= '0' && r <= '9' {
+			digits.WriteRune(r)
+		}
+	}
+	d := digits.String()
+	d = strings.TrimLeft(d, "0")
+	if len(d) < 8 || len(d) > 15 {
+		return ""
+	}
+	return "+" + d
 }
 
 // UpdateAdTracking enregistre le Facebook Pixel / Google Tag du vendeur
