@@ -516,6 +516,23 @@ export const api = {
   regenerateAutomationKey: () =>
     fetchApi<{ key: string }>('/api/admin/automation/key/regenerate', { method: 'POST' }),
 
+  // Passerelle de paiement — clients externes (ex. ABMCY Core) qui appellent
+  // /api/gateway/v1/* . api_key + hmac_secret ne sont renvoyés QU'À la création.
+  getGatewayClients: () =>
+    fetchApi<{ clients: any[] }>('/api/admin/gateway/clients'),
+
+  createGatewayClient: (name: string, defaultCallbackUrl?: string) =>
+    fetchApi<{ client: any; api_key: string; hmac_secret: string }>('/api/admin/gateway/clients', {
+      method: 'POST',
+      body: JSON.stringify({ name, default_callback_url: defaultCallbackUrl || undefined }),
+    }),
+
+  setGatewayClientActive: (id: string, active: boolean) =>
+    fetchApi<{ ok: boolean }>(`/api/admin/gateway/clients/${id}/active`, {
+      method: 'PUT',
+      body: JSON.stringify({ active }),
+    }),
+
   getSales: () => fetchApi<{ sales: any[] }>('/api/admin/sales'),
 
   // Commandes non abouties (pending/failed) avec contact acheteur complet
