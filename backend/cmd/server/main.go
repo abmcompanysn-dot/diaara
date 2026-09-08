@@ -108,6 +108,9 @@ func main() {
 	bundleRepo := repository.NewBundleRepo(pool)
 	adminPermRepo := repository.NewAdminPermissionRepo(pool)
 	settingsRepo := repository.NewSettingsRepo(pool)
+	// Passerelle de paiement pour des applications externes (ex. ABMCY Core)
+	// — voir migration 029 et internal/handler/gateway_handler.go.
+	gatewayRepo := repository.NewGatewayRepo(pool)
 
 	// OTP service
 	otpService := otp.NewService(otpRepo)
@@ -254,6 +257,11 @@ func main() {
 	// exactement comme le ferait le webhook (statut + emails + notifs + cagnotte +
 	// cache), pas juste l'afficher (incident 2026-09-05).
 	saleHandler.SetWebhookHandler(webhookHandler)
+	gatewayHandler := handler.NewGatewayHandler(gatewayRepo, pawapay, notifications, os.Getenv("FRONTEND_URL"))
+	// Relais des callbacks agrégateur vers les clients externes de la
+	// passerelle (voir gateway_relay.go) — même pattern de setter que
+	// SetWebhookHandler ci-dessus.
+	webhookHandler.SetGatewayRepo(gatewayRepo)
 	feedHandler := handler.NewFeedHandler(productRepo, os.Getenv("FRONTEND_URL"))
 	donationHandler := handler.NewDonationHandler(donationRepo, settingsRepo, donationService)
 
@@ -286,6 +294,8 @@ func main() {
 	adminHandler := handler.NewAdminHandler(productRepo, saleRepo, userRepo, referralRepo, adminPermRepo, payoutRepo, settingsRepo, ticketRepo, pool, storageHealthPinger, storageService, startTime, pawapay, kpay, paypal, notifications, redisCache, webhookHandler)
 	// Journal d'activité admin (backoffice 360°) — voir migration 028.
 	adminHandler.SetActivityRepo(repository.NewAdminActivityRepo(pool))
+	// Gestion des clients de la passerelle de paiement (ex. ABMCY Core).
+	adminHandler.SetGatewayRepo(gatewayRepo)
 
 	r := chi.NewRouter()
 
@@ -545,6 +555,12 @@ func main() {
 			r.Get("/automation/key", adminHandler.GetAutomationKey)
 			r.Post("/automation/key/regenerate", adminHandler.RegenerateAutomationKey)
 
+			// Clients de la passerelle de paiement (ex. ABMCY Core) — voir
+			// /api/gateway/v1/* ci-dessous.
+			r.Get("/gateway/clients", adminHandler.ListGatewayClients)
+			r.Post("/gateway/clients", adminHandler.CreateGatewayClient)
+			r.Put("/gateway/clients/{id}/active", adminHandler.SetGatewayClientActive)
+
 			// Programme de reversement automatique ("Fidélisation") — cagnotte,
 			// destinataires, historique des versements.
 			r.Get("/donations", donationHandler.Get)
@@ -590,6 +606,22 @@ func main() {
 	// Création de produit automatisée (script/IA externe) — accepte soit une
 	// session admin classique, soit la clé d'automatisation dédiée (voir
 	// GET/POST /api/admin/automation/key et middleware.RequireAutomation).
+	// Passerelle de paiement pour des applications externes (ex. ABMCY Core) —
+	// auth par clé API dédiée (X-Gateway-Key, une par client, voir
+	// gateway_clients), distincte de la clé d'automatisation produit ci-dessous.
+	// Réutilise l'intégration PawaPay/KPay/PayPal déjà en place dans DIARRA
+	// (voir internal/payment/provider.go) au lieu qu'un client externe refasse
+	// sa propre connexion à chaque agrégateur.
+	r.Route("/api/gateway/v1", func(r chi.Router) {
+		r.Use(middleware.RequireGatewayClient(gatewayHandler.LookupClient))
+		r.Post("/deposits", gatewayHandler.CreateDeposit)
+		r.Get("/deposits/{client_ref}", gatewayHandler.GetTransaction(model.GatewayTxTypeDeposit))
+		r.Post("/payouts", gatewayHandler.CreatePayout)
+		r.Get("/payouts/{client_ref}", gatewayHandler.GetTransaction(model.GatewayTxTypePayout))
+		r.Post("/refunds", gatewayHandler.CreateRefund)
+		r.Get("/refunds/{client_ref}", gatewayHandler.GetTransaction(model.GatewayTxTypeRefund))
+	})
+
 	r.Route("/api/automation/products", func(r chi.Router) {
 		r.Use(middleware.RequireAutomation(jwtManager, func(ctx context.Context) string {
 			return settingsRepo.Get(ctx, model.SettingAutomationAPIKey, "")

@@ -40,6 +40,20 @@ type WebhookHandler struct {
 	storage           *storage.S3Storage
 	allowedIPs        map[string]bool
 	cache             *cache.Client
+	// gatewayRepo : injecté après coup via SetGatewayRepo (même pattern que
+	// SaleHandler.SetWebhookHandler, référence circulaire sinon — GatewayHandler
+	// a lui aussi besoin d'être construit dans main.go avant/après ce
+	// handler selon l'ordre choisi). nil-safe : si jamais non branché, les
+	// webhooks agrégateur continuent de ne traiter que les sales/payouts
+	// internes DIARRA, comme avant l'existence de la passerelle.
+	gatewayRepo *repository.GatewayRepo
+}
+
+// SetGatewayRepo branche le relais webhook agrégateur -> client externe
+// (voir tryRelayGatewayDeposit et consorts, appelés en tête de chaque
+// webhook PawaPay avant la résolution vers une sale/payout DIARRA).
+func (h *WebhookHandler) SetGatewayRepo(repo *repository.GatewayRepo) {
+	h.gatewayRepo = repo
 }
 
 func NewWebhookHandler(
@@ -151,6 +165,9 @@ func (h *WebhookHandler) PawaPayPayoutWebhook(w http.ResponseWriter, r *http.Req
 
 	payout, err := h.payoutRepo.FindByProviderReference(r.Context(), "pawapay", payload.PayoutId)
 	if err != nil {
+		if h.gatewayRepo != nil && h.tryRelayGatewayPayout(w, r, payload.PayoutId) {
+			return
+		}
 		http.Error(w, `{"error":"payout_not_found"}`, http.StatusNotFound)
 		return
 	}
@@ -207,6 +224,9 @@ func (h *WebhookHandler) PawaPayRefundWebhook(w http.ResponseWriter, r *http.Req
 
 	sale, err := h.saleRepo.FindByRefundReference(r.Context(), payload.RefundId)
 	if err != nil {
+		if h.gatewayRepo != nil && h.tryRelayGatewayRefund(w, r, payload.RefundId) {
+			return
+		}
 		http.Error(w, `{"error":"sale_not_found"}`, http.StatusNotFound)
 		return
 	}
@@ -291,6 +311,14 @@ func (h *WebhookHandler) PawaPayWebhook(w http.ResponseWriter, r *http.Request) 
 
 	sale, err := h.saleRepo.FindByPaymentReference(r.Context(), payload.DepositId)
 	if err != nil {
+		// Pas une vente DIARRA : peut-être un dépôt initié par un client
+		// externe via la passerelle (voir GatewayHandler.CreateDeposit, qui
+		// génère aussi un depositId côté PawaPay). On tente ce chemin avant
+		// d'abandonner en 404 — sinon TOUS les callbacks PawaPay pour des
+		// dépôts gateway échoueraient silencieusement.
+		if h.gatewayRepo != nil && h.tryRelayGatewayDeposit(w, r, payload.DepositId) {
+			return
+		}
 		http.Error(w, `{"error":"sale_not_found"}`, http.StatusNotFound)
 		return
 	}

@@ -60,11 +60,99 @@ type AdminHandler struct {
 	// injecté après coup (voir SetActivityRepo) pour ne pas allonger encore
 	// la liste de paramètres de NewAdminHandler.
 	activityRepo *repository.AdminActivityRepo
+	// gatewayRepo : gestion des clients de la passerelle de paiement (ex.
+	// ABMCY Core) — mêmes principes que activityRepo ci-dessus.
+	gatewayRepo *repository.GatewayRepo
 }
 
 // SetActivityRepo branche le journal d'activité admin après construction.
 func (h *AdminHandler) SetActivityRepo(repo *repository.AdminActivityRepo) {
 	h.activityRepo = repo
+}
+
+// SetGatewayRepo branche la gestion des clients de la passerelle de paiement
+// après construction.
+func (h *AdminHandler) SetGatewayRepo(repo *repository.GatewayRepo) {
+	h.gatewayRepo = repo
+}
+
+// ListGatewayClients — GET /api/admin/gateway/clients (scope "finance")
+func (h *AdminHandler) ListGatewayClients(w http.ResponseWriter, r *http.Request) {
+	clients, err := h.gatewayRepo.ListClients(r.Context())
+	if err != nil {
+		http.Error(w, `{"error":"list_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"clients": clients})
+}
+
+// CreateGatewayClient — POST /api/admin/gateway/clients (scope "finance").
+// Génère une clé API opaque (jamais stockée en clair — voir auth.HashToken,
+// même principe que la vérification email/reset mot de passe) et la renvoie
+// UNE SEULE FOIS dans la réponse : comme pour la clé d'automatisation
+// produit, si l'admin la perd il doit en régénérer une nouvelle plutôt que
+// de la retrouver.
+func (h *AdminHandler) CreateGatewayClient(w http.ResponseWriter, r *http.Request) {
+	var input struct {
+		Name               string `json:"name"`
+		DefaultCallbackURL string `json:"default_callback_url,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+	if input.Name == "" {
+		http.Error(w, `{"error":"name_required"}`, http.StatusBadRequest)
+		return
+	}
+	key, err := auth.GenerateToken()
+	if err != nil {
+		http.Error(w, `{"error":"key_generation_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	// Secret HMAC distinct de la clé API (voir middleware.RequireGatewayClient) :
+	// une fuite de l'un ne compromet pas l'autre. Le client doit signer ses
+	// requêtes avec le HASH de ce secret (jamais le secret brut envoyé à
+	// DIARRA après cet appel — même principe que la clé API elle-même).
+	hmacSecret, err := auth.GenerateToken()
+	if err != nil {
+		http.Error(w, `{"error":"key_generation_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	var callbackURL *string
+	if input.DefaultCallbackURL != "" {
+		callbackURL = &input.DefaultCallbackURL
+	}
+	client, err := h.gatewayRepo.CreateClient(r.Context(), input.Name, auth.HashToken(key), auth.HashToken(hmacSecret), callbackURL)
+	if err != nil {
+		http.Error(w, `{"error":"client_creation_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	// api_key et hmac_secret ne sont JAMAIS revus après cette réponse (seuls
+	// leurs hashs sont en base) — à copier immédiatement côté client.
+	json.NewEncoder(w).Encode(map[string]interface{}{"client": client, "api_key": key, "hmac_secret": hmacSecret})
+}
+
+// SetGatewayClientActive — PUT /api/admin/gateway/clients/{id}/active
+// (scope "finance"). Corps : {"active": true|false}.
+func (h *AdminHandler) SetGatewayClientActive(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var input struct {
+		Active bool `json:"active"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.gatewayRepo.SetClientActive(r.Context(), id, input.Active); err != nil {
+		http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
 }
 
 // logActivity enregistre une action admin en tâche de fond — jamais
