@@ -56,10 +56,19 @@ func (h *GatewayHandler) LookupClient(ctx context.Context, apiKeyHash string) (m
 	return middleware.GatewayClientLookup{ID: c.ID, HMACSecretHash: c.HMACSecretHash}, nil
 }
 
-func randomHex(n int) string {
-	b := make([]byte, n)
+// gatewayUUID génère un UUID v4 correctement formaté (avec tirets) — PawaPay
+// rejette un depositId qui n'a pas cette forme exacte (constaté : une chaîne
+// hex de même longueur sans tirets échoue silencieusement côté PawaPay, sans
+// message d'erreur exploitable, incident 2026-09-08). Même génération que
+// SaleHandler.uuidString côté checkout DIARRA classique — dupliquée ici
+// plutôt que partagée pour ne pas coupler gateway_handler.go à sale_handler.go
+// pour une seule fonction utilitaire sans état.
+func gatewayUUID() string {
+	b := make([]byte, 16)
 	_, _ = rand.Read(b)
-	return fmt.Sprintf("%x", b)
+	b[6] = (b[6] & 0x0f) | 0x40
+	b[8] = (b[8] & 0x3f) | 0x80
+	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
 // CreateDeposit — POST /api/gateway/v1/deposits
@@ -136,7 +145,7 @@ func (h *GatewayHandler) CreateDeposit(w http.ResponseWriter, r *http.Request) {
 	// depositId PawaPay = provider_ref, généré ici (pas l'UUID de la
 	// transaction gateway) pour ne jamais exposer nos identifiants internes
 	// à l'agrégateur — même principe que SaleHandler.Create.
-	depositID := randomHex(16)
+	depositID := gatewayUUID()
 	reason := payment.SanitizePaymentReason(input.Description, 50)
 	if reason == "" {
 		reason = "PAIEMENT"
