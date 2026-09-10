@@ -219,3 +219,143 @@ func (r *GatewayRepo) FindByID(ctx context.Context, id string) (*model.GatewayTr
 	return scanGatewayTx(r.pool.QueryRow(ctx,
 		`SELECT `+gatewayTxColumns+` FROM gateway_transactions WHERE id = $1`, id))
 }
+
+// --- Console admin : liste + chiffres de toutes les transactions passerelle
+
+// GatewayTxRow — transaction enrichie du nom du client (pour la liste admin).
+type GatewayTxRow struct {
+	*model.GatewayTransaction
+	ClientName string `json:"client_name"`
+}
+
+// ListTransactions — toutes les transactions passerelle, filtrables, les
+// plus récentes d'abord.
+func (r *GatewayRepo) ListTransactions(ctx context.Context, clientID, txType, status string, limit, offset int) ([]*GatewayTxRow, error) {
+	if limit <= 0 || limit > 200 {
+		limit = 50
+	}
+	rows, err := r.pool.Query(ctx,
+		`SELECT t.id, t.client_id, t.client_ref, t.type, t.provider, t.provider_ref, t.related_deposit_ref,
+		        t.status, t.failure_reason, t.amount_cfa, t.currency, t.recipient_phone, t.recipient_operator,
+		        t.country, t.description, t.callback_url, t.created_at, t.updated_at, c.name
+		 FROM gateway_transactions t JOIN gateway_clients c ON c.id = t.client_id
+		 WHERE ($1 = '' OR t.client_id = $1::uuid)
+		   AND ($2 = '' OR t.type = $2)
+		   AND ($3 = '' OR t.status = $3)
+		 ORDER BY t.created_at DESC
+		 LIMIT $4 OFFSET $5`,
+		clientID, txType, status, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []*GatewayTxRow{}
+	for rows.Next() {
+		row := &GatewayTxRow{GatewayTransaction: &model.GatewayTransaction{}}
+		t := row.GatewayTransaction
+		if err := rows.Scan(&t.ID, &t.ClientID, &t.ClientRef, &t.Type, &t.Provider, &t.ProviderRef, &t.RelatedDepositRef,
+			&t.Status, &t.FailureReason, &t.AmountCFA, &t.Currency, &t.RecipientPhone, &t.RecipientOperator,
+			&t.Country, &t.Description, &t.CallbackURL, &t.CreatedAt, &t.UpdatedAt, &row.ClientName); err != nil {
+			return nil, err
+		}
+		out = append(out, row)
+	}
+	return out, rows.Err()
+}
+
+// GatewayStats — chiffres agrégés de la passerelle sur une fenêtre.
+type GatewayStats struct {
+	SinceDays  int             `json:"since_days"`
+	TotalCount int             `json:"total_count"`
+	TotalCFA   int64           `json:"total_cfa"`
+	Completed  int             `json:"completed"`
+	Failed     int             `json:"failed"`
+	Pending    int             `json:"pending"`
+	ByType     []GatewayAgg    `json:"by_type"`
+	ByProvider []GatewayAgg    `json:"by_provider"`
+	ByClient   []GatewayCliAgg `json:"by_client"`
+	ByStatus   []GatewayAgg    `json:"by_status"`
+}
+
+type GatewayAgg struct {
+	Key      string `json:"key"`
+	Count    int    `json:"count"`
+	TotalCFA int64  `json:"total_cfa"`
+}
+
+type GatewayCliAgg struct {
+	ClientID   string `json:"client_id"`
+	ClientName string `json:"client_name"`
+	Count      int    `json:"count"`
+	TotalCFA   int64  `json:"total_cfa"`
+	Completed  int    `json:"completed"`
+}
+
+func (r *GatewayRepo) Stats(ctx context.Context, sinceDays int) (*GatewayStats, error) {
+	where := "TRUE"
+	args := []any{}
+	if sinceDays > 0 {
+		where = "created_at >= now() - $1::interval"
+		args = append(args, (time.Duration(sinceDays) * 24 * time.Hour).String())
+	}
+	s := &GatewayStats{SinceDays: sinceDays}
+
+	if err := r.pool.QueryRow(ctx,
+		`SELECT COUNT(*), COALESCE(SUM(amount_cfa),0),
+		        COUNT(*) FILTER (WHERE status='completed'),
+		        COUNT(*) FILTER (WHERE status='failed'),
+		        COUNT(*) FILTER (WHERE status='pending')
+		 FROM gateway_transactions WHERE `+where, args...).
+		Scan(&s.TotalCount, &s.TotalCFA, &s.Completed, &s.Failed, &s.Pending); err != nil {
+		return nil, err
+	}
+
+	agg := func(col string) ([]GatewayAgg, error) {
+		rows, err := r.pool.Query(ctx,
+			`SELECT `+col+`, COUNT(*), COALESCE(SUM(amount_cfa),0)
+			 FROM gateway_transactions WHERE `+where+`
+			 GROUP BY `+col+` ORDER BY COUNT(*) DESC`, args...)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+		var out []GatewayAgg
+		for rows.Next() {
+			var a GatewayAgg
+			if err := rows.Scan(&a.Key, &a.Count, &a.TotalCFA); err != nil {
+				return nil, err
+			}
+			out = append(out, a)
+		}
+		return out, rows.Err()
+	}
+	var err error
+	if s.ByType, err = agg("type"); err != nil {
+		return nil, err
+	}
+	if s.ByProvider, err = agg("provider"); err != nil {
+		return nil, err
+	}
+	if s.ByStatus, err = agg("status"); err != nil {
+		return nil, err
+	}
+
+	rows, err := r.pool.Query(ctx,
+		`SELECT t.client_id, c.name, COUNT(*), COALESCE(SUM(t.amount_cfa),0),
+		        COUNT(*) FILTER (WHERE t.status='completed')
+		 FROM gateway_transactions t JOIN gateway_clients c ON c.id = t.client_id
+		 WHERE `+where+`
+		 GROUP BY t.client_id, c.name ORDER BY SUM(t.amount_cfa) DESC`, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var a GatewayCliAgg
+		if err := rows.Scan(&a.ClientID, &a.ClientName, &a.Count, &a.TotalCFA, &a.Completed); err != nil {
+			return nil, err
+		}
+		s.ByClient = append(s.ByClient, a)
+	}
+	return s, rows.Err()
+}

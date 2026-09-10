@@ -6,8 +6,8 @@ import (
 	"log"
 	"sync"
 
-	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // SalesChannel et ModerationChannel sont les canaux NOTIFY de PostgreSQL.
@@ -19,9 +19,9 @@ const (
 
 // Hub maintient les connexions WebSocket par canal et relaie les notifications.
 type Hub struct {
-	mu       sync.RWMutex
-	pool     *pgxpool.Pool
-	clients  map[string]map[*Client]struct{} // channel -> set de clients
+	mu      sync.RWMutex
+	pool    *pgxpool.Pool
+	clients map[string]map[*Client]struct{} // channel -> set de clients
 }
 
 type Client struct {

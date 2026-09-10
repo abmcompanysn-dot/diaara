@@ -8,6 +8,9 @@ import { PageLoader } from '@/components/page-loader';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { CopyIcon, CheckIcon } from '@/components/icons';
 import { friendlyError } from '@/lib/error-messages';
+import { StatsTab, TransactionsTab } from './gateway-tabs';
+
+type Tab = 'stats' | 'transactions' | 'clients';
 
 type GatewayClient = {
   id: string;
@@ -51,6 +54,7 @@ function CopyField({ label, value }: { label: string; value: string }) {
 }
 
 export default function AdminGatewayPage() {
+  const [tab, setTab] = useState<Tab>('stats');
   const [clients, setClients] = useState<GatewayClient[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -108,13 +112,16 @@ export default function AdminGatewayPage() {
     }
   };
 
-  if (loading)
-    return (
-      <main>
-        <PageHeader back="/admin" eyebrow="// administration" title="Passerelle de paiement" />
-        <PageLoader />
-      </main>
-    );
+  const tabBtn = (id: Tab, label: string) => (
+    <button
+      onClick={() => setTab(id)}
+      className={`px-4 py-2 text-sm font-medium rounded-lg transition-colors ${
+        tab === id ? 'bg-green-900 text-white' : 'text-green-900/60 hover:bg-green-900/5'
+      }`}
+    >
+      {label}
+    </button>
+  );
 
   return (
     <main>
@@ -122,10 +129,23 @@ export default function AdminGatewayPage() {
         back="/admin"
         eyebrow="// administration"
         title="Passerelle de paiement"
-        description="Clients externes autorisés à encaisser via DIARRA (POST /api/gateway/v1/*)"
+        description="Toutes les transactions passant par DIARRA pour des clients externes (ABMCY Core…)"
       />
 
-      <section className="max-w-3xl mx-auto px-4 sm:px-6 py-10 space-y-6">
+      <section className="max-w-4xl mx-auto px-4 sm:px-6 py-10 space-y-6">
+        <div className="flex gap-1 border-b border-green-900/10 pb-3">
+          {tabBtn('stats', 'Chiffres')}
+          {tabBtn('transactions', 'Transactions')}
+          {tabBtn('clients', 'Clients & clés')}
+        </div>
+
+        {tab === 'stats' && <StatsTab />}
+        {tab === 'transactions' && <TransactionsTab />}
+
+        {tab === 'clients' && (loading ? (
+          <PageLoader />
+        ) : (
+        <div className="space-y-6">
         {error && (
           <div className="p-3 bg-destructive/10 text-destructive rounded text-sm" role="alert">
             {error}
@@ -234,6 +254,8 @@ export default function AdminGatewayPage() {
             </ul>
           )}
         </div>
+        </div>
+        ))}
       </section>
 
       <ConfirmDialog

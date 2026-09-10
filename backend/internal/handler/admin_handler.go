@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"mime"
 	"net/http"
 	"path/filepath"
@@ -153,6 +154,95 @@ func (h *AdminHandler) SetGatewayClientActive(w http.ResponseWriter, r *http.Req
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
+// ListGatewayTransactions — GET /api/admin/gateway/transactions
+// ?client_id=&type=&status=&limit=&offset= (scope "finance").
+func (h *AdminHandler) ListGatewayTransactions(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	limit, _ := strconv.Atoi(q.Get("limit"))
+	offset, _ := strconv.Atoi(q.Get("offset"))
+	txs, err := h.gatewayRepo.ListTransactions(r.Context(),
+		q.Get("client_id"), q.Get("type"), q.Get("status"), limit, offset)
+	if err != nil {
+		http.Error(w, `{"error":"list_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"transactions": txs})
+}
+
+// GatewayStats — GET /api/admin/gateway/stats?since=7|30|0 (scope "finance").
+func (h *AdminHandler) GatewayStats(w http.ResponseWriter, r *http.Request) {
+	since := 30
+	if v := r.URL.Query().Get("since"); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
+			since = n
+		}
+	}
+	s, err := h.gatewayRepo.Stats(r.Context(), since)
+	if err != nil {
+		log.Printf("gateway stats: %v", err)
+		http.Error(w, `{"error":"stats_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(s)
+}
+
+// CheckGatewayTransactionProvider — POST /api/admin/gateway/transactions/{id}/check-provider
+// (scope "finance"). Force la revérification du statut réel chez PawaPay et
+// applique le résultat (met à jour la transaction + relaie le callback signé
+// au client, exactement comme un webhook). Réponse : la transaction à jour.
+func (h *AdminHandler) CheckGatewayTransactionProvider(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	tx, err := h.gatewayRepo.FindByID(r.Context(), id)
+	if err != nil {
+		http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
+		return
+	}
+	if tx.ProviderRef == nil || *tx.ProviderRef == "" {
+		http.Error(w, `{"error":"no_provider_ref"}`, http.StatusUnprocessableEntity)
+		return
+	}
+	if h.pawapay == nil {
+		http.Error(w, `{"error":"provider_unavailable"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	switch tx.Type {
+	case model.GatewayTxTypeDeposit:
+		st, err := h.pawapay.GetDepositStatus(r.Context(), *tx.ProviderRef)
+		if err != nil {
+			http.Error(w, `{"error":"provider_check_failed"}`, http.StatusBadGateway)
+			return
+		}
+		if st.Data == nil {
+			// NOT_FOUND : jamais validé côté PawaPay.
+			w.Header().Set("Content-Type", "application/json")
+			json.NewEncoder(w).Encode(map[string]interface{}{"provider_status": "NOT_FOUND", "transaction": tx})
+			return
+		}
+		switch st.Data.Status {
+		case "COMPLETED":
+			_ = h.gatewayRepo.UpdateStatus(r.Context(), tx.ID, model.GatewayTxCompleted, nil)
+		case "FAILED":
+			reason := "provider_failed"
+			_ = h.gatewayRepo.UpdateStatus(r.Context(), tx.ID, model.GatewayTxFailed, &reason)
+		}
+		if h.webhook != nil {
+			h.webhook.RelayGatewayByID(context.Background(), tx.ID)
+		}
+	default:
+		// payout / refund : on n'a pas de check-provider dédié ici pour
+		// l'instant — la réconciliation de fond s'en charge.
+		http.Error(w, `{"error":"check_not_supported_for_type"}`, http.StatusUnprocessableEntity)
+		return
+	}
+
+	fresh, _ := h.gatewayRepo.FindByID(r.Context(), tx.ID)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"transaction": fresh})
 }
 
 // logActivity enregistre une action admin en tâche de fond — jamais

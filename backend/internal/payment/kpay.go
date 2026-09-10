@@ -171,13 +171,13 @@ type RefundInitRequest struct {
 }
 
 type RefundInitResponse struct {
-	ID                     string `json:"id"`
-	Status                 string `json:"status"` // PENDING à l'initiation, issue finale par webhook
-	Amount                 string `json:"amount"`
-	Currency               string `json:"currency"`
-	OriginalPaymentId      string `json:"originalPaymentId"`
-	OriginalPaymentStatus  string `json:"originalPaymentStatus"`
-	Message                string `json:"message,omitempty"`
+	ID                    string `json:"id"`
+	Status                string `json:"status"` // PENDING à l'initiation, issue finale par webhook
+	Amount                string `json:"amount"`
+	Currency              string `json:"currency"`
+	OriginalPaymentId     string `json:"originalPaymentId"`
+	OriginalPaymentStatus string `json:"originalPaymentStatus"`
+	Message               string `json:"message,omitempty"`
 }
 
 // InitiateRefund — POST /api/v1/payments/:id/refund (id = ID KPay du paiement,

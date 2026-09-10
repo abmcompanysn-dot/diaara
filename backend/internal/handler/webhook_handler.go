@@ -952,7 +952,7 @@ func (h *WebhookHandler) reconcileGatewayDepositsPass(ctx context.Context) {
 			if status != nil && status.Data == nil && time.Since(tx.CreatedAt) > 15*time.Minute {
 				reason := "expired_no_payment"
 				_ = h.gatewayRepo.UpdateStatus(ctx, tx.ID, model.GatewayTxFailed, &reason)
-				h.relayGatewayByTx(ctx, tx.ID)
+				h.RelayGatewayByID(ctx, tx.ID)
 				done++
 			}
 			continue
@@ -960,12 +960,12 @@ func (h *WebhookHandler) reconcileGatewayDepositsPass(ctx context.Context) {
 		switch status.Data.Status {
 		case "COMPLETED":
 			_ = h.gatewayRepo.UpdateStatus(ctx, tx.ID, model.GatewayTxCompleted, nil)
-			h.relayGatewayByTx(ctx, tx.ID)
+			h.RelayGatewayByID(ctx, tx.ID)
 			done++
 		case "FAILED":
 			reason := "provider_failed"
 			_ = h.gatewayRepo.UpdateStatus(ctx, tx.ID, model.GatewayTxFailed, &reason)
-			h.relayGatewayByTx(ctx, tx.ID)
+			h.RelayGatewayByID(ctx, tx.ID)
 			done++
 		}
 	}
@@ -974,9 +974,10 @@ func (h *WebhookHandler) reconcileGatewayDepositsPass(ctx context.Context) {
 	}
 }
 
-// relayGatewayByTx recharge une transaction gateway et relaie son callback
-// signé au client (même code que le webhook, réutilisé après réconciliation).
-func (h *WebhookHandler) relayGatewayByTx(ctx context.Context, txID string) {
+// RelayGatewayByID recharge une transaction gateway et relaie son callback
+// signé au client (même code que le webhook). Réutilisé après réconciliation
+// de fond ET par le bouton admin "vérifier chez le prestataire".
+func (h *WebhookHandler) RelayGatewayByID(ctx context.Context, txID string) {
 	tx, err := h.gatewayRepo.FindByID(ctx, txID)
 	if err != nil {
 		return

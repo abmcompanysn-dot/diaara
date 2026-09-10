@@ -96,10 +96,10 @@ func (r *PayoutRepo) FindByID(ctx context.Context, id string) (*model.Payout, er
 // et à afficher « où envoyer l'argent » avant un règlement manuel.
 type PayoutWithUser struct {
 	model.Payout
-	UserEmail           string  `json:"user_email"`
-	VendorPayoutPhone   *string `json:"vendor_payout_phone,omitempty"`
-	VendorPayoutOperator *string `json:"vendor_payout_operator,omitempty"`
-	VendorPayoutCountry *string `json:"vendor_payout_country,omitempty"`
+	UserEmail               string  `json:"user_email"`
+	VendorPayoutPhone       *string `json:"vendor_payout_phone,omitempty"`
+	VendorPayoutOperator    *string `json:"vendor_payout_operator,omitempty"`
+	VendorPayoutCountry     *string `json:"vendor_payout_country,omitempty"`
 	VendorPayoutPayPalEmail *string `json:"vendor_payout_paypal_email,omitempty"`
 }
 

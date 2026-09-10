@@ -3,9 +3,9 @@ package model
 import "time"
 
 type Product struct {
-	ID          string  `json:"id"`
-	VendorID    string  `json:"vendor_id"`
-	Title       string  `json:"title"`
+	ID       string `json:"id"`
+	VendorID string `json:"vendor_id"`
+	Title    string `json:"title"`
 	// Slug : identifiant lisible dérivé du titre (ex: "10-templates-n8n"),
 	// utilisé dans les URLs publiques à la place de l'UUID technique.
 	Slug        string  `json:"slug"`
@@ -29,8 +29,8 @@ type Product struct {
 	// PreviewKeys : clés objet des aperçus filigranés générés automatiquement
 	// (1 à 3 selon le type de fichier : pages PDF, image réduite, extrait
 	// audio/vidéo). Vide tant que preview_status vaut "pending".
-	PreviewKeys   []string  `json:"preview_keys"`
-	PreviewStatus string    `json:"preview_status"`
+	PreviewKeys   []string `json:"preview_keys"`
+	PreviewStatus string   `json:"preview_status"`
 	// DeletionRequested : le vendeur a demandé la suppression du produit,
 	// en attente de confirmation par un admin (voir AdminHandler.ConfirmDeletion).
 	DeletionRequested bool      `json:"deletion_requested"`

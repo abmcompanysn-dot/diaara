@@ -197,11 +197,11 @@ func (r *SaleRepo) ListPendingForProvider(ctx context.Context, provider string, 
 // la vue admin « paiements en attente & échoués » et la relance vendeur.
 type PendingSaleView struct {
 	*model.Sale
-	BuyerEmail    string  `json:"buyer_email"`
-	BuyerPhone    *string `json:"buyer_phone,omitempty"`
-	ProductTitle  string  `json:"product_title"`
-	VendorID      string  `json:"vendor_id"`
-	VendorEmail   string  `json:"vendor_email"`
+	BuyerEmail   string  `json:"buyer_email"`
+	BuyerPhone   *string `json:"buyer_phone,omitempty"`
+	ProductTitle string  `json:"product_title"`
+	VendorID     string  `json:"vendor_id"`
+	VendorEmail  string  `json:"vendor_email"`
 }
 
 const pendingSaleSelect = `
@@ -293,6 +293,7 @@ func (r *SaleRepo) MarkReminded(ctx context.Context, id string) error {
 //   - reminder_count = 0 et âge ≥ firstAfter        → 1ʳᵉ relance
 //   - reminder_count = 1 et âge ≥ secondAfter       → 2ᵉ relance
 //   - reminder_count ≥ 2                             → plus jamais
+//
 // Les ventes plus vieilles que maxAge sont abandonnées (pas de relance).
 // Jointe au contact acheteur.
 func (r *SaleRepo) ListRemindable(ctx context.Context, firstAfter, secondAfter, maxAge time.Duration) ([]*PendingSaleView, error) {

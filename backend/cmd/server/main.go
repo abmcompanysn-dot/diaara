@@ -560,6 +560,9 @@ func main() {
 			r.Get("/gateway/clients", adminHandler.ListGatewayClients)
 			r.Post("/gateway/clients", adminHandler.CreateGatewayClient)
 			r.Put("/gateway/clients/{id}/active", adminHandler.SetGatewayClientActive)
+			r.Get("/gateway/transactions", adminHandler.ListGatewayTransactions)
+			r.Get("/gateway/stats", adminHandler.GatewayStats)
+			r.Post("/gateway/transactions/{id}/check-provider", adminHandler.CheckGatewayTransactionProvider)
 
 			// Programme de reversement automatique ("Fidélisation") — cagnotte,
 			// destinataires, historique des versements.

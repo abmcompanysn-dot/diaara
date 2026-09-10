@@ -251,14 +251,14 @@ func (h *GatewayHandler) CreatePayout(w http.ResponseWriter, r *http.Request) {
 	tx, err := h.gatewayRepo.CreateTransaction(r.Context(), repository.CreateGatewayTxParams{
 		ClientID:          clientID,
 		ClientRef:         input.ClientRef,
-		Type:               model.GatewayTxTypePayout,
-		Provider:           "pawapay",
-		AmountCFA:          input.AmountCFA,
-		Currency:           "XOF",
-		RecipientPhone:     &msisdn,
-		RecipientOperator:  &recipientOp,
-		Country:            &country,
-		CallbackURL:        callbackURL,
+		Type:              model.GatewayTxTypePayout,
+		Provider:          "pawapay",
+		AmountCFA:         input.AmountCFA,
+		Currency:          "XOF",
+		RecipientPhone:    &msisdn,
+		RecipientOperator: &recipientOp,
+		Country:           &country,
+		CallbackURL:       callbackURL,
 	})
 	if err != nil {
 		http.Error(w, `{"error":"transaction_creation_failed"}`, http.StatusInternalServerError)
@@ -337,12 +337,12 @@ func (h *GatewayHandler) CreateRefund(w http.ResponseWriter, r *http.Request) {
 	tx, err := h.gatewayRepo.CreateTransaction(r.Context(), repository.CreateGatewayTxParams{
 		ClientID:          clientID,
 		ClientRef:         input.ClientRef,
-		Type:               model.GatewayTxTypeRefund,
-		Provider:           deposit.Provider,
-		AmountCFA:          deposit.AmountCFA,
-		Currency:           deposit.Currency,
-		CallbackURL:        callbackURL,
-		RelatedDepositRef:  deposit.ProviderRef,
+		Type:              model.GatewayTxTypeRefund,
+		Provider:          deposit.Provider,
+		AmountCFA:         deposit.AmountCFA,
+		Currency:          deposit.Currency,
+		CallbackURL:       callbackURL,
+		RelatedDepositRef: deposit.ProviderRef,
 	})
 	if err != nil {
 		http.Error(w, `{"error":"transaction_creation_failed"}`, http.StatusInternalServerError)

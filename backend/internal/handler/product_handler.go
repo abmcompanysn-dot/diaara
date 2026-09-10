@@ -25,12 +25,12 @@ import (
 )
 
 type ProductHandler struct {
-	productRepo      *repository.ProductRepo
-	userRepo         *repository.UserRepo
-	saleRepo         *repository.SaleRepo
-	storage          StorageService
-	frontendURL      string
-	cache            *cache.Client
+	productRepo *repository.ProductRepo
+	userRepo    *repository.UserRepo
+	saleRepo    *repository.SaleRepo
+	storage     StorageService
+	frontendURL string
+	cache       *cache.Client
 	// notificationRepo : nil-safe, utilisé pour prévenir les admins quand une
 	// modification repasse un produit approuvé en attente (voir Update) —
 	// même mécanisme que WebhookHandler.notifyAdminsPayoutFailed.
@@ -987,7 +987,7 @@ func (h *ProductHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
-		"product":           updated,
+		"product":             updated,
 		"reverted_to_pending": wentBackToPending,
 	})
 }

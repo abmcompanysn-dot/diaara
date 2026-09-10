@@ -3,28 +3,28 @@ package model
 import "time"
 
 type Sale struct {
-	ID                  string     `json:"id"`
-	ProductID           string     `json:"product_id"`
-	BuyerID             string     `json:"buyer_id"`
-	BuyerName           string     `json:"buyer_name"`
-	Country             *string    `json:"country,omitempty"`
-	ReferralLinkID      *string    `json:"referral_link_id,omitempty"`
-	AmountCFA           int        `json:"amount_cfa"`
-	PlatformFeeCFA      int        `json:"platform_fee_cfa"`
-	CloserCommissionCFA int        `json:"closer_commission_cfa"`
-	VendorAmountCFA     int        `json:"vendor_amount_cfa"`
-	PaymentProvider     string     `json:"payment_provider"`
-	PaymentReference    string     `json:"payment_reference"`
+	ID                  string  `json:"id"`
+	ProductID           string  `json:"product_id"`
+	BuyerID             string  `json:"buyer_id"`
+	BuyerName           string  `json:"buyer_name"`
+	Country             *string `json:"country,omitempty"`
+	ReferralLinkID      *string `json:"referral_link_id,omitempty"`
+	AmountCFA           int     `json:"amount_cfa"`
+	PlatformFeeCFA      int     `json:"platform_fee_cfa"`
+	CloserCommissionCFA int     `json:"closer_commission_cfa"`
+	VendorAmountCFA     int     `json:"vendor_amount_cfa"`
+	PaymentProvider     string  `json:"payment_provider"`
+	PaymentReference    string  `json:"payment_reference"`
 	// ProviderTransactionID : ID propre à KPay (retourné à l'initiation),
 	// nécessaire pour ses appels GET statut/remboursement — reste nil pour
 	// une vente PawaPay (payment_reference est déjà l'identifiant, généré
 	// côté DIARRA).
-	ProviderTransactionID *string `json:"provider_transaction_id,omitempty"`
-	CheckoutToken       *string    `json:"checkout_token,omitempty"`
-	Status              string     `json:"status"`
-	RefundReference     *string    `json:"refund_reference,omitempty"`
-	DeliveredAt         *time.Time `json:"delivered_at,omitempty"`
-	CreatedAt           time.Time  `json:"created_at"`
+	ProviderTransactionID *string    `json:"provider_transaction_id,omitempty"`
+	CheckoutToken         *string    `json:"checkout_token,omitempty"`
+	Status                string     `json:"status"`
+	RefundReference       *string    `json:"refund_reference,omitempty"`
+	DeliveredAt           *time.Time `json:"delivered_at,omitempty"`
+	CreatedAt             time.Time  `json:"created_at"`
 	// Relance des commandes restées "pending" : date de la dernière relance
 	// envoyée à l'acheteur et nombre total de relances (voir SaleRepo.MarkReminded).
 	RemindedAt    *time.Time `json:"reminded_at,omitempty"`

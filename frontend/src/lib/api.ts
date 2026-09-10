@@ -533,6 +533,32 @@ export const api = {
       body: JSON.stringify({ active }),
     }),
 
+  getGatewayTransactions: (params?: {
+    client_id?: string;
+    type?: string;
+    status?: string;
+    limit?: number;
+    offset?: number;
+  }) => {
+    const q = new URLSearchParams();
+    Object.entries(params || {}).forEach(([k, v]) => {
+      if (v !== undefined && v !== '') q.set(k, String(v));
+    });
+    const qs = q.toString();
+    return fetchApi<{ transactions: any[] }>(
+      `/api/admin/gateway/transactions${qs ? `?${qs}` : ''}`,
+    );
+  },
+
+  getGatewayStats: (sinceDays: number) =>
+    fetchApi<any>(`/api/admin/gateway/stats?since=${sinceDays}`),
+
+  checkGatewayTransaction: (id: string) =>
+    fetchApi<{ transaction: any; provider_status?: string }>(
+      `/api/admin/gateway/transactions/${id}/check-provider`,
+      { method: 'POST' },
+    ),
+
   getSales: () => fetchApi<{ sales: any[] }>('/api/admin/sales'),
 
   // Commandes non abouties (pending/failed) avec contact acheteur complet

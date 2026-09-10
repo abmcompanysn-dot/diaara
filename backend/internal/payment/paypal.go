@@ -325,7 +325,7 @@ func (c *PayPalClient) SendPayout(ctx context.Context, req PayPalPayoutRequest) 
 					"value":    convertXOFToUSD(req.AmountXOF),
 					"currency": "USD",
 				},
-				"note":          note,
+				"note":           note,
 				"sender_item_id": req.SenderItemID,
 			},
 		},
