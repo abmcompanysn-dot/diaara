@@ -154,9 +154,18 @@ func (h *GatewayHandler) CreateDeposit(w http.ResponseWriter, r *http.Request) {
 	// (UNSUPPORTED_PARAMETER, voir le commentaire sur PaymentPageRequest) —
 	// l'URL de callback PawaPay est configurée une fois dans leur dashboard,
 	// commune à tous les dépôts (checkout DIARRA classique ET passerelle).
+	// Où renvoyer le navigateur après paiement : l'URL fournie par le client
+	// (ex. la page de suivi d'ABMCY Core), sinon la page générique
+	// /gateway/return du frontend DIARRA. On garde depositId en query pour
+	// que la page de retour puisse identifier la transaction.
+	returnURL := h.frontendURL + "/gateway/return"
+	if input.ReturnURL != "" {
+		returnURL = input.ReturnURL
+	}
+
 	page, err := h.pawapay.CreatePaymentPage(r.Context(), payment.PaymentPageRequest{
 		DepositId:       depositID,
-		ReturnUrl:       h.frontendURL + "/gateway/return",
+		ReturnUrl:       returnURL,
 		AmountDetails:   payment.AmountDetails{Amount: amount, Currency: currency},
 		Country:         input.Country,
 		Reason:          reason,

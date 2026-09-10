@@ -75,6 +75,10 @@ type GatewayCreateDepositInput struct {
 	Country     string `json:"country"` // ISO 3166-1 alpha-3, requis (page hébergée PawaPay)
 	Description string `json:"description,omitempty"`
 	CallbackURL string `json:"callback_url,omitempty"` // surcharge default_callback_url du client
+	// ReturnURL : où renvoyer le NAVIGATEUR de l'utilisateur après la page de
+	// paiement hébergée. Le client (ex. ABMCY Core) passe sa propre page de
+	// suivi ; sinon on retombe sur /gateway/return du frontend DIARRA.
+	ReturnURL string `json:"return_url,omitempty"`
 }
 
 // CreatePayoutInput — POST /api/gateway/v1/payouts.
