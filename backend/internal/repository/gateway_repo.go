@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/diarra/backend/internal/model"
 	"github.com/jackc/pgx/v5"
@@ -182,4 +183,39 @@ func (r *GatewayRepo) UpdateStatus(ctx context.Context, id, status string, failu
 		`UPDATE gateway_transactions SET status = $2, failure_reason = $3, updated_at = now() WHERE id = $1`,
 		id, status, failureReason)
 	return err
+}
+
+// ListPendingByProvider — transactions gateway encore "pending" chez un
+// provider donné, plus récentes que maxAge, ayant un provider_ref (donc
+// réellement soumises à l'agrégateur). Sert à la réconciliation quand un
+// webhook agrégateur n'est jamais arrivé (voir RunDepositReconcileLoop).
+func (r *GatewayRepo) ListPendingByProvider(ctx context.Context, provider string, maxAge time.Duration) ([]*model.GatewayTransaction, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+gatewayTxColumns+` FROM gateway_transactions
+		 WHERE provider = $1 AND status = 'pending' AND provider_ref IS NOT NULL
+		   AND created_at > now() - $2::interval
+		 ORDER BY created_at`,
+		provider, maxAge.String())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []*model.GatewayTransaction{}
+	for rows.Next() {
+		t := &model.GatewayTransaction{}
+		if err := rows.Scan(&t.ID, &t.ClientID, &t.ClientRef, &t.Type, &t.Provider, &t.ProviderRef, &t.RelatedDepositRef,
+			&t.Status, &t.FailureReason, &t.AmountCFA, &t.Currency, &t.RecipientPhone, &t.RecipientOperator, &t.Country,
+			&t.Description, &t.CallbackURL, &t.CreatedAt, &t.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// FindByID — lecture d'une transaction gateway par son id (bouton admin
+// "vérifier chez le prestataire").
+func (r *GatewayRepo) FindByID(ctx context.Context, id string) (*model.GatewayTransaction, error) {
+	return scanGatewayTx(r.pool.QueryRow(ctx,
+		`SELECT `+gatewayTxColumns+` FROM gateway_transactions WHERE id = $1`, id))
 }

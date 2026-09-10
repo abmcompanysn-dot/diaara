@@ -919,6 +919,69 @@ func (h *WebhookHandler) reconcileDepositsPass(ctx context.Context) {
 	if confirmed > 0 || failed > 0 {
 		log.Printf("réconciliation dépôts: %d confirmée(s), %d échouée(s) sur %d en attente", confirmed, failed, len(sales))
 	}
+
+	// Même filet de sécurité pour les dépôts de la PASSERELLE (clients
+	// externes) : si le webhook PawaPay ne nous parvient jamais, la
+	// transaction gateway resterait "pending" indéfiniment et le client
+	// (ex. ABMCY Core) ne serait jamais notifié.
+	h.reconcileGatewayDepositsPass(ctx)
+}
+
+// reconcileGatewayDepositsPass revérifie auprès de PawaPay les dépôts
+// gateway restés "pending", et applique le résultat en réutilisant le même
+// chemin que le webhook (tryRelayGatewayDeposit → met à jour la transaction
+// ET relaie le callback signé au client).
+func (h *WebhookHandler) reconcileGatewayDepositsPass(ctx context.Context) {
+	if h.gatewayRepo == nil {
+		return
+	}
+	txs, err := h.gatewayRepo.ListPendingByProvider(ctx, "pawapay", depositReconcileMaxAge)
+	if err != nil {
+		log.Printf("réconciliation gateway: lecture échouée: %v", err)
+		return
+	}
+	done := 0
+	for _, tx := range txs {
+		if tx.Type != model.GatewayTxTypeDeposit || tx.ProviderRef == nil || *tx.ProviderRef == "" {
+			continue
+		}
+		status, err := h.pawapay.GetDepositStatus(ctx, *tx.ProviderRef)
+		if err != nil || status.Data == nil {
+			// NOT_FOUND persistant : l'utilisateur n'a jamais validé la page
+			// PawaPay. Au bout de 15 min on abandonne (échec).
+			if status != nil && status.Data == nil && time.Since(tx.CreatedAt) > 15*time.Minute {
+				reason := "expired_no_payment"
+				_ = h.gatewayRepo.UpdateStatus(ctx, tx.ID, model.GatewayTxFailed, &reason)
+				h.relayGatewayByTx(ctx, tx.ID)
+				done++
+			}
+			continue
+		}
+		switch status.Data.Status {
+		case "COMPLETED":
+			_ = h.gatewayRepo.UpdateStatus(ctx, tx.ID, model.GatewayTxCompleted, nil)
+			h.relayGatewayByTx(ctx, tx.ID)
+			done++
+		case "FAILED":
+			reason := "provider_failed"
+			_ = h.gatewayRepo.UpdateStatus(ctx, tx.ID, model.GatewayTxFailed, &reason)
+			h.relayGatewayByTx(ctx, tx.ID)
+			done++
+		}
+	}
+	if done > 0 {
+		log.Printf("réconciliation gateway: %d transaction(s) résolue(s) sur %d", done, len(txs))
+	}
+}
+
+// relayGatewayByTx recharge une transaction gateway et relaie son callback
+// signé au client (même code que le webhook, réutilisé après réconciliation).
+func (h *WebhookHandler) relayGatewayByTx(ctx context.Context, txID string) {
+	tx, err := h.gatewayRepo.FindByID(ctx, txID)
+	if err != nil {
+		return
+	}
+	go h.relayGatewayCallback(tx)
 }
 
 // notifyAdminsPayoutFailed prévient les admins (notification in-app) qu'un
