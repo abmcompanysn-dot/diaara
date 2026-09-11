@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/diarra/backend/internal/cache"
 	"github.com/diarra/backend/internal/middleware"
 	"github.com/diarra/backend/internal/model"
 	"github.com/diarra/backend/internal/repository"
@@ -19,6 +20,16 @@ const (
 	deliveryMaxDownloads = 3
 	deliveryExpiry       = 30 * time.Minute
 	signedURLExpiry      = 5 * time.Minute
+	// deliveryRegenerateLimit / deliveryRegenerateWindow — le frontend
+	// n'utilise jamais GET /api/delivery/{token} (le compteur DownloadCount
+	// ci-dessous est mort en pratique) : il ouvre directement le signed_url
+	// renvoyé par generate(), qui n'était borné par RIEN — un checkout_token
+	// qui fuit (URL de retour checkout, historique navigateur, Referer)
+	// permettait un nombre illimité de re-téléchargements du fichier acheté.
+	// Borne large pour ne jamais gêner un acheteur légitime qui revisite sa
+	// commande plusieurs fois (audit sécurité 2026-09-11).
+	deliveryRegenerateLimit  = 20
+	deliveryRegenerateWindow = time.Hour
 )
 
 type DeliveryHandler struct {
@@ -26,6 +37,7 @@ type DeliveryHandler struct {
 	saleRepo     *repository.SaleRepo
 	productRepo  *repository.ProductRepo
 	storage      *storage.S3Storage
+	cache        *cache.Client
 }
 
 func NewDeliveryHandler(
@@ -33,12 +45,14 @@ func NewDeliveryHandler(
 	saleRepo *repository.SaleRepo,
 	productRepo *repository.ProductRepo,
 	storage *storage.S3Storage,
+	cacheClient *cache.Client,
 ) *DeliveryHandler {
 	return &DeliveryHandler{
 		deliveryRepo: deliveryRepo,
 		saleRepo:     saleRepo,
 		productRepo:  productRepo,
 		storage:      storage,
+		cache:        cacheClient,
 	}
 }
 
@@ -88,6 +102,14 @@ func (h *DeliveryHandler) generate(w http.ResponseWriter, r *http.Request, sale 
 	if sale.Status != string(model.SalePaid) && sale.Status != string(model.SaleDelivered) {
 		http.Error(w, `{"error":"order_not_paid"}`, http.StatusBadRequest)
 		return
+	}
+
+	if h.cache != nil {
+		count, err := h.cache.IncrWithExpire(r.Context(), "delivery-regen:"+sale.ID, deliveryRegenerateWindow)
+		if err == nil && count > deliveryRegenerateLimit {
+			http.Error(w, `{"error":"too_many_requests"}`, http.StatusTooManyRequests)
+			return
+		}
 	}
 
 	// Lien déjà existant ?

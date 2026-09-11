@@ -69,9 +69,15 @@ func (m *JWTManager) GenerateRefreshToken(userID string) (string, error) {
 }
 
 func (m *JWTManager) ValidateAccessToken(tokenStr string) (*Claims, error) {
+	// jwt.WithValidMethods épingle l'algorithme accepté : sans lui, un jeton
+	// forgé annonçant un autre algorithme (ex. RS256) serait quand même passé
+	// à la keyfunc, qui renvoie ici un []byte — jwt/v5 le refuse déjà pour un
+	// algo asymétrique, mais épingler explicitement retire toute dépendance à
+	// ce comportement implicite de la librairie (défense en profondeur, audit
+	// sécurité 2026-09-11).
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(t *jwt.Token) (interface{}, error) {
 		return m.accessSecret, nil
-	})
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
 	if err != nil {
 		return nil, ErrInvalidToken
 	}
@@ -85,7 +91,7 @@ func (m *JWTManager) ValidateAccessToken(tokenStr string) (*Claims, error) {
 func (m *JWTManager) ValidateRefreshToken(tokenStr string) (*Claims, error) {
 	token, err := jwt.ParseWithClaims(tokenStr, &Claims{}, func(t *jwt.Token) (interface{}, error) {
 		return m.refreshSecret, nil
-	})
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
 	if err != nil {
 		return nil, ErrInvalidToken
 	}

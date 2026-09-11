@@ -18,11 +18,18 @@ type GatewayClient struct {
 	// authentifier QUI appelle, la signature garantit en plus que le CORPS
 	// n'a pas été altéré en chemin (même sur TLS, une seconde ligne de
 	// défense contre un secret de clé API qui fuirait sans le secret HMAC).
-	HMACSecretHash     string    `json:"-"`
-	DefaultCallbackURL *string   `json:"default_callback_url,omitempty"`
-	IsActive           bool      `json:"is_active"`
-	CreatedAt          time.Time `json:"created_at"`
-	UpdatedAt          time.Time `json:"updated_at"`
+	HMACSecretHash     string  `json:"-"`
+	DefaultCallbackURL *string `json:"default_callback_url,omitempty"`
+	IsActive           bool    `json:"is_active"`
+	// MaxPayoutCFA / DailyPayoutCapCFA : plafonds appliqués à
+	// POST /api/gateway/v1/payouts (voir GatewayHandler.CreatePayout) — sans
+	// ça, une clé API + secret HMAC compromis suffisait à vider tout le
+	// solde PawaPay de DIARRA vers un numéro arbitraire, en une seule
+	// requête (audit sécurité 2026-09-11, migration 031).
+	MaxPayoutCFA      int       `json:"max_payout_cfa"`
+	DailyPayoutCapCFA int       `json:"daily_payout_cap_cfa"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
 }
 
 // Types et statuts d'une transaction de passerelle — vocabulaire commun déjà

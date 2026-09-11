@@ -5,7 +5,10 @@ import (
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
+	"net/url"
+	"strings"
 
 	"github.com/diarra/backend/internal/email"
 	"github.com/diarra/backend/internal/middleware"
@@ -71,6 +74,41 @@ func gatewayUUID() string {
 	return fmt.Sprintf("%x-%x-%x-%x-%x", b[0:4], b[4:6], b[6:8], b[8:10], b[10:16])
 }
 
+// errInvalidCallbackURL — voir validateCallbackURL.
+var errInvalidCallbackURL = fmt.Errorf("invalid_callback_url")
+
+// validateCallbackURL rejette un callback_url fourni par un client passerelle
+// qui viserait le réseau interne (SSRF aveugle : DIARRA relaie plus tard un
+// POST signé vers cette URL, voir gateway_relay.go). Un client passerelle est
+// authentifié (clé API + HMAC), mais reste un tiers externe — accepter
+// n'importe quel hôte lui permettrait de faire sonder le cluster/l'infra
+// DIARRA par le serveur lui-même (audit sécurité 2026-09-11). Ne protège pas
+// contre le DNS rebinding (résolution différente au moment de l'appel réel) :
+// suffisant contre une IP interne écrite en dur, pas contre un domaine
+// public reconfiguré après coup — hors scope pour un partenaire de confiance.
+func validateCallbackURL(raw string) error {
+	if raw == "" {
+		return nil
+	}
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Hostname() == "" {
+		return errInvalidCallbackURL
+	}
+	host := strings.ToLower(u.Hostname())
+	if host == "localhost" || strings.HasSuffix(host, ".local") || strings.HasSuffix(host, ".internal") {
+		return errInvalidCallbackURL
+	}
+	// Un hôte littéralement écrit en IP est vérifiable directement ; un nom de
+	// domaine ne l'est qu'au moment de la résolution DNS réelle (voir la
+	// limite DNS rebinding ci-dessus), donc seul ce cas est filtré ici.
+	if ip := net.ParseIP(host); ip != nil {
+		if ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+			return errInvalidCallbackURL
+		}
+	}
+	return nil
+}
+
 // CreateDeposit — POST /api/gateway/v1/deposits
 // Ouvre une page de paiement PawaPay hébergée pour le client externe,
 // exactement comme SaleHandler.initiatePaymentPage pour un achat DIARRA —
@@ -85,6 +123,10 @@ func (h *GatewayHandler) CreateDeposit(w http.ResponseWriter, r *http.Request) {
 	}
 	if input.ClientRef == "" || input.AmountCFA <= 0 || input.Country == "" {
 		http.Error(w, `{"error":"client_ref_amount_country_required"}`, http.StatusBadRequest)
+		return
+	}
+	if err := validateCallbackURL(input.CallbackURL); err != nil {
+		http.Error(w, `{"error":"invalid_callback_url"}`, http.StatusBadRequest)
 		return
 	}
 	if h.pawapay == nil {
@@ -220,6 +262,10 @@ func (h *GatewayHandler) CreatePayout(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"missing_required_fields"}`, http.StatusBadRequest)
 		return
 	}
+	if err := validateCallbackURL(input.CallbackURL); err != nil {
+		http.Error(w, `{"error":"invalid_callback_url"}`, http.StatusBadRequest)
+		return
+	}
 	if h.pawapay == nil {
 		http.Error(w, `{"error":"payment_not_configured"}`, http.StatusServiceUnavailable)
 		return
@@ -227,6 +273,29 @@ func (h *GatewayHandler) CreatePayout(w http.ResponseWriter, r *http.Request) {
 
 	if existing, err := h.gatewayRepo.FindByClientRef(r.Context(), clientID, input.ClientRef, model.GatewayTxTypePayout); err == nil {
 		writeGatewayTx(w, existing, http.StatusOK)
+		return
+	}
+
+	// Plafonds anti-drainage : sans ça, une clé API + secret HMAC compromis
+	// suffisait à vider tout le solde PawaPay de DIARRA en une requête (audit
+	// sécurité 2026-09-11). Deux limites indépendantes, éditables par client
+	// depuis /admin/gateway : par transaction, et cumulée sur 24h glissantes.
+	client, err := h.gatewayRepo.FindClientByID(r.Context(), clientID)
+	if err != nil {
+		http.Error(w, `{"error":"client_not_found"}`, http.StatusUnauthorized)
+		return
+	}
+	if input.AmountCFA > client.MaxPayoutCFA {
+		http.Error(w, `{"error":"amount_exceeds_max_payout"}`, http.StatusUnprocessableEntity)
+		return
+	}
+	sumToday, err := h.gatewayRepo.SumPayoutsToday(r.Context(), clientID)
+	if err != nil {
+		http.Error(w, `{"error":"limit_check_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	if sumToday+input.AmountCFA > client.DailyPayoutCapCFA {
+		http.Error(w, `{"error":"daily_payout_cap_exceeded"}`, http.StatusUnprocessableEntity)
 		return
 	}
 
@@ -303,6 +372,10 @@ func (h *GatewayHandler) CreateRefund(w http.ResponseWriter, r *http.Request) {
 	}
 	if input.ClientRef == "" || input.DepositClientRef == "" {
 		http.Error(w, `{"error":"client_ref_and_deposit_client_ref_required"}`, http.StatusBadRequest)
+		return
+	}
+	if err := validateCallbackURL(input.CallbackURL); err != nil {
+		http.Error(w, `{"error":"invalid_callback_url"}`, http.StatusBadRequest)
 		return
 	}
 	if h.pawapay == nil {

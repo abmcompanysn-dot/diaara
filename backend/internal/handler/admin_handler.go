@@ -137,6 +137,37 @@ func (h *AdminHandler) CreateGatewayClient(w http.ResponseWriter, r *http.Reques
 	json.NewEncoder(w).Encode(map[string]interface{}{"client": client, "api_key": key, "hmac_secret": hmacSecret})
 }
 
+// SetGatewayClientLimits — PUT /api/admin/gateway/clients/{id}/limits
+// (scope "finance"). Corps : {"max_payout_cfa": N, "daily_payout_cap_cfa": N}.
+// Voir migration 031 et GatewayHandler.CreatePayout — un client créé avant
+// cette migration a les défauts (200 000 / 500 000 FCFA), à ajuster ici selon
+// le KYC/l'usage réel du client (ex. ABMCY Core une fois son volume connu).
+func (h *AdminHandler) SetGatewayClientLimits(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var input struct {
+		MaxPayoutCFA      int `json:"max_payout_cfa"`
+		DailyPayoutCapCFA int `json:"daily_payout_cap_cfa"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+	if input.MaxPayoutCFA <= 0 || input.DailyPayoutCapCFA <= 0 {
+		http.Error(w, `{"error":"limits_must_be_positive"}`, http.StatusBadRequest)
+		return
+	}
+	if input.MaxPayoutCFA > input.DailyPayoutCapCFA {
+		http.Error(w, `{"error":"max_payout_exceeds_daily_cap"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.gatewayRepo.SetPayoutLimits(r.Context(), id, input.MaxPayoutCFA, input.DailyPayoutCapCFA); err != nil {
+		http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]bool{"ok": true})
+}
+
 // SetGatewayClientActive — PUT /api/admin/gateway/clients/{id}/active
 // (scope "finance"). Corps : {"active": true|false}.
 func (h *AdminHandler) SetGatewayClientActive(w http.ResponseWriter, r *http.Request) {
@@ -494,6 +525,14 @@ func (h *AdminHandler) SuspendUser(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"suspension_failed"}`, http.StatusInternalServerError)
 		return
 	}
+
+	// Sans ça, la suspension n'avait aucun effet immédiat : l'access token en
+	// cours restait valable (jusqu'à 15 min) et surtout le refresh token
+	// permettait de continuer à en émettre de nouveaux indéfiniment (voir
+	// AuthService.RefreshToken, qui vérifie maintenant locked_until, mais un
+	// refresh token déjà émis doit aussi être coupé ici) — un compte suspendu
+	// gardait un accès complet tant que son onglet restait ouvert.
+	_ = h.userRepo.RevokeAllUserRefreshTokens(r.Context(), id)
 
 	h.logActivity(middleware.GetUserID(r.Context()), "user_suspended", "user", id, "Compte suspendu 30 jours")
 

@@ -17,6 +17,8 @@ type GatewayClient = {
   name: string;
   default_callback_url?: string | null;
   is_active: boolean;
+  max_payout_cfa: number;
+  daily_payout_cap_cfa: number;
   created_at: string;
 };
 
@@ -67,13 +69,43 @@ export default function AdminGatewayPage() {
   const [toggleTarget, setToggleTarget] = useState<GatewayClient | null>(null);
   const [toggling, setToggling] = useState(false);
 
+  const [limitsEdit, setLimitsEdit] = useState<Record<string, { max: string; daily: string }>>({});
+  const [savingLimits, setSavingLimits] = useState<string | null>(null);
+
   const load = () => {
     setLoading(true);
     api
       .getGatewayClients()
-      .then((r) => setClients(r.clients))
+      .then((r) => {
+        setClients(r.clients);
+        setLimitsEdit(
+          Object.fromEntries(
+            r.clients.map((c) => [c.id, { max: String(c.max_payout_cfa), daily: String(c.daily_payout_cap_cfa) }])
+          )
+        );
+      })
       .catch((err: any) => setError(friendlyError(err)))
       .finally(() => setLoading(false));
+  };
+
+  const handleSaveLimits = async (id: string) => {
+    const edit = limitsEdit[id];
+    const max = parseInt(edit?.max || '', 10);
+    const daily = parseInt(edit?.daily || '', 10);
+    if (!max || !daily || max <= 0 || daily <= 0) {
+      setError('Plafonds invalides (doivent être des nombres positifs).');
+      return;
+    }
+    setSavingLimits(id);
+    setError('');
+    try {
+      await api.setGatewayClientLimits(id, max, daily);
+      load();
+    } catch (err: any) {
+      setError(friendlyError(err));
+    } finally {
+      setSavingLimits(null);
+    }
   };
 
   useEffect(load, []);
@@ -221,34 +253,78 @@ export default function AdminGatewayPage() {
           ) : (
             <ul className="divide-y divide-green-900/10">
               {clients.map((c) => (
-                <li key={c.id} className="py-3 flex items-center justify-between gap-4">
-                  <div className="min-w-0">
-                    <p className="text-sm font-semibold text-green-950 flex items-center gap-2">
-                      {c.name}
-                      <span
-                        className={
-                          c.is_active
-                            ? 'text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-green-100 text-green-800'
-                            : 'text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-800'
-                        }
-                      >
-                        {c.is_active ? 'actif' : 'désactivé'}
-                      </span>
-                    </p>
-                    <p className="text-xs text-green-900/50 font-mono truncate">{c.id}</p>
-                    {c.default_callback_url && (
-                      <p className="text-xs text-green-900/50 truncate">{c.default_callback_url}</p>
-                    )}
+                <li key={c.id} className="py-3 space-y-3">
+                  <div className="flex items-center justify-between gap-4">
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-green-950 flex items-center gap-2">
+                        {c.name}
+                        <span
+                          className={
+                            c.is_active
+                              ? 'text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-green-100 text-green-800'
+                              : 'text-[10px] font-bold uppercase px-1.5 py-0.5 rounded bg-red-100 text-red-800'
+                          }
+                        >
+                          {c.is_active ? 'actif' : 'désactivé'}
+                        </span>
+                      </p>
+                      <p className="text-xs text-green-900/50 font-mono truncate">{c.id}</p>
+                      {c.default_callback_url && (
+                        <p className="text-xs text-green-900/50 truncate">{c.default_callback_url}</p>
+                      )}
+                    </div>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="h-9 shrink-0"
+                      disabled={toggling}
+                      onClick={() => setToggleTarget(c)}
+                    >
+                      {c.is_active ? 'Désactiver' : 'Réactiver'}
+                    </Button>
                   </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-9 shrink-0"
-                    disabled={toggling}
-                    onClick={() => setToggleTarget(c)}
-                  >
-                    {c.is_active ? 'Désactiver' : 'Réactiver'}
-                  </Button>
+
+                  {/* Plafonds de versement (migration 031) — sans eux, une clé
+                      compromise pouvait vider tout le solde PawaPay de DIARRA
+                      en un seul appel, voir GatewayHandler.CreatePayout. */}
+                  <div className="flex flex-wrap items-end gap-2 bg-secondary/30 rounded-lg p-2.5">
+                    <div>
+                      <label className="text-[11px] font-semibold text-green-900/70 block mb-0.5">
+                        Max / transaction (FCFA)
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={limitsEdit[c.id]?.max ?? ''}
+                        onChange={(e) =>
+                          setLimitsEdit((s) => ({ ...s, [c.id]: { ...s[c.id], max: e.target.value } }))
+                        }
+                        className="w-36 h-9 px-2 rounded-lg border border-green-900/15 text-sm"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-semibold text-green-900/70 block mb-0.5">
+                        Plafond / 24h (FCFA)
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        value={limitsEdit[c.id]?.daily ?? ''}
+                        onChange={(e) =>
+                          setLimitsEdit((s) => ({ ...s, [c.id]: { ...s[c.id], daily: e.target.value } }))
+                        }
+                        className="w-36 h-9 px-2 rounded-lg border border-green-900/15 text-sm"
+                      />
+                    </div>
+                    <Button
+                      size="sm"
+                      className="h-9"
+                      disabled={savingLimits === c.id}
+                      onClick={() => handleSaveLimits(c.id)}
+                    >
+                      {savingLimits === c.id ? 'Enregistrement...' : 'Enregistrer les plafonds'}
+                    </Button>
+                  </div>
                 </li>
               ))}
             </ul>

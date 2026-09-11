@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/mail"
 	"os"
+	"regexp"
 
 	"github.com/diarra/backend/internal/auth"
 	"github.com/diarra/backend/internal/middleware"
@@ -19,6 +20,15 @@ import (
 // de longueur minimale auparavant (bcrypt accepte n'importe quelle longueur
 // non nulle, y compris un seul caractère).
 const minPasswordLength = 8
+
+// facebookPixelIDPattern / googleTagIDPattern — voir UpdateAdTracking : ces
+// identifiants sont réinjectés dans un <script> inline côté frontend, donc
+// validés en forme stricte ici plutôt qu'en texte libre (audit sécurité
+// 2026-09-11, XSS stocké via un pixel publicitaire vendeur).
+var (
+	facebookPixelIDPattern = regexp.MustCompile(`^\d{6,20}$`)
+	googleTagIDPattern     = regexp.MustCompile(`^(G|GT|AW|DC)-[A-Z0-9]{4,20}$`)
+)
 
 type AuthHandler struct {
 	authService *service.AuthService
@@ -257,6 +267,22 @@ func (h *AuthHandler) UpdateAdTracking(w http.ResponseWriter, r *http.Request) {
 	var input model.UpdateAdTrackingInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Ces identifiants sont réinjectés tels quels dans un <script> inline
+	// côté frontend (voir VendorAdPixels) : un format libre ouvrirait une
+	// XSS stockée sur la boutique/fiche produit du vendeur, visible par tout
+	// visiteur (y compris un admin en modération). On n'accepte donc que la
+	// forme exacte d'un identifiant Meta Pixel / Google Tag, jamais un texte
+	// libre. Une chaîne vide reste acceptée (efface l'identifiant, voir
+	// UpdateAdTrackingInput).
+	if input.FacebookPixelID != nil && *input.FacebookPixelID != "" && !facebookPixelIDPattern.MatchString(*input.FacebookPixelID) {
+		http.Error(w, `{"error":"invalid_facebook_pixel_id"}`, http.StatusBadRequest)
+		return
+	}
+	if input.GoogleTagID != nil && *input.GoogleTagID != "" && !googleTagIDPattern.MatchString(*input.GoogleTagID) {
+		http.Error(w, `{"error":"invalid_google_tag_id"}`, http.StatusBadRequest)
 		return
 	}
 

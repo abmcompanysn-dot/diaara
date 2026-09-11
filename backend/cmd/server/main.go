@@ -272,7 +272,7 @@ func main() {
 	// Livraison (liens signés du stockage objet)
 	var deliveryHandler *handler.DeliveryHandler
 	if s3 != nil {
-		deliveryHandler = handler.NewDeliveryHandler(deliveryRepo, saleRepo, productRepo, s3)
+		deliveryHandler = handler.NewDeliveryHandler(deliveryRepo, saleRepo, productRepo, s3, redisCache)
 	} else {
 		deliveryHandler = nil
 		log.Println("WARNING: livraison désactivée (stockage objet non configuré)")
@@ -299,7 +299,7 @@ func main() {
 
 	r := chi.NewRouter()
 
-	r.Use(chimw.Logger)
+	r.Use(middleware.RequestLogger)
 	r.Use(chimw.Recoverer)
 	r.Use(middleware.NewRateLimiter(redisCache, 10, 40).Middleware)
 	r.Use(middleware.SecurityHeaders)
@@ -560,6 +560,7 @@ func main() {
 			r.Get("/gateway/clients", adminHandler.ListGatewayClients)
 			r.Post("/gateway/clients", adminHandler.CreateGatewayClient)
 			r.Put("/gateway/clients/{id}/active", adminHandler.SetGatewayClientActive)
+			r.Put("/gateway/clients/{id}/limits", adminHandler.SetGatewayClientLimits)
 			r.Get("/gateway/transactions", adminHandler.ListGatewayTransactions)
 			r.Get("/gateway/stats", adminHandler.GatewayStats)
 			r.Post("/gateway/transactions/{id}/check-provider", adminHandler.CheckGatewayTransactionProvider)

@@ -192,6 +192,37 @@ func (r *SaleRepo) ListPendingForProvider(ctx context.Context, provider string, 
 	return sales, rows.Err()
 }
 
+// ListRecentFailedForProvider — ventes "failed" créées il y a moins de
+// maxAge, pour un prestataire donné. Le webhook de dépôt n'étant pas
+// authentifié (Content-Digest ne prouve que l'intégrité, pas l'origine — voir
+// verifyContentDigest), un tiers qui connaît un depositId valide peut le
+// rejouer pendant sa fenêtre pending->completed et forcer un passage
+// prématuré en "failed" avant la confirmation réelle ; ce filet revérifie
+// ces ventes récemment échouées et les corrige en "paid" si PawaPay confirme
+// en fait un paiement complété (audit sécurité 2026-09-11).
+func (r *SaleRepo) ListRecentFailedForProvider(ctx context.Context, provider string, maxAge time.Duration) ([]*model.Sale, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+saleColumns+`
+		 FROM sales
+		 WHERE status = 'failed' AND payment_provider = $1
+		   AND created_at >= now() - $2::interval
+		 ORDER BY created_at ASC
+		 LIMIT 200`, provider, intervalStr(maxAge))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	sales := []*model.Sale{}
+	for rows.Next() {
+		s, err := scanSale(rows)
+		if err != nil {
+			return nil, err
+		}
+		sales = append(sales, s)
+	}
+	return sales, rows.Err()
+}
+
 // PendingSaleView — commande non aboutie (pending/failed) enrichie du contact
 // acheteur (nom, email, téléphone, pays) et du titre produit + vendeur, pour
 // la vue admin « paiements en attente & échoués » et la relance vendeur.

@@ -920,11 +920,49 @@ func (h *WebhookHandler) reconcileDepositsPass(ctx context.Context) {
 		log.Printf("réconciliation dépôts: %d confirmée(s), %d échouée(s) sur %d en attente", confirmed, failed, len(sales))
 	}
 
+	h.reconcileRecentFailedDepositsPass(ctx)
+
 	// Même filet de sécurité pour les dépôts de la PASSERELLE (clients
 	// externes) : si le webhook PawaPay ne nous parvient jamais, la
 	// transaction gateway resterait "pending" indéfiniment et le client
 	// (ex. ABMCY Core) ne serait jamais notifié.
 	h.reconcileGatewayDepositsPass(ctx)
+}
+
+// recentFailedRecheckWindow — fenêtre dans laquelle une vente "failed" est
+// revérifiée auprès de PawaPay (voir SaleRepo.ListRecentFailedForProvider).
+// Bornée volontairement courte : au-delà, une vente échouée est très
+// probablement un vrai échec de paiement, pas un webhook forgé — inutile
+// d'appeler l'API PawaPay indéfiniment pour chaque vente échouée du passé.
+const recentFailedRecheckWindow = 30 * time.Minute
+
+// reconcileRecentFailedDepositsPass revérifie les ventes passées "failed"
+// récemment : le webhook de dépôt n'étant pas authentifié (voir
+// verifyContentDigest), un tiers connaissant un depositId valide peut le
+// rejouer et forcer un passage prématuré en "failed" avant la confirmation
+// réelle du paiement. On corrige en "paid" si PawaPay confirme en fait un
+// paiement COMPLETED (audit sécurité 2026-09-11).
+func (h *WebhookHandler) reconcileRecentFailedDepositsPass(ctx context.Context) {
+	sales, err := h.saleRepo.ListRecentFailedForProvider(ctx, "pawapay", recentFailedRecheckWindow)
+	if err != nil {
+		log.Printf("réconciliation dépôts échoués: lecture échouée: %v", err)
+		return
+	}
+	corrected := 0
+	for _, sale := range sales {
+		status, err := h.pawapay.GetDepositStatus(ctx, sale.PaymentReference)
+		if err != nil || status.Data == nil || status.Data.Status != "COMPLETED" {
+			continue // vrai échec, ou statut indisponible pour l'instant
+		}
+		if err := h.confirmPaidSaleRecoverFromFailed(ctx, sale); err != nil {
+			log.Printf("réconciliation dépôts échoués: sale=%s correction échouée: %v", sale.ID, err)
+			continue
+		}
+		corrected++
+	}
+	if corrected > 0 {
+		log.Printf("réconciliation dépôts échoués: %d vente(s) corrigée(s) failed -> paid sur %d revérifiée(s)", corrected, len(sales))
+	}
 }
 
 // reconcileGatewayDepositsPass revérifie auprès de PawaPay les dépôts
@@ -1113,6 +1151,22 @@ func (h *WebhookHandler) ConfirmPaidSale(ctx context.Context, sale *model.Sale) 
 	if sale.Status != string(model.SalePending) {
 		return nil
 	}
+	return h.confirmPaidSaleUnguarded(ctx, sale)
+}
+
+// confirmPaidSaleRecoverFromFailed — même confirmation que ConfirmPaidSale,
+// mais pour une vente déjà passée "failed" que PawaPay confirme en fait
+// COMPLETED (voir reconcileRecentFailedDepositsPass). ConfirmPaidSale
+// refuserait ce cas (son garde-fou d'idempotence n'accepte qu'un départ
+// "pending"), d'où ce chemin dédié avec son propre garde ciblé.
+func (h *WebhookHandler) confirmPaidSaleRecoverFromFailed(ctx context.Context, sale *model.Sale) error {
+	if sale.Status != string(model.SaleFailed) {
+		return nil
+	}
+	return h.confirmPaidSaleUnguarded(ctx, sale)
+}
+
+func (h *WebhookHandler) confirmPaidSaleUnguarded(ctx context.Context, sale *model.Sale) error {
 	if err := h.saleRepo.UpdateStatus(ctx, sale.ID, string(model.SalePaid)); err != nil {
 		return err
 	}

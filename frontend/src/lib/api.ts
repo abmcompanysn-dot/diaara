@@ -533,6 +533,15 @@ export const api = {
       body: JSON.stringify({ active }),
     }),
 
+  // Plafonds de versement (voir migration 031) — sans eux, une clé API +
+  // secret HMAC compromis pouvait vider tout le solde PawaPay de DIARRA en
+  // un seul appel POST /api/gateway/v1/payouts (audit sécurité 2026-09-11).
+  setGatewayClientLimits: (id: string, maxPayoutCfa: number, dailyPayoutCapCfa: number) =>
+    fetchApi<{ ok: boolean }>(`/api/admin/gateway/clients/${id}/limits`, {
+      method: 'PUT',
+      body: JSON.stringify({ max_payout_cfa: maxPayoutCfa, daily_payout_cap_cfa: dailyPayoutCapCfa }),
+    }),
+
   getGatewayTransactions: (params?: {
     client_id?: string;
     type?: string;

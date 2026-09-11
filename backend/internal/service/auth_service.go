@@ -275,6 +275,15 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string) (*L
 		return nil, auth.ErrInvalidToken
 	}
 
+	// Un compte verrouillé (brute-force) ou suspendu (admin, voir
+	// AdminHandler.SuspendUser) ne doit jamais pouvoir renouveler sa session
+	// — seul Login vérifiait ce champ jusqu'ici, ce qui laissait un compte
+	// déjà connecté continuer à se rafraîchir indéfiniment malgré une
+	// suspension (audit sécurité 2026-09-11).
+	if user.LockedUntil != nil && user.LockedUntil.After(time.Now()) {
+		return nil, auth.ErrInvalidToken
+	}
+
 	// Rotation : on révoque l'ancien refresh token, on en émet un nouveau.
 	_ = s.userRepo.RevokeRefreshToken(ctx, auth.HashToken(refreshToken))
 

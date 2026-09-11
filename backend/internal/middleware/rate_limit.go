@@ -5,6 +5,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -117,6 +118,18 @@ func (l *RateLimiter) Middleware(next http.Handler) http.Handler {
 	})
 }
 
+// trustedProxySecret — si posé (variable TRUSTED_PROXY_SECRET), les en-têtes
+// CF-Connecting-IP / X-Real-IP / X-Forwarded-For ne sont honorés que si la
+// requête porte aussi X-Diarra-Origin-Secret avec cette valeur. Sans ce
+// garde-fou, N'IMPORTE QUI peut poser lui-même CF-Connecting-IP et se faire
+// passer pour une IP différente à chaque requête — ce qui annule
+// complètement le rate limiting (dont la limite stricte anti-brute-force sur
+// /api/auth/login) : voir audit sécurité 2026-09-11. Le secret doit être posé
+// par le proxy de confiance (Caddy) sur toute requête qu'il transmet, jamais
+// accessible depuis l'extérieur — variable vide = comportement inchangé
+// (rétrocompatible tant que l'infra n'a pas été mise à jour côté Caddy).
+var trustedProxySecret = os.Getenv("TRUSTED_PROXY_SECRET")
+
 // clientIP tente de retrouver l'IP réelle du visiteur à travers la chaîne de
 // proxys de production : Cloudflare -> Caddy -> ingress-nginx -> backend.
 //
@@ -133,8 +146,16 @@ func (l *RateLimiter) Middleware(next http.Handler) http.Handler {
 //     mais mieux que rien en dev/local sans proxy).
 //
 // Chaque candidat est nettoyé d'un éventuel ":port" et validé comme IP ; un
-// candidat invalide est ignoré au profit du suivant.
+// candidat invalide est ignoré au profit du suivant. Voir trustedProxySecret
+// ci-dessus : ces en-têtes ne sont des candidats valables QUE si ce garde-fou
+// est satisfait (ou désactivé).
 func clientIP(r *http.Request) string {
+	if trustedProxySecret != "" && r.Header.Get("X-Diarra-Origin-Secret") != trustedProxySecret {
+		if ip := parseIPMaybePort(r.RemoteAddr); ip != "" {
+			return ip
+		}
+		return r.RemoteAddr
+	}
 	candidates := []string{
 		r.Header.Get("CF-Connecting-IP"),
 		r.Header.Get("X-Real-IP"),

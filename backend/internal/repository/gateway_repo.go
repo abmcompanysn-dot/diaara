@@ -25,7 +25,8 @@ func NewGatewayRepo(pool *pgxpool.Pool) *GatewayRepo {
 
 // --- Clients -----------------------------------------------------------
 
-const gatewayClientColumns = `id, name, api_key_hash, hmac_secret_hash, default_callback_url, is_active, created_at, updated_at`
+const gatewayClientColumns = `id, name, api_key_hash, hmac_secret_hash, default_callback_url, is_active,
+	max_payout_cfa, daily_payout_cap_cfa, created_at, updated_at`
 
 // CreateClient — hmacSecretHash peut être vide ("") pour un client créé avant
 // la migration 030 ou qui n'a pas encore fait tourner sa clé HMAC ; dans ce
@@ -88,7 +89,8 @@ func (r *GatewayRepo) SetClientActive(ctx context.Context, id string, active boo
 
 func scanGatewayClient(row pgx.Row) (*model.GatewayClient, error) {
 	c := &model.GatewayClient{}
-	err := row.Scan(&c.ID, &c.Name, &c.APIKeyHash, &c.HMACSecretHash, &c.DefaultCallbackURL, &c.IsActive, &c.CreatedAt, &c.UpdatedAt)
+	err := row.Scan(&c.ID, &c.Name, &c.APIKeyHash, &c.HMACSecretHash, &c.DefaultCallbackURL, &c.IsActive,
+		&c.MaxPayoutCFA, &c.DailyPayoutCapCFA, &c.CreatedAt, &c.UpdatedAt)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, ErrGatewayClientNotFound
@@ -100,8 +102,32 @@ func scanGatewayClient(row pgx.Row) (*model.GatewayClient, error) {
 
 func scanGatewayClientRow(rows pgx.Rows) (*model.GatewayClient, error) {
 	c := &model.GatewayClient{}
-	err := rows.Scan(&c.ID, &c.Name, &c.APIKeyHash, &c.HMACSecretHash, &c.DefaultCallbackURL, &c.IsActive, &c.CreatedAt, &c.UpdatedAt)
+	err := rows.Scan(&c.ID, &c.Name, &c.APIKeyHash, &c.HMACSecretHash, &c.DefaultCallbackURL, &c.IsActive,
+		&c.MaxPayoutCFA, &c.DailyPayoutCapCFA, &c.CreatedAt, &c.UpdatedAt)
 	return c, err
+}
+
+// SetPayoutLimits — édite les plafonds de versement d'un client passerelle
+// (voir GatewayHandler.CreatePayout). Réservé à l'admin (/admin/gateway).
+func (r *GatewayRepo) SetPayoutLimits(ctx context.Context, id string, maxPayoutCFA, dailyCapCFA int) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE gateway_clients SET max_payout_cfa = $2, daily_payout_cap_cfa = $3, updated_at = now() WHERE id = $1`,
+		id, maxPayoutCFA, dailyCapCFA)
+	return err
+}
+
+// SumPayoutsToday — total des versements déjà émis par ce client passerelle
+// sur les dernières 24h (completed + processing + pending, tout ce qui n'est
+// pas définitivement failed/cancelled) — sert de base au plafond glissant
+// journalier (voir GatewayHandler.CreatePayout).
+func (r *GatewayRepo) SumPayoutsToday(ctx context.Context, clientID string) (int, error) {
+	var total int
+	err := r.pool.QueryRow(ctx,
+		`SELECT COALESCE(SUM(amount_cfa), 0) FROM gateway_transactions
+		 WHERE client_id = $1 AND type = 'payout' AND status NOT IN ('failed', 'cancelled')
+		   AND created_at > now() - interval '24 hours'`,
+		clientID).Scan(&total)
+	return total, err
 }
 
 // --- Transactions --------------------------------------------------------
