@@ -551,6 +551,13 @@ func (h *ProductHandler) AutoCreate(w http.ResponseWriter, r *http.Request) {
 		Title:    title,
 		Category: category,
 		PriceCFA: priceCFA,
+		// Affiliation activée par défaut sur les produits créés via ce flux
+		// automatisé (IA/script) — même défaut que le formulaire vendeur
+		// "Nouveau produit" (10%), pour que les closers puissent générer un
+		// lien d'affiliation sans qu'un admin doive l'activer manuellement
+		// après coup.
+		AffiliateEnabled:       true,
+		MaxCloserCommissionPct: 10,
 	}
 	if description != "" {
 		input.Description = &description

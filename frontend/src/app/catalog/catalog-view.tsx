@@ -84,12 +84,12 @@ function CardSkeleton({ view }: { view: ViewMode }) {
   }
   return (
     <div className="bg-white rounded-xl overflow-hidden border border-green-900/5 animate-pulse">
-      <div className="h-40 bg-green-900/10" />
-      <div className="p-4 space-y-2">
-        <div className="h-3 w-16 bg-green-900/10 rounded" />
+      <div className="h-28 sm:h-44 bg-green-900/10" />
+      <div className="p-2.5 sm:p-4 space-y-2">
+        <div className="h-3 w-12 sm:w-16 bg-green-900/10 rounded" />
         <div className="h-4 w-4/5 bg-green-900/10 rounded" />
         <div className="h-4 w-1/2 bg-green-900/10 rounded" />
-        <div className="h-8 w-full bg-green-900/10 rounded-lg mt-3" />
+        <div className="h-7 sm:h-8 w-full bg-green-900/10 rounded-lg mt-3" />
       </div>
     </div>
   );
@@ -274,9 +274,7 @@ export default function CatalogView() {
 
         {loading ? (
           <div
-            className={cn(
-              view === 'grid' ? 'grid gap-4 sm:grid-cols-2 lg:grid-cols-3' : 'flex flex-col gap-3'
-            )}
+            className={cn(view === 'grid' ? 'grid grid-cols-2 gap-2.5 sm:gap-4 lg:grid-cols-3' : 'flex flex-col gap-3')}
           >
             {Array.from({ length: 6 }).map((_, i) => (
               <CardSkeleton key={i} view={view} />
@@ -289,39 +287,39 @@ export default function CatalogView() {
             description="Modifiez votre recherche ou parcourez une autre catégorie."
           />
         ) : view === 'grid' ? (
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-2 gap-2.5 sm:gap-4 lg:grid-cols-3">
             {sortedProducts.map((product) => (
               <div
                 key={product.id}
                 className="group bg-white rounded-xl overflow-hidden shadow-card hover:shadow-lift transition-all hover:-translate-y-0.5 border border-green-900/5 flex flex-col"
               >
                 <Link href={`/product?id=${product.slug || product.id}`} className="relative block">
-                  <ProductImage product={product} className="h-40 sm:h-44" />
-                  <span className="absolute top-2.5 left-2.5 px-2 py-1 bg-white/95 text-green-700 rounded-md text-[11px] font-semibold shadow-sm">
+                  <ProductImage product={product} className="h-28 sm:h-44" />
+                  <span className="absolute top-1.5 left-1.5 sm:top-2.5 sm:left-2.5 px-1.5 sm:px-2 py-0.5 sm:py-1 bg-white/95 text-green-700 rounded-md text-[9px] sm:text-[11px] font-semibold shadow-sm truncate max-w-[80%]">
                     {CATEGORY_LABELS[product.category] || product.category}
                   </span>
                   {isNew(product) && (
-                    <span className="absolute top-2.5 right-2.5 px-2 py-1 bg-lime text-green-950 rounded-md text-[11px] font-bold shadow-sm">
+                    <span className="absolute top-1.5 right-1.5 sm:top-2.5 sm:right-2.5 px-1.5 sm:px-2 py-0.5 sm:py-1 bg-lime text-green-950 rounded-md text-[9px] sm:text-[11px] font-bold shadow-sm">
                       Nouveau
                     </span>
                   )}
                 </Link>
-                <div className="p-4 flex flex-col flex-1">
+                <div className="p-2.5 sm:p-4 flex flex-col flex-1">
                   <Link href={`/product?id=${product.slug || product.id}`}>
-                    <h2 className="font-display font-bold text-base text-green-950 group-hover:text-green-600 transition-colors line-clamp-2">
+                    <h2 className="font-display font-bold text-[13px] sm:text-base text-green-950 group-hover:text-green-600 transition-colors line-clamp-2">
                       {product.title}
                     </h2>
                   </Link>
-                  <p className="text-xs text-green-900/50 mt-1 line-clamp-2 flex-1">
+                  <p className="hidden sm:block text-xs text-green-900/50 mt-1 line-clamp-2 flex-1">
                     {product.description || 'Pas de description'}
                   </p>
-                  <div className="flex items-center justify-between mt-3 gap-2">
-                    <span className="font-mono font-bold text-green-700">
+                  <div className="flex items-center justify-between mt-2 sm:mt-3 gap-1.5 sm:gap-2">
+                    <span className="font-mono font-bold text-sm sm:text-base text-green-700 truncate">
                       {formatPrice(product.price_cfa)}
                     </span>
                     <Button
                       render={<Link href={`/product?id=${product.slug || product.id}`} />}
-                      className="h-9 rounded-full bg-green-950 text-white hover:bg-green-900 px-3.5"
+                      className="h-7 sm:h-9 rounded-full bg-green-950 text-white hover:bg-green-900 px-2.5 sm:px-3.5 text-xs sm:text-sm shrink-0"
                     >
                       Voir
                     </Button>

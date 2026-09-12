@@ -36,7 +36,9 @@ export default function NewProductPage() {
   const [flexiblePrice, setFlexiblePrice] = useState(false);
   const [minPrice, setMinPrice] = useState('');
   const [category, setCategory] = useState('ebook');
-  const [affiliateEnabled, setAffiliateEnabled] = useState(false);
+  // Activé par défaut : un produit sans affiliation ne peut jamais être
+  // promu par un closer, même si le vendeur ne pense pas à cocher la case.
+  const [affiliateEnabled, setAffiliateEnabled] = useState(true);
   const [maxCommission, setMaxCommission] = useState('10');
   const [file, setFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState('');
