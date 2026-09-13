@@ -19,9 +19,17 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  VPS_HOST: srv1790747.hstgr.cloud
+  # srv1790747.hstgr.cloud (ancien hostname assigné par Hostinger) a cessé de
+  # résoudre en DNS — Hostinger réassigne un nouvel hostname "srvNNNNNNN"
+  # après une réinstallation/migration de VPS, ce qui a cassé ce pipeline en
+  # silence (aucune alerte, juste un job qui échoue à la résolution DNS).
+  # IP fixe utilisée directement pour ne plus dépendre de ce hostname
+  # (audit déploiement 2026-09-13 — pipeline resté cassé plusieurs jours
+  # sans que personne ne le remarque, déploiements faits à la main en
+  # attendant, voir JOURNAL-MODIFICATIONS.md).
+  VPS_HOST: 169.58.214.115
   VPS_USER: root
-  VPS_PATH: /home/president/apps/diarra
+  VPS_PATH: /opt/diarra
 
 jobs:
   deploy:
@@ -94,7 +102,9 @@ jobs:
       - name: Vérification de santé
         run: |
           sleep 5
-          curl -sf https://diarra.abmcy.com/api/products > /dev/null \
+          # diarra.abmcy.com est un ancien point d'entrée hors service (voir
+          # README) — le vrai domaine backend en production est api.diarra.app.
+          curl -sf https://api.diarra.app/api/products > /dev/null \
             && echo "OK : le backend répond" \
             || (echo "ÉCHEC du health check après déploiement" && exit 1)
 

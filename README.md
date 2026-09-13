@@ -26,44 +26,55 @@ service (le mail Mailcow reste sur `abmcy.com`, inchangé).
 
 ## Architecture
 
-**Déploiement actuel : 100 % auto-hébergé sur VPS (Docker + Caddy), sans Cloudflare.**
+**Déploiement actuel (vérifié en direct le 2026-09-13) : backend sur un VPS
+sous Kubernetes (k3s), frontend servi par un Worker Cloudflare.** La stack
+Docker Compose (§7) a existé sur ce même VPS mais a été remplacée par k3s ;
+elle n'est plus déployée nulle part — ne pas la considérer comme un
+environnement de secours actif.
 
 ```
-┌────────────────────────────┐   HTTPS (Let's Encrypt via Caddy)
+┌────────────────────────────┐   HTTPS (Cloudflare)
 │  Navigateur / client       │ ───────────────────────────────────┐
 └────────────────────────────┘                                    │
-        │  /                          /api/*, /ws/*               │  redirect 302
-        ▼                                   ▼                     ▼ (téléchargement)
-┌──────────────────┐            ┌──────────────────┐   ┌───────────────────────┐
-│ diarra-frontend   │            │ diarra-backend    │   │ diarra-minio          │
-│ (Next.js export,  │            │ (Go, Chi, WS)     │──►│ S3-compatible         │
-│  nginx, port 3001)│            │ port 8080         │   │ (fichiers produits)   │
-└──────────────────┘            └─────────┬─────────┘   └───────────────────────┘
-                                            ▼
-                                  ┌───────────────────┐
-                                  │ diarra-postgres    │
-                                  │ (réseau Docker     │
-                                  │  interne uniquement)│
-                                  └───────────────────┘
+        │  /  (assets statiques)            /api/*, /ws/*, /p/*,  │  redirect 302
+        ▼                                   /feed/*, /sitemap.xml ▼ (téléchargement)
+┌──────────────────────┐                          ▼      ┌───────────────────────┐
+│ Cloudflare Worker      │            ┌──────────────────┐ │ MinIO                 │
+│ "diaara" (diarra.app)  │──proxy───► │ Backend Go (k3s)  │►│ S3-compatible         │
+│ env.ASSETS = build     │            │ api.diarra.app    │ │ (fichiers produits)   │
+│ Next.js statique       │            │ VPS 169.58.214.115│ │ files.diarra.app      │
+└──────────────────────┘            └─────────┬─────────┘ └───────────────────────┘
+   ▲ déployé par le build Git natif             ▼
+   │ de Cloudflare (Workers Builds),   ┌───────────────────┐
+   │ pas par ce dépôt/CI               │ PostgreSQL (k3s)   │
+                                       │ StatefulSet, réseau │
+                                       │ interne au cluster  │
+                                       └───────────────────┘
 ```
 
-- **Frontend** : Next.js (`output: export`) → build statique servi par nginx dans le
-  conteneur `frontend`. Reverse-proxifié par Caddy sur le domaine principal.
-- **Edge / TLS** : **Caddy** (installé sur le VPS) fait le reverse proxy et obtient les
-  certificats **Let's Encrypt automatiquement** — `/api/*` et `/ws/*` vers le backend,
-  le reste vers le frontend. Plus de Worker Cloudflare pour Diarra.
+- **Frontend** : Next.js (`output: export`) → build statique déployé sur un **Worker
+  Cloudflare** (`worker/`, nom `diaara`) via l'intégration Git native de Cloudflare
+  (Workers Builds) — se redéploie automatiquement à chaque push sur `master`,
+  **indépendamment** de la CI de ce dépôt (`.github/workflows/deploy.yml`, qui ne
+  touche que le backend). Le Worker route `/api/*`, `/ws/*`, `/p/*`, `/feed/*`,
+  `/sitemap.xml` vers `BACKEND_URL` et sert le reste depuis `env.ASSETS`.
 - **Backend** : Go 1.25, API REST + WebSocket temps réel (via `LISTEN/NOTIFY`
   PostgreSQL), email (SMTP / Resend / Mailtrap), upload S3, OTP (email + SMS),
-  livraison par URL signée (3 téléchargements max). Tourne dans Docker sur le VPS.
-- **Base de données** : PostgreSQL en conteneur Docker sur le VPS (réseau interne
+  livraison par URL signée. Tourne en pods Kubernetes (k3s, namespace `diarra`,
+  manifests dans `k8s/`) sur le VPS `169.58.214.115`, source synchronisée dans
+  `/opt/diarra` (rsync, pas un clone git) et déployée par `k8s/deploy.sh`.
+- **Edge / TLS côté VPS** : ingress-nginx (NodePort) derrière **Caddy**, qui obtient
+  les certificats Let's Encrypt et route `api.diarra.app`/`files.diarra.app` vers le
+  cluster. Caddy est partagé avec d'autres apps du même VPS (non concernées par k3s).
+- **Base de données** : PostgreSQL en StatefulSet k3s (réseau interne au cluster
   uniquement, pas de port publié sur l'hôte).
-- **Stockage** : **MinIO auto-hébergé** (S3-compatible, bucket `diarra-files`) sur le
-  VPS, exposé publiquement sur un sous-domaine dédié (`S3_ENDPOINT`) car les liens de
+- **Stockage** : **MinIO auto-hébergé** (S3-compatible, bucket `diarra-files`),
+  exposé publiquement sur un sous-domaine dédié (`S3_ENDPOINT`) car les liens de
   téléchargement sont des redirections signées vers cet endpoint (le navigateur du
   client y accède directement).
 
-> Ancien déploiement (Cloudflare Worker + Render + Neon + Tigris) : voir l'historique
-> git. Le dossier `worker/` reste dans le repo mais n'est plus déployé.
+> Ancien déploiement (Render + Neon + Tigris) : voir l'historique git — abandonné,
+> plus aucune trace dans la config actuelle.
 
 ## Règle d'or : aucune clé en dur
 
@@ -85,14 +96,21 @@ git grep -nE "npg_|AKIA|tsec_|tkey_"            # doit être vide
 
 ## Prérequis
 
+> La table ci-dessous liste des tiers gratuits utiles pour développer/tester
+> en local sans rien auto-héberger. **La production actuelle n'utilise ni
+> Neon ni Render** : PostgreSQL et le stockage S3 (MinIO) tournent
+> auto-hébergés sur le VPS sous k3s (voir Architecture ci-dessus) ; seul
+> Cloudflare (frontend) et PawaPay (paiement) sont des tiers réellement
+> utilisés en prod.
+
 Comptes (tous utilisables **sans carte bancaire** sur les tiers gratuits) :
 
 | Service    | Usage             | Lien                        |
 |------------|-------------------|-----------------------------|
-| Neon       | Base PostgreSQL   | https://neon.tech           |
-| Tigris     | Stockage S3       | https://console.storage.dev |
-| Render     | Backend Go        | https://render.com          |
-| Cloudflare | Worker + KV       | https://dash.cloudflare.com |
+| Neon       | Base PostgreSQL *(dev local uniquement — la prod utilise Postgres auto-hébergé)* | https://neon.tech           |
+| Tigris     | Stockage S3 *(dev local uniquement — la prod utilise MinIO auto-hébergé)*     | https://console.storage.dev |
+| Render     | Backend Go *(non utilisé en prod actuellement)* | https://render.com          |
+| Cloudflare | Worker (frontend, utilisé en prod)    | https://dash.cloudflare.com |
 | Mailtrap   | Emails sandbox    | https://mailtrap.io         |
 | PawaPay    | Mobile money      | https://pawapay.io *(sandbox d'abord)* |
 
@@ -235,7 +253,7 @@ Le backend n'a pas de seed : le flag `is_admin` se positionne en base.
 
 ```bash
 # 1. Créer le compte par l'API (ou le formulaire d'inscription)
-curl -X POST https://diarra-worker.sabel.workers.dev/api/auth/register \
+curl -X POST https://api.diarra.app/api/auth/register \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@votre-domaine.com","password":"MotDePasseFort!","phone":"+221700000000"}'
 
@@ -256,12 +274,15 @@ Périmètre admin (route `/api/admin`, protégée par `RequireAdmin`) :
 | `GET  /api/admin/sales`                   | Toutes les ventes        |
 | `WS   /ws/admin`                          | Alertes modération en direct |
 
-## 7. Déploiement sur un VPS (Docker)
+## 7. Déploiement sur un VPS
 
-Le dépôt contient un `docker-compose.yml` qui lance **Postgres + backend +
-frontend** sur un VPS. Deux options :
+Le dépôt contient deux façons de faire tourner le backend sur un VPS : la
+stack Kubernetes (**k3s, celle réellement utilisée en production**, voir
+plus bas) et un `docker-compose.yml` plus ancien, conservé pour référence
+mais **plus déployé nulle part**. Le frontend n'est déployé par aucun des
+deux : il l'est par le build Git natif de Cloudflare (§4).
 
-### Déploiement actuel — tout sur le VPS (frontend + backend + Postgres + MinIO)
+### Déploiement historique (Docker Compose) — remplacé par k3s, non actif
 
 1. Copier le projet sur le VPS (`git clone`, ou `scp` si le VPS n'a pas d'accès au
    dépôt privé) et créer un fichier `.env` **à la racine du repo** (à côté de
@@ -349,13 +370,29 @@ frontend** sur un VPS. Deux options :
 5. Ajouter les enregistrements DNS (A) des deux domaines vers l'IP du VPS avant
    l'étape 4, sinon Caddy ne pourra pas obtenir les certificats.
 
-### Déploiement Kubernetes (k3s) — alternative à Docker Compose
+### Déploiement actuel — Kubernetes (k3s)
 
-Le dossier `k8s/` contient une stack Kubernetes complète pour DIARRA (k3s à
-un seul noeud, ingress nginx, tout en interne — Caddy reste l'unique point
-d'entrée TLS du VPS, partagé avec les autres apps). **Mailcow et
-miadtalent ne sont pas concernés** : ils continuent de tourner en Docker
-Compose, inchangés.
+Le dossier `k8s/` contient la stack Kubernetes réellement utilisée en
+production pour DIARRA (k3s à un seul noeud, ingress nginx, tout en interne —
+Caddy reste l'unique point d'entrée TLS du VPS, partagé avec les autres apps).
+**Mailcow et les autres apps du même VPS ne sont pas concernés** : ils
+continuent de tourner en Docker Compose, inchangés — seul DIARRA est passé
+sous k3s.
+
+**Déploiement continu** : `.github/workflows/deploy.yml` se déclenche sur
+chaque push `master` touchant `backend/**` ou `k8s/**` — il `rsync` le dépôt
+vers `/opt/diarra` sur le VPS (sans toucher `.env`) puis lance `k8s/deploy.sh`
+à distance. `VPS_HOST` y est fixé en IP (`169.58.214.115`) plutôt qu'un
+hostname Hostinger `srvNNNNNNN.hstgr.cloud`, qui se casse silencieusement à
+chaque réinstallation/migration de VPS côté Hostinger (vécu le 2026-09-13 :
+plusieurs jours de pipeline mort sans alerte, déploiements faits à la main en
+attendant — voir `JOURNAL-MODIFICATIONS.md`). Si le pipeline échoue à
+nouveau, vérifier dans cet ordre : (1) le secret GitHub `VPS_SSH_KEY`
+correspond-il à une clé listée dans `~/.ssh/authorized_keys` sur le VPS
+(`ssh diarra-vps "cat ~/.ssh/authorized_keys"`) ; (2) `169.58.214.115` est-il
+toujours l'IP du VPS ; (3) `/opt/diarra/.env` existe-t-il encore.
+
+Installation initiale (déjà faite, gardée pour référence) :
 
 1. Installer k3s (Traefik désactivé, Caddy garde les ports 80/443) :
    `curl -sfL https://get.k3s.io | sh -s - --disable traefik --write-kubeconfig-mode 644`
@@ -373,17 +410,14 @@ Compose, inchangés.
    `.env` déjà présent à la racine (jamais commité, jamais affiché).
 4. `sh k8s/deploy.sh` — build les images, les importe dans containerd (pas
    de registre, cluster à un seul noeud) et applique tous les manifests.
-5. `sh k8s/migrate-data.sh` — copie les données de la stack Docker Compose
-   existante (Postgres + MinIO) vers la nouvelle stack k3s, **sans jamais
-   modifier la source**. À ne lancer qu'une fois la stack k3s vérifiée
-   saine (`kubectl -n diarra get pods`).
-6. Bascule : modifier le Caddyfile pour pointer `api.diarra.app` vers
-   `127.0.0.1:30080` (le NodePort nginx) au lieu des ports Docker Compose —
-   même méthode que d'habitude (sauvegarde, `diff`, `caddy validate`,
-   `reload`).
-7. **Garder l'ancienne stack Docker Compose arrêtée mais pas supprimée**
-   (`docker compose stop`, jamais `down -v`) pendant la période
-   d'observation : retour arrière en une commande si besoin.
+   C'est ce même script que la CI relance à chaque déploiement automatique,
+   et qu'on peut relancer à la main en cas de panne du pipeline :
+   `ssh diarra-vps "cd /opt/diarra && BACKEND_CHANGED=true sh k8s/deploy.sh"`
+   (après y avoir resynchronisé le code le plus récent).
+5. Caddyfile côté VPS : `api.diarra.app` route vers `127.0.0.1:30080` (le
+   NodePort nginx), `files.diarra.app` vers MinIO.
+
+Vérifier l'état du cluster : `ssh diarra-vps "kubectl -n diarra get pods"`.
 
 > Notes Docker :
 > - `frontend/Dockerfile` reçoit `NEXT_PUBLIC_API_URL` **et** `NEXT_PUBLIC_WS_URL`
@@ -415,7 +449,7 @@ node -e "new WebSocket('wss://api.diarra.app/ws/order/<sale_id>?token=<JWT>').on
 
 - Application : https://diarra.app
 - Stockage (MinIO) : https://files.diarra.app
-- Dépôt : https://github.com/idrissoualanni/diarra (privé, branche `master`)
+- Dépôt : https://github.com/abmcompanysn-dot/diaara (privé, branche `master`)
 
 ## Références clés dans le repo
 
