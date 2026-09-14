@@ -20,13 +20,14 @@ func NewPayoutRepo(pool *pgxpool.Pool) *PayoutRepo {
 	return &PayoutRepo{pool: pool}
 }
 
-const payoutColumns = `id, user_id, amount_cfa, status, phone_number, operator, provider, provider_reference, failure_reason, requested_at, paid_at, is_manual, manual_note, fee_cfa, paypal_email, paypal_batch_id`
+const payoutColumns = `id, user_id, amount_cfa, status, phone_number, operator, provider, provider_reference, failure_reason, requested_at, paid_at, is_manual, manual_note, fee_cfa, paypal_email, paypal_batch_id, refunded_at, refunded_by`
 
 func scanPayout(row pgx.Row) (*model.Payout, error) {
 	p := &model.Payout{}
 	err := row.Scan(&p.ID, &p.UserID, &p.AmountCFA, &p.Status, &p.PhoneNumber, &p.Operator,
 		&p.Provider, &p.ProviderReference, &p.FailureReason, &p.RequestedAt, &p.PaidAt,
-		&p.IsManual, &p.ManualNote, &p.FeeCFA, &p.PayPalEmail, &p.PayPalBatchID)
+		&p.IsManual, &p.ManualNote, &p.FeeCFA, &p.PayPalEmail, &p.PayPalBatchID,
+		&p.RefundedAt, &p.RefundedBy)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, ErrPayoutNotFound
@@ -109,6 +110,7 @@ func (r *PayoutRepo) ListAllAdmin(ctx context.Context) ([]*PayoutWithUser, error
 		`SELECT p.id, p.user_id, p.amount_cfa, p.status, p.phone_number, p.operator,
 		        p.provider, p.provider_reference, p.failure_reason, p.requested_at, p.paid_at,
 		        p.is_manual, p.manual_note, p.fee_cfa, p.paypal_email, p.paypal_batch_id,
+		        p.refunded_at, p.refunded_by,
 		        u.email, u.payout_phone, u.payout_operator, u.payout_country, u.payout_paypal_email
 		 FROM payouts p JOIN users u ON u.id = p.user_id
 		 ORDER BY p.requested_at DESC`)
@@ -123,6 +125,7 @@ func (r *PayoutRepo) ListAllAdmin(ctx context.Context) ([]*PayoutWithUser, error
 		if err := rows.Scan(&p.ID, &p.UserID, &p.AmountCFA, &p.Status, &p.PhoneNumber, &p.Operator,
 			&p.Provider, &p.ProviderReference, &p.FailureReason, &p.RequestedAt, &p.PaidAt,
 			&p.IsManual, &p.ManualNote, &p.FeeCFA, &p.PayPalEmail, &p.PayPalBatchID,
+			&p.RefundedAt, &p.RefundedBy,
 			&p.UserEmail, &p.VendorPayoutPhone, &p.VendorPayoutOperator, &p.VendorPayoutCountry, &p.VendorPayoutPayPalEmail); err != nil {
 			return nil, err
 		}
@@ -186,6 +189,27 @@ func (r *PayoutRepo) SettleManually(ctx context.Context, id, note string, feeCFA
 		     manual_note = $2, fee_cfa = $3, settled_by = $4, failure_reason = NULL
 		 WHERE id = $1 AND status IN ('requested', 'processing', 'failed')`,
 		id, note, feeCFA, adminID)
+	if err != nil {
+		return false, err
+	}
+	return tag.RowsAffected() == 1, nil
+}
+
+// MarkRefunded — reconnaît qu'un versement déjà réglé ("paid") ou "failed" a
+// été remboursé (l'argent rendu au vendeur/à la plateforme hors plateforme :
+// erreur, double versement, litige...). N'agit que sur "paid"/"failed" — un
+// versement encore "requested"/"processing" n'a jamais été payé, rien à
+// rembourser (utiliser RetryPayout/annulation classique à la place).
+// Effet : le montant sort de PayoutHandler.totalEarned()/requested au même
+// titre qu'un payout "failed", donc le solde disponible du vendeur redescend
+// automatiquement dès l'invalidation du cache (voir AdminHandler.RefundPayout).
+func (r *PayoutRepo) MarkRefunded(ctx context.Context, id, note, adminID string) (bool, error) {
+	tag, err := r.pool.Exec(ctx,
+		`UPDATE payouts
+		 SET status = 'refunded', refunded_at = now(), refunded_by = $2,
+		     manual_note = COALESCE(NULLIF($3, ''), manual_note)
+		 WHERE id = $1 AND status IN ('paid', 'failed')`,
+		id, adminID, note)
 	if err != nil {
 		return false, err
 	}

@@ -548,6 +548,7 @@ func main() {
 			r.Post("/payouts/{id}/retry", adminHandler.RetryPayout)
 			r.Post("/payouts/{id}/check-provider", adminHandler.CheckPayoutProvider)
 			r.Post("/payouts/{id}/settle-manual", adminHandler.SettlePayoutManual)
+			r.Post("/payouts/{id}/refund", adminHandler.RefundPayout)
 			r.Post("/payouts/manual", adminHandler.CreateManualPayout)
 			r.Get("/activity", adminHandler.ActivityFeed)
 			r.Get("/activity-log", adminHandler.ActivityLog)

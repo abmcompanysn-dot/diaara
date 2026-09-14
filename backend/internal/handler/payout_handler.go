@@ -255,7 +255,11 @@ func (h *PayoutHandler) Earnings(w http.ResponseWriter, r *http.Request) {
 
 	requested := 0
 	for _, p := range payouts {
-		if p.Status != "failed" {
+		// "failed" : jamais payé, ne mobilise pas le solde. "refunded" :
+		// avait été payé puis remboursé (voir AdminHandler.RefundPayout /
+		// PayoutRepo.MarkRefunded) — l'argent est revenu, le solde doit
+		// redescendre au même titre.
+		if p.Status != "failed" && p.Status != "refunded" {
 			requested += p.AmountCFA
 		}
 	}
@@ -382,7 +386,11 @@ func (h *PayoutHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	requested := 0
 	for _, p := range payouts {
-		if p.Status != "failed" {
+		// "failed" : jamais payé, ne mobilise pas le solde. "refunded" :
+		// avait été payé puis remboursé (voir AdminHandler.RefundPayout /
+		// PayoutRepo.MarkRefunded) — l'argent est revenu, le solde doit
+		// redescendre au même titre.
+		if p.Status != "failed" && p.Status != "refunded" {
 			requested += p.AmountCFA
 		}
 	}

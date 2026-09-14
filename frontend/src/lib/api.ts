@@ -656,6 +656,15 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  // Reconnaît qu'un versement déjà payé (ou échoué) a été remboursé — l'argent
+  // a été rendu hors plateforme. Le solde disponible du vendeur redescend
+  // aussitôt (ce montant sort de "requested", voir PayoutHandler.Earnings).
+  refundPayout: (id: string, note?: string) =>
+    fetchApi<{ status: string }>(`/api/admin/payouts/${id}/refund`, {
+      method: 'POST',
+      body: JSON.stringify({ note: note || '' }),
+    }),
+
   // Crée un versement manuel de toutes pièces pour un vendeur.
   createManualPayout: (data: {
     user_id: string;

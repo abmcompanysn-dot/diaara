@@ -44,6 +44,10 @@ interface Payout {
   vendor_payout_phone?: string | null;
   vendor_payout_operator?: string | null;
   vendor_payout_country?: string | null;
+  // Remboursement reconnu a posteriori (versement déjà payé/échoué dont
+  // l'argent a été rendu hors plateforme) — voir AdminHandler.RefundPayout.
+  refunded_at?: string | null;
+  refunded_by?: string | null;
 }
 
 // formatPhoneClear — numéro complet en clair (jamais masqué) : côté admin,
@@ -100,6 +104,10 @@ export default function AdminPayoutsPage() {
   const [settleTarget, setSettleTarget] = useState<Payout | null>(null);
   const [settleNote, setSettleNote] = useState('');
   const [settleFee, setSettleFee] = useState('0');
+
+  // Reconnaissance d'un remboursement (versement déjà payé/échoué, argent rendu)
+  const [refundTarget, setRefundTarget] = useState<Payout | null>(null);
+  const [refundNote, setRefundNote] = useState('');
 
   // Création d'un versement manuel de toutes pièces
   const [showCreate, setShowCreate] = useState(false);
@@ -190,6 +198,24 @@ export default function AdminPayoutsPage() {
       setSettleTarget(null);
       setSettleNote('');
       setSettleFee('0');
+      await load();
+    } catch (err: any) {
+      setError(friendlyError(err));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleRefund() {
+    if (!refundTarget) return;
+    setBusyId(refundTarget.id);
+    setMsg('');
+    setError('');
+    try {
+      await api.refundPayout(refundTarget.id, refundNote.trim());
+      setMsg(`Versement de ${refundTarget.user_email} marqué remboursé — son solde disponible est mis à jour.`);
+      setRefundTarget(null);
+      setRefundNote('');
       await load();
     } catch (err: any) {
       setError(friendlyError(err));
@@ -348,6 +374,7 @@ export default function AdminPayoutsPage() {
                 <SelectItem value="processing">En traitement</SelectItem>
                 <SelectItem value="paid">Payé</SelectItem>
                 <SelectItem value="failed">Échec</SelectItem>
+                <SelectItem value="refunded">Remboursé</SelectItem>
               </SelectContent>
             </Select>
           </div>
@@ -470,7 +497,7 @@ export default function AdminPayoutsPage() {
                             Relancer
                           </Button>
                         )}
-                        {p.status !== 'paid' && (
+                        {p.status !== 'paid' && p.status !== 'refunded' && (
                           <Button
                             variant="outline"
                             size="sm"
@@ -482,6 +509,20 @@ export default function AdminPayoutsPage() {
                             }}
                           >
                             Marquer payé (manuel)
+                          </Button>
+                        )}
+                        {(p.status === 'paid' || p.status === 'failed') && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            disabled={busyId === p.id}
+                            onClick={() => {
+                              setRefundTarget(p);
+                              setRefundNote('');
+                            }}
+                            title="L'argent a été rendu hors plateforme — retire ce montant du solde bloqué du vendeur."
+                          >
+                            Rembourser
                           </Button>
                         )}
                         <Button
@@ -591,6 +632,33 @@ export default function AdminPayoutsPage() {
               </Button>
               <Button onClick={handleSettle} disabled={busyId === settleTarget.id}>
                 {busyId === settleTarget.id ? 'Enregistrement…' : 'Confirmer'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {refundTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-xl bg-white p-6 shadow-lift space-y-4">
+            <h2 className="font-display font-bold text-lg text-green-950">Reconnaître ce remboursement</h2>
+            <p className="text-sm text-green-900/70">
+              {refundTarget.user_email} — {formatPrice(refundTarget.amount_cfa)}. Confirme que l'argent de ce
+              versement a été rendu (au vendeur ou à la plateforme), hors PawaPay/KPay. Ce montant sortira aussitôt
+              du solde bloqué de {refundTarget.user_email} — son solde disponible redescend, sans jamais passer en
+              négatif.
+            </p>
+            <Input
+              placeholder="Note / raison (ex. double versement, erreur de montant)"
+              value={refundNote}
+              onChange={(e) => setRefundNote(e.target.value)}
+            />
+            <div className="flex justify-end gap-2">
+              <Button variant="outline" onClick={() => setRefundTarget(null)}>
+                Annuler
+              </Button>
+              <Button onClick={handleRefund} disabled={busyId === refundTarget.id}>
+                {busyId === refundTarget.id ? 'Enregistrement…' : 'Confirmer le remboursement'}
               </Button>
             </div>
           </div>

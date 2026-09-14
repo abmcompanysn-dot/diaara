@@ -50,6 +50,7 @@ export const PAYOUT_STATUS_LABELS: Record<string, string> = {
   processing: 'En traitement',
   paid: 'Payé',
   failed: 'Échec',
+  refunded: 'Remboursé',
 };
 
 export const PAYOUT_STATUS_BADGE: Record<string, string> = {
@@ -57,6 +58,7 @@ export const PAYOUT_STATUS_BADGE: Record<string, string> = {
   processing: 'bg-blue-100 text-blue-700 hover:bg-blue-100',
   requested: 'bg-yellow-100 text-yellow-700 hover:bg-yellow-100',
   failed: 'bg-red-100 text-red-700 hover:bg-red-100',
+  refunded: 'bg-slate-100 text-slate-700 hover:bg-slate-100',
 };
 
 /** Statuts des tickets support. */

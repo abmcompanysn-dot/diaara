@@ -24,6 +24,18 @@ type Payout struct {
 	// mobile money. Voir PayoutRepo.CreatePayPal / SetPayPalBatchID.
 	PayPalEmail   *string `json:"paypal_email,omitempty"`
 	PayPalBatchID *string `json:"paypal_batch_id,omitempty"`
+	// Remboursement reconnu a posteriori (payout déjà "paid"/"failed" mais
+	// l'argent a été rendu au vendeur/à la plateforme hors plateforme) — voir
+	// PayoutRepo.MarkRefunded. Statut "refunded", exclu du solde "requested"
+	// au même titre que "failed" (PayoutHandler.totalEarned/Earnings/Create).
+	RefundedAt *time.Time `json:"refunded_at,omitempty"`
+	RefundedBy *string    `json:"refunded_by,omitempty"`
+}
+
+// RefundPayoutInput — reconnaissance admin d'un remboursement de versement déjà
+// payé (ou échoué). Note libre optionnelle (raison du remboursement).
+type RefundPayoutInput struct {
+	Note string `json:"note"`
 }
 
 // SettlePayoutInput — règlement manuel d'un versement existant.

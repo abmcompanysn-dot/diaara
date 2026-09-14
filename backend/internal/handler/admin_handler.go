@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"mime"
 	"net/http"
@@ -1575,6 +1576,44 @@ func (h *AdminHandler) SettlePayoutManual(w http.ResponseWriter, r *http.Request
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": "paid"})
+}
+
+// RefundPayout — POST /api/admin/payouts/{id}/refund (scope "finance") :
+// reconnaît qu'un versement déjà payé (ou échoué) a été remboursé — l'argent
+// a été rendu au vendeur/à la plateforme hors plateforme (erreur, double
+// versement, litige...). Passe le statut à "refunded" : ce montant sort
+// immédiatement du solde "requested" du vendeur (voir PayoutHandler.Earnings/
+// Create), donc son solde disponible redescend sans jamais afficher de
+// négatif (déjà clampé à 0 côté PayoutHandler.Earnings).
+func (h *AdminHandler) RefundPayout(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	adminID := middleware.GetUserID(r.Context())
+
+	var input model.RefundPayoutInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil && !errors.Is(err, io.EOF) {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+
+	payout, err := h.payoutRepo.FindByID(r.Context(), id)
+	if err != nil {
+		http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
+		return
+	}
+
+	ok, err := h.payoutRepo.MarkRefunded(r.Context(), id, input.Note, adminID)
+	if err != nil {
+		http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	if !ok {
+		http.Error(w, `{"error":"payout_not_refundable"}`, http.StatusConflict)
+		return
+	}
+	h.cache.Del(r.Context(), vendorBalanceCacheKey(payout.UserID))
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "refunded"})
 }
 
 // CreateManualPayout — POST /api/admin/payouts/manual : enregistre un versement
