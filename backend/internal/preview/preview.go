@@ -78,6 +78,10 @@ func run(ctx context.Context, name string, args ...string) error {
 
 const watermarkFont = "/usr/share/fonts/dejavu/DejaVuSans-Bold.ttf"
 
+// watermarkImage redimensionne et filigrane vers dstPath. -quality 82 ne vaut
+// que pour une sortie JPEG (c'est le format effectivement choisi par chaque
+// appelant via l'extension de dstPath) — ImageMagick l'ignore/le réinterprète
+// sans dommage pour du PNG, donc pas besoin de distinguer les deux ici.
 func watermarkImage(ctx context.Context, srcPath, dstPath string) error {
 	return run(ctx, "convert", srcPath,
 		"-resize", "1400x1400>",
@@ -87,11 +91,19 @@ func watermarkImage(ctx context.Context, srcPath, dstPath string) error {
 		"-fill", "rgba(255,255,255,0.65)",
 		"-stroke", "rgba(0,0,0,0.4)", "-strokewidth", "1",
 		"-annotate", "+0+24", watermarkText,
+		"-quality", "82",
 		dstPath,
 	)
 }
 
 // generatePDF rend les 3 premières pages en image et les filigrane.
+//
+// Sortie en JPEG (pas PNG, malgré pdftoppm -png en sortie intermédiaire) :
+// une page de PDF scannée/riche en image ressort de pdftoppm comme un bitmap
+// quasi-photographique, où PNG (sans perte) pèse facilement 5 à 10x plus
+// lourd qu'un JPEG qualité 82 visuellement équivalent pour un simple aperçu
+// avant achat — c'était la cause principale du chargement lent des fiches
+// produit PDF (corrigé le 2026-09-14, signalé par l'utilisateur).
 func generatePDF(ctx context.Context, st Storage, dir, src, vendorID, productID string) ([]string, error) {
 	outPrefix := filepath.Join(dir, "page")
 	if err := run(ctx, "pdftoppm", "-png", "-f", "1", "-l", "3", "-r", "120", src, outPrefix); err != nil {
@@ -103,7 +115,7 @@ func generatePDF(ctx context.Context, st Storage, dir, src, vendorID, productID 
 
 	var keys []string
 	for i, path := range matches {
-		wm := path + ".wm.png"
+		wm := strings.TrimSuffix(path, ".png") + ".wm.jpg"
 		if err := watermarkImage(ctx, path, wm); err != nil {
 			return nil, err
 		}
@@ -111,7 +123,7 @@ func generatePDF(ctx context.Context, st Storage, dir, src, vendorID, productID 
 		if err != nil {
 			return nil, err
 		}
-		key := fmt.Sprintf("previews/%s/%s/page-%d.png", vendorID, productID, i+1)
+		key := fmt.Sprintf("previews/%s/%s/page-%d.jpg", vendorID, productID, i+1)
 		if err := st.Upload(ctx, key, data); err != nil {
 			return nil, err
 		}
