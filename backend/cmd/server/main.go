@@ -296,6 +296,8 @@ func main() {
 	adminHandler.SetActivityRepo(repository.NewAdminActivityRepo(pool))
 	// Gestion des clients de la passerelle de paiement (ex. ABMCY Core).
 	adminHandler.SetGatewayRepo(gatewayRepo)
+	// Step-up OTP email avant un versement direct (voir CreateDirectPayout).
+	adminHandler.SetOTPService(otpService)
 
 	r := chi.NewRouter()
 
@@ -550,6 +552,10 @@ func main() {
 			r.Post("/payouts/{id}/settle-manual", adminHandler.SettlePayoutManual)
 			r.Post("/payouts/{id}/refund", adminHandler.RefundPayout)
 			r.Post("/payouts/manual", adminHandler.CreateManualPayout)
+			// Versement direct (argent réellement envoyé via PawaPay, vers
+			// n'importe quel numéro) — step-up OTP obligatoire avant l'envoi.
+			r.Post("/payouts/send-otp", adminHandler.SendPayoutOTP)
+			r.Post("/payouts/direct", adminHandler.CreateDirectPayout)
 			r.Get("/activity", adminHandler.ActivityFeed)
 			r.Get("/activity-log", adminHandler.ActivityLog)
 			// Clé pour la création de produit automatisée (voir /api/automation/products ci-dessous).

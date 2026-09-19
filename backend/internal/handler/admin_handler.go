@@ -21,6 +21,7 @@ import (
 	"github.com/diarra/backend/internal/email"
 	"github.com/diarra/backend/internal/middleware"
 	"github.com/diarra/backend/internal/model"
+	"github.com/diarra/backend/internal/otp"
 	"github.com/diarra/backend/internal/payment"
 	"github.com/diarra/backend/internal/repository"
 	"github.com/go-chi/chi/v5"
@@ -65,6 +66,9 @@ type AdminHandler struct {
 	// gatewayRepo : gestion des clients de la passerelle de paiement (ex.
 	// ABMCY Core) — mêmes principes que activityRepo ci-dessus.
 	gatewayRepo *repository.GatewayRepo
+	// otpService : step-up avant un versement direct (voir
+	// CreateDirectPayout) — mêmes principes que activityRepo ci-dessus.
+	otpService *otp.Service
 }
 
 // SetActivityRepo branche le journal d'activité admin après construction.
@@ -76,6 +80,12 @@ func (h *AdminHandler) SetActivityRepo(repo *repository.AdminActivityRepo) {
 // après construction.
 func (h *AdminHandler) SetGatewayRepo(repo *repository.GatewayRepo) {
 	h.gatewayRepo = repo
+}
+
+// SetOTPService branche le step-up email avant un versement direct (voir
+// CreateDirectPayout) après construction.
+func (h *AdminHandler) SetOTPService(svc *otp.Service) {
+	h.otpService = svc
 }
 
 // ListGatewayClients — GET /api/admin/gateway/clients (scope "finance")
@@ -1660,6 +1670,113 @@ func (h *AdminHandler) CreateManualPayout(w http.ResponseWriter, r *http.Request
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(map[string]interface{}{"payout": payout})
+}
+
+// SendPayoutOTP — POST /api/admin/payouts/send-otp (scope "finance") : envoie
+// un code de vérification à l'email de L'ADMIN CONNECTÉ, requis avant un
+// versement direct (voir CreateDirectPayout). Step-up délibéré même si
+// l'admin est déjà authentifié : une session admin volée ne doit jamais
+// suffire à elle seule à faire sortir de l'argent réel du compte marchand.
+func (h *AdminHandler) SendPayoutOTP(w http.ResponseWriter, r *http.Request) {
+	adminID := middleware.GetUserID(r.Context())
+	admin, err := h.userRepo.FindByID(r.Context(), adminID)
+	if err != nil || admin.Email == "" {
+		http.Error(w, `{"error":"admin_email_missing"}`, http.StatusInternalServerError)
+		return
+	}
+	if h.otpService == nil || h.notifications == nil {
+		http.Error(w, `{"error":"otp_not_configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	code, err := h.otpService.Issue(r.Context(), adminID, model.OTPChannelEmail, model.OTPPurposeAdminPayout)
+	if err != nil {
+		if err == otp.ErrResendTooSoon {
+			http.Error(w, `{"error":"resend_too_soon"}`, http.StatusTooManyRequests)
+			return
+		}
+		http.Error(w, `{"error":"otp_send_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	if err := h.notifications.SendOTP(r.Context(), admin.Email, code, "un versement direct"); err != nil {
+		http.Error(w, `{"error":"otp_send_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "sent"})
+}
+
+// CreateDirectPayout — POST /api/admin/payouts/direct (scope "finance") :
+// déclenche un VRAI versement PawaPay vers n'importe quel numéro (pas
+// forcément un vendeur DIARRA — ex: payer un prestataire externe), après
+// vérification du code envoyé par SendPayoutOTP. Distinct de
+// CreateManualPayout, qui ne fait que consigner un versement déjà effectué
+// ailleurs : ici de l'argent part réellement au moment de l'appel.
+func (h *AdminHandler) CreateDirectPayout(w http.ResponseWriter, r *http.Request) {
+	adminID := middleware.GetUserID(r.Context())
+
+	var input model.DirectPayoutInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+	if input.AmountCFA <= 0 || input.Country == "" || input.Operator == "" || input.Phone == "" {
+		http.Error(w, `{"error":"missing_required_fields"}`, http.StatusBadRequest)
+		return
+	}
+	if input.OTPCode == "" {
+		http.Error(w, `{"error":"otp_code_required"}`, http.StatusBadRequest)
+		return
+	}
+	if h.otpService == nil {
+		http.Error(w, `{"error":"otp_not_configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+	if err := h.otpService.Verify(r.Context(), adminID, model.OTPChannelEmail, model.OTPPurposeAdminPayout, input.OTPCode); err != nil {
+		switch err {
+		case otp.ErrTooManyAttempts:
+			http.Error(w, `{"error":"too_many_attempts"}`, http.StatusTooManyRequests)
+		default:
+			http.Error(w, `{"error":"invalid_or_expired_code"}`, http.StatusBadRequest)
+		}
+		return
+	}
+	if h.pawapay == nil {
+		http.Error(w, `{"error":"payment_not_configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	op, err := payment.ResolveOperator(input.Country, input.Operator)
+	if err != nil {
+		http.Error(w, `{"error":"unsupported_operator"}`, http.StatusBadRequest)
+		return
+	}
+	msisdn, err := payment.NormalizePhone(op.DialCode, input.Phone)
+	if err != nil {
+		http.Error(w, `{"error":"invalid_phone_number"}`, http.StatusBadRequest)
+		return
+	}
+
+	payout, err := h.payoutRepo.Create(r.Context(), adminID, input.AmountCFA, msisdn, op.Provider, "pawapay")
+	if err != nil {
+		http.Error(w, `{"error":"payout_creation_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	desc := fmt.Sprintf("Versement direct de %d FCFA vers %s (%s)", input.AmountCFA, msisdn, op.Provider)
+	if input.Note != "" {
+		desc += " — " + input.Note
+	}
+	h.logActivity(adminID, "direct_payout_created", "payout", payout.ID, desc)
+
+	if !h.initiatePayoutWithProvider(w, r, payout) {
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]interface{}{"payout": payout, "status": "processing"})
 }
 
 // RefundSale — POST /api/admin/sales/{id}/refund (remboursement total, mobile money)

@@ -678,6 +678,24 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  // Versement direct (argent réellement envoyé via PawaPay, vers n'importe
+  // quel numéro) — step-up OTP obligatoire avant l'envoi.
+  sendDirectPayoutOtp: () =>
+    fetchApi<{ status: string }>('/api/admin/payouts/send-otp', { method: 'POST' }),
+
+  createDirectPayout: (data: {
+    amount_cfa: number;
+    country: string;
+    operator: string;
+    phone: string;
+    note?: string;
+    otp_code: string;
+  }) =>
+    fetchApi<{ payout: any; status: string }>('/api/admin/payouts/direct', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
   // Programme de reversement automatique ("Fidélisation")
   getDonations: () =>
     fetchApi<{

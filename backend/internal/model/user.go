@@ -150,6 +150,11 @@ const (
 
 	OTPPurposeEmailVerify = "email_verify"
 	OTPPurposePhoneVerify = "phone_verify"
+	// OTPPurposeAdminPayout — step-up avant un versement direct déclenché
+	// depuis le dashboard admin (voir AdminHandler.CreateDirectPayout) :
+	// l'admin doit prouver qu'il possède bien sa propre boîte mail juste
+	// avant l'envoi réel d'argent, même s'il est déjà connecté.
+	OTPPurposeAdminPayout = "admin_payout"
 )
 
 type OTPCode struct {

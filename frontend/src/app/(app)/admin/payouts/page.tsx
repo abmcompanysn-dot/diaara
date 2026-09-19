@@ -13,7 +13,7 @@ import { PageLoader } from '@/components/page-loader';
 import { EmptyState } from '@/components/empty-state';
 import { ConfirmDialog } from '@/components/confirm-dialog';
 import { formatPrice, PAYOUT_STATUS_BADGE, PAYOUT_STATUS_LABELS } from '@/lib/constants';
-import { findPayoutOperator } from '@/lib/operators';
+import { findPayoutOperator, PAYOUT_COUNTRIES } from '@/lib/operators';
 import { friendlyError } from '@/lib/error-messages';
 import { openPayoutReceipt } from '@/lib/payout-receipt';
 import { SearchIcon, FileIcon } from '@/components/icons';
@@ -116,6 +116,20 @@ export default function AdminPayoutsPage() {
   const [newFee, setNewFee] = useState('0');
   const [newPhone, setNewPhone] = useState('');
   const [newNote, setNewNote] = useState('');
+
+  // Versement direct (argent réellement envoyé via PawaPay, vers n'importe
+  // quel numéro) — en 2 temps : formulaire puis code de vérification envoyé
+  // à l'email de l'admin (step-up, voir AdminHandler.SendPayoutOTP).
+  const [showDirect, setShowDirect] = useState(false);
+  const [directStep, setDirectStep] = useState<'form' | 'otp'>('form');
+  const [directAmount, setDirectAmount] = useState('');
+  const [directCountry, setDirectCountry] = useState('SEN');
+  const [directOperator, setDirectOperator] = useState('');
+  const [directPhone, setDirectPhone] = useState('');
+  const [directNote, setDirectNote] = useState('');
+  const [directOtp, setDirectOtp] = useState('');
+  const [directBusy, setDirectBusy] = useState(false);
+  const [directError, setDirectError] = useState('');
 
   useEffect(() => {
     load();
@@ -224,6 +238,65 @@ export default function AdminPayoutsPage() {
     }
   }
 
+  function resetDirectForm() {
+    setShowDirect(false);
+    setDirectStep('form');
+    setDirectAmount('');
+    setDirectOperator('');
+    setDirectPhone('');
+    setDirectNote('');
+    setDirectOtp('');
+    setDirectError('');
+  }
+
+  async function handleSendDirectOtp() {
+    setDirectError('');
+    const amount = Number(directAmount);
+    if (!amount || amount <= 0) {
+      setDirectError('Montant invalide.');
+      return;
+    }
+    if (!directOperator || !directPhone.trim()) {
+      setDirectError('Opérateur et numéro requis.');
+      return;
+    }
+    setDirectBusy(true);
+    try {
+      await api.sendDirectPayoutOtp();
+      setDirectStep('otp');
+    } catch (err: any) {
+      setDirectError(friendlyError(err));
+    } finally {
+      setDirectBusy(false);
+    }
+  }
+
+  async function handleConfirmDirectPayout() {
+    if (!directOtp.trim()) {
+      setDirectError('Code de vérification requis.');
+      return;
+    }
+    setDirectBusy(true);
+    setDirectError('');
+    try {
+      await api.createDirectPayout({
+        amount_cfa: Number(directAmount),
+        country: directCountry,
+        operator: directOperator,
+        phone: directPhone.trim(),
+        note: directNote.trim() || undefined,
+        otp_code: directOtp.trim(),
+      });
+      setMsg(`Versement direct de ${directAmount} FCFA envoyé.`);
+      resetDirectForm();
+      await load();
+    } catch (err: any) {
+      setDirectError(friendlyError(err));
+    } finally {
+      setDirectBusy(false);
+    }
+  }
+
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
     setMsg('');
@@ -286,7 +359,24 @@ export default function AdminPayoutsPage() {
         description={`${payouts.length} demande(s) — chaque demande vendeur est à régler ici, automatiquement (PawaPay/KPay) ou à la main`}
         actions={
           <div className="flex gap-2">
-            <Button variant="outline" size="sm" onClick={() => setShowCreate((v) => !v)}>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setShowDirect((v) => !v);
+                setShowCreate(false);
+              }}
+            >
+              {showDirect ? 'Fermer' : '+ Versement direct'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setShowCreate((v) => !v);
+                setShowDirect(false);
+              }}
+            >
               {showCreate ? 'Fermer' : '+ Versement manuel'}
             </Button>
             <Button variant="outline" size="sm" render={<Link href="/admin" />}>
@@ -305,6 +395,100 @@ export default function AdminPayoutsPage() {
         {msg && (
           <div className="mb-4 p-3 bg-green-900/5 text-green-900 rounded text-sm" role="status">
             {msg}
+          </div>
+        )}
+
+        {showDirect && (
+          <div className="mb-6 p-5 rounded-xl border border-green-900/10 bg-white shadow-card space-y-3">
+            <h2 className="font-display font-bold text-green-950">Versement direct</h2>
+            <p className="text-xs text-green-900/60">
+              Envoie réellement de l'argent via PawaPay, vers n'importe quel numéro (pas forcément un
+              vendeur DIARRA). Un code de vérification est envoyé à votre email avant l'envoi.
+            </p>
+
+            {directError && (
+              <div className="p-3 bg-destructive/10 text-destructive rounded text-sm" role="alert">
+                {directError}
+              </div>
+            )}
+
+            {directStep === 'form' ? (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <Input
+                    type="number"
+                    placeholder="Montant à envoyer (FCFA)"
+                    value={directAmount}
+                    onChange={(e) => setDirectAmount(e.target.value)}
+                  />
+                  <Select
+                    value={directCountry}
+                    onValueChange={(v) => {
+                      setDirectCountry(v || 'SEN');
+                      setDirectOperator('');
+                    }}
+                  >
+                    <SelectTrigger className="bg-white">
+                      <SelectValue placeholder="Pays" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PAYOUT_COUNTRIES.map((c) => (
+                        <SelectItem key={c.code} value={c.code}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Select value={directOperator} onValueChange={(v) => setDirectOperator(v || '')}>
+                    <SelectTrigger className="bg-white">
+                      <SelectValue placeholder="Opérateur" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(PAYOUT_COUNTRIES.find((c) => c.code === directCountry)?.operators || []).map((op) => (
+                        <SelectItem key={op.provider} value={op.provider}>
+                          {op.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Input
+                    placeholder="Numéro de téléphone"
+                    value={directPhone}
+                    onChange={(e) => setDirectPhone(e.target.value)}
+                  />
+                </div>
+                <Input
+                  placeholder="Note / référence (optionnel)"
+                  value={directNote}
+                  onChange={(e) => setDirectNote(e.target.value)}
+                />
+                <Button onClick={handleSendDirectOtp} disabled={directBusy}>
+                  {directBusy ? 'Envoi du code…' : 'Envoyer le code de vérification'}
+                </Button>
+              </>
+            ) : (
+              <>
+                <p className="text-sm text-green-900/70">
+                  Code envoyé à votre email. Saisissez-le pour confirmer l'envoi de{' '}
+                  <strong>{formatPrice(Number(directAmount))}</strong>.
+                </p>
+                <Input
+                  placeholder="Code à 6 chiffres"
+                  value={directOtp}
+                  onChange={(e) => setDirectOtp(e.target.value)}
+                  inputMode="numeric"
+                  autoFocus
+                />
+                <div className="flex gap-2">
+                  <Button onClick={handleConfirmDirectPayout} disabled={directBusy}>
+                    {directBusy ? 'Envoi…' : 'Confirmer et envoyer'}
+                  </Button>
+                  <Button variant="outline" onClick={() => setDirectStep('form')} disabled={directBusy}>
+                    Retour
+                  </Button>
+                </div>
+              </>
+            )}
           </div>
         )}
 
