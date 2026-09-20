@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"errors"
-	"strings"
 
 	"github.com/diarra/backend/internal/model"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -32,7 +31,7 @@ func (r *SummitRepo) Create(ctx context.Context, in model.CreateSummitRegistrati
 		in.FullName, in.Email, in.Phone, in.Profile,
 	).Scan(&reg.ID, &reg.FullName, &reg.Email, &reg.PhoneNumber, &reg.Profile, &reg.CreatedAt)
 	if err != nil {
-		if strings.Contains(err.Error(), "idx_summit_registrations_email") {
+		if IsUniqueViolation(err) {
 			return nil, ErrSummitAlreadyRegistered
 		}
 		return nil, err

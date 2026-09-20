@@ -397,6 +397,23 @@ func (n *NotificationService) SendSummitConfirmation(ctx context.Context, to, fu
 	return n.client.Send(ctx, to, "Votre inscription au DIARRA Summit est confirmée", n.renderEmail(inner))
 }
 
+// SendEventRegistrationConfirmation — confirmation d'inscription à une
+// offre GRATUITE d'un événement vendeur (voir model.Event / EventHandler.
+// RegisterFree). meetingLink est le lien de visio saisi par le vendeur à la
+// création de l'événement (Event.MeetingLink) ; si vide, le bloc CTA est
+// simplement omis plutôt que d'afficher un lien cassé.
+func (n *NotificationService) SendEventRegistrationConfirmation(ctx context.Context, to, fullName, eventTitle, meetingLink string) error {
+	body := fmt.Sprintf(`<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Bonjour %s,</p>
+<p style="margin:14px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Votre inscription à <strong>%s</strong> est confirmée.</p>`,
+		html.EscapeString(fullName), html.EscapeString(eventTitle))
+	ctaText := ""
+	if meetingLink != "" {
+		ctaText = "Rejoindre l'événement"
+	}
+	inner := contentHTML("Inscription confirmée", body, ctaText, meetingLink)
+	return n.client.Send(ctx, to, fmt.Sprintf("Votre inscription à %s est confirmée", eventTitle), n.renderEmail(inner))
+}
+
 func (n *NotificationService) SendOTP(ctx context.Context, to, code, purpose string) error {
 	subject := "Votre code de vérification DIARRA"
 	body := fmt.Sprintf(`<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Votre code de vérification pour %s est : <strong style="font-size:20px;color:#0f7a50;">%s</strong></p>

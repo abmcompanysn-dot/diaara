@@ -294,6 +294,12 @@ func main() {
 	summitRepo := repository.NewSummitRepo(pool)
 	summitHandler := handler.NewSummitHandler(summitRepo, notifications, os.Getenv("FRONTEND_URL"))
 
+	// Événements vendeur (1 à 3 offres payantes/gratuites par événement,
+	// voir migration 034_events.sql) — généralise le mécanisme du Summit à
+	// n'importe quel vendeur.
+	eventRepo := repository.NewEventRepo(pool)
+	eventHandler := handler.NewEventHandler(eventRepo, productRepo, storageService, notifications, os.Getenv("FRONTEND_URL"))
+
 	// Administration
 	adminHandler := handler.NewAdminHandler(productRepo, saleRepo, userRepo, referralRepo, adminPermRepo, payoutRepo, settingsRepo, ticketRepo, pool, storageHealthPinger, storageService, startTime, pawapay, kpay, paypal, notifications, redisCache, webhookHandler)
 	// Journal d'activité admin (backoffice 360°) — voir migration 028.
@@ -392,6 +398,18 @@ func main() {
 	// Boutique publique d'un vendeur (partageable via QR code)
 	r.Get("/api/vendors/{id}/shop", productHandler.Shop)
 
+	// Événements (public) — liste, fiche (id ou slug), inscription aux
+	// offres gratuites (même régime que /api/summit/register : limite de
+	// débit globale par IP, pas authRateLimiter qui est réservé aux routes
+	// sensibles au brute-force). OptionalAuth sur Get : un vendeur connecté
+	// peut prévisualiser son propre événement encore en attente de modération.
+	r.Route("/api/events", func(r chi.Router) {
+		r.Use(middleware.OptionalAuth(jwtManager))
+		r.Get("/", eventHandler.ListApproved)
+		r.Get("/{id}", eventHandler.Get)
+		r.Post("/offers/{offerId}/register", eventHandler.RegisterFree)
+	})
+
 	// Vendor product routes (vendeur authentifié + email vérifié)
 	r.Route("/api/vendor/products", func(r chi.Router) {
 		r.Use(middleware.RequireAuth(jwtManager))
@@ -402,6 +420,19 @@ func main() {
 		r.Post("/upload", productHandler.Upload)
 		r.Put("/{id}", productHandler.Update)
 		r.Delete("/{id}", productHandler.Delete)
+	})
+
+	// Événements vendeur — même garde (vendeur + email vérifié) que les
+	// produits. L'upload de l'image de couverture réutilise
+	// POST /api/vendor/products/upload (générique, pas lié à "produit").
+	r.Route("/api/vendor/events", func(r chi.Router) {
+		r.Use(middleware.RequireAuth(jwtManager))
+		r.Use(middleware.RequireRole(model.RoleVendeur))
+		r.Use(middleware.RequireVerifiedEmail(userRepo))
+		r.Get("/", eventHandler.ListVendor)
+		r.Post("/", eventHandler.Create)
+		r.Put("/{id}", eventHandler.Update)
+		r.Get("/{id}/registrations", eventHandler.ListRegistrations)
 	})
 
 	// Orders
@@ -524,6 +555,12 @@ func main() {
 			r.Put("/products/{id}/moderate", adminHandler.Moderate)
 			r.Delete("/products/{id}", adminHandler.ConfirmDeletion)
 			r.Put("/products/{id}/cancel-deletion", adminHandler.CancelDeletion)
+
+			// Événements vendeur : même scope que la modération produits —
+			// une offre payante crée déjà un Product modéré séparément ; ceci
+			// modère l'événement lui-même (titre, description, lien visio).
+			r.Get("/events/pending", eventHandler.ListPendingModeration)
+			r.Put("/events/{id}/moderate", eventHandler.Moderate)
 		})
 
 		r.Group(func(r chi.Router) {

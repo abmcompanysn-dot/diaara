@@ -18,6 +18,7 @@ import {
   BellIcon,
   GridIcon,
   CheckIcon,
+  ZapIcon,
 } from '@/components/icons';
 
 interface Notification {
@@ -43,6 +44,7 @@ const POLL_INTERVAL_MS = 30_000;
 const SHORTCUTS = [
   { href: '/vendor/products', label: 'Produits', Icon: StoreIcon, bg: '#DFF3E7', fg: '#0A4F35' },
   { href: '/vendor/products/bundles', label: 'Packs', Icon: PackageIcon, bg: '#FFF3D6', fg: '#B8860B' },
+  { href: '/vendor/events', label: 'Événements', Icon: ZapIcon, bg: '#FDE9D9', fg: '#B85C0E' },
   { href: '/vendor/earnings', label: 'Revenus', Icon: WalletIcon, bg: '#E4F0FF', fg: '#1F5FBF' },
   { href: '/vendor/sales', label: 'Clients', Icon: UserIcon, bg: '#FBE4EE', fg: '#B23B72' },
   { href: '/vendor/messages', label: 'Messages', Icon: MessageIcon, bg: '#E9E4FB', fg: '#5A3FBF' },

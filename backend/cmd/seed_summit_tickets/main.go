@@ -20,6 +20,7 @@ import (
 	"os"
 
 	"github.com/diarra/backend/internal/auth"
+	"github.com/diarra/backend/internal/eventfile"
 	"github.com/diarra/backend/internal/model"
 	"github.com/diarra/backend/internal/repository"
 	"github.com/diarra/backend/internal/storage"
@@ -120,7 +121,15 @@ func main() {
 
 	for _, tier := range tiers {
 		fileKey := storage.NewFileKey(vendorID, fmt.Sprintf("billet-%d-fcfa.html", tier.priceCFA))
-		if err := s3.Upload(ctx, fileKey, []byte(buildTicketHTML(tier))); err != nil {
+		confirmationHTML := eventfile.BuildHTML(eventfile.Confirmation{
+			Title:      tier.title,
+			PriceCFA:   tier.priceCFA,
+			Inclusions: tier.inclusions,
+			Note: "Une équipe DIARRA / ABMCY / MAHU vous contactera sous 48h pour la mise en place des éléments listés " +
+				"ci-dessus (carte connectée, site vitrine, etc. selon votre palier). Ce document confirme votre achat ; " +
+				"il ne constitue pas une activation immédiate de ces services.",
+		})
+		if err := s3.Upload(ctx, fileKey, []byte(confirmationHTML)); err != nil {
 			log.Fatalf("upload fichier billet %q: %v", tier.title, err)
 		}
 
@@ -172,45 +181,4 @@ func findOrCreateSummitVendor(ctx context.Context, userRepo *repository.UserRepo
 		return "", err
 	}
 	return user.ID, nil
-}
-
-// buildTicketHTML — fichier livré immédiatement après achat. Récapitulatif
-// honnête : les prestations qu'un fichier ne peut pas exécuter lui-même
-// (carte MAHU, site vitrine...) sont présentées comme un suivi à venir, pas
-// comme déjà actives.
-func buildTicketHTML(tier ticketTier) string {
-	var items string
-	for _, inc := range tier.inclusions {
-		items += fmt.Sprintf("<li>%s</li>\n", inc)
-	}
-	return fmt.Sprintf(`<!DOCTYPE html>
-<html lang="fr">
-<head>
-<meta charset="utf-8">
-<title>%s — Confirmation</title>
-<style>
-body { font-family: Arial, Helvetica, sans-serif; background: #f2f7f4; margin: 0; padding: 32px 16px; color: #0a3225; }
-.card { max-width: 600px; margin: 0 auto; background: #fff; border-radius: 16px; padding: 32px; }
-h1 { color: #052018; font-size: 22px; }
-.price { color: #0f7a50; font-weight: 700; }
-ul { padding-left: 20px; line-height: 1.7; }
-.note { margin-top: 24px; padding: 16px; background: #f2f7f4; border-radius: 8px; font-size: 14px; }
-</style>
-</head>
-<body>
-<div class="card">
-<h1>%s</h1>
-<p>Merci pour votre inscription au <strong>DIARRA Summit</strong> — 26 novembre 2026, en ligne.</p>
-<p>Palier : <span class="price">%d FCFA</span></p>
-<p><strong>Ce qui est inclus :</strong></p>
-<ul>
-%s</ul>
-<div class="note">
-Une équipe DIARRA / ABMCY / MAHU vous contactera sous 48h pour la mise en place des éléments listés ci-dessus
-(carte connectée, site vitrine, etc. selon votre palier). Ce document confirme votre achat ; il ne constitue pas
-une activation immédiate de ces services.
-</div>
-</div>
-</body>
-</html>`, tier.title, tier.title, tier.priceCFA, items)
 }

@@ -50,6 +50,17 @@ async function refreshAccessToken(): Promise<string | null> {
   return refreshInFlight;
 }
 
+// toEventDateISO convertit la valeur brute d'un <input type="date">
+// ("YYYY-MM-DD") en horodatage RFC3339 complet : le backend Go décode
+// event_date en time.Time, qui rejette un format de date seule ("cannot
+// parse... as T" — vérifié : "2026-11-26" échoue le décodage JSON). Minuit
+// UTC est arbitraire mais suffisant, la date seule (pas l'heure précise) est
+// ce qui est affiché sur la fiche événement.
+function toEventDateISO(dateOnly?: string): string | undefined {
+  if (!dateOnly) return undefined;
+  return `${dateOnly}T00:00:00Z`;
+}
+
 // Session expirée et non récupérable : déconnexion réelle (pas juste un
 // message affiché pendant que l'utilisateur reste "connecté" côté client).
 // Redirection dure (pas de router.push) pour repartir d'un état React propre.
@@ -250,6 +261,45 @@ export const api = {
   deleteProduct: (id: string) =>
     fetchApi<{ status: string }>(`/api/vendor/products/${id}`, { method: 'DELETE' }),
 
+  // Événements vendeur — 1 à 3 offres, chacune payante ou gratuite.
+  createEvent: (data: {
+    title: string;
+    description?: string;
+    cover_image_key?: string;
+    event_date?: string; // "YYYY-MM-DD" (valeur brute d'un <input type="date">)
+    meeting_link?: string;
+    offers: { title: string; is_free: boolean; price_cfa?: number }[];
+  }) =>
+    fetchApi<{ event: any }>('/api/vendor/events', {
+      method: 'POST',
+      body: JSON.stringify({ ...data, event_date: toEventDateISO(data.event_date) }),
+    }),
+
+  updateEvent: (
+    id: string,
+    data: { title?: string; description?: string; cover_image_key?: string; event_date?: string; meeting_link?: string }
+  ) =>
+    fetchApi<{ event: any }>(`/api/vendor/events/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ ...data, event_date: toEventDateISO(data.event_date) }),
+    }),
+
+  getVendorEvents: () => fetchApi<{ events: any[] }>('/api/vendor/events'),
+
+  getEventRegistrations: (id: string) =>
+    fetchApi<{ registrations: any[] }>(`/api/vendor/events/${id}/registrations`),
+
+  getEvents: () => fetchApi<{ events: any[] }>('/api/events', { skipAuth: true }),
+
+  getEvent: (idOrSlug: string) =>
+    fetchApi<{ event: any; offers: any[] }>(`/api/events/${idOrSlug}`, { skipAuth: true }),
+
+  registerFreeEventOffer: (offerId: string, data: { full_name: string; email: string; phone: string }) =>
+    fetchApi<{ id: string }>(`/api/events/offers/${offerId}/register`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
   // Orders
   createOrder: (data: {
     product_id: string;
@@ -440,6 +490,14 @@ export const api = {
 
   moderateProduct: (id: string, data: { status: string; note?: string }) =>
     fetchApi<void>(`/api/admin/products/${id}/moderate`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  adminListPendingEvents: () => fetchApi<{ events: any[] }>('/api/admin/events/pending'),
+
+  adminModerateEvent: (id: string, data: { status: string; note?: string }) =>
+    fetchApi<void>(`/api/admin/events/${id}/moderate`, {
       method: 'PUT',
       body: JSON.stringify(data),
     }),
