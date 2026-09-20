@@ -6,7 +6,7 @@ import { SummitSponsorForm } from '@/components/summit-sponsor-form';
 export const metadata = {
   title: 'DIARRA Summit — Growth Business with AI',
   description:
-    'DIARRA Summit, le 26 octobre 2026 en ligne : business, intelligence artificielle et produits numériques en Afrique. Billets et inscription.',
+    "DIARRA Summit, le 26 octobre 2026 à l'Université Cheikh Anta Diop de Dakar (UCAD) et en ligne : business, intelligence artificielle et produits numériques en Afrique. Billets et inscription.",
 };
 
 const TOPICS = [
@@ -61,7 +61,7 @@ export default function SummitPage() {
         <div className="wax-pattern absolute inset-0" aria-hidden />
         <div className="relative max-w-4xl mx-auto px-4 py-20 text-center">
           <p className="font-mono text-sm text-green-300 uppercase tracking-widest mb-4">
-            // événement en ligne &middot; 26 octobre 2026
+            // UCAD, Dakar &amp; en ligne &middot; 26 octobre 2026
           </p>
           <h1 className="font-display text-4xl sm:text-5xl font-bold tracking-tight">
             DIARRA Summit
@@ -69,8 +69,9 @@ export default function SummitPage() {
           <p className="mt-3 text-lg text-green-300 font-semibold">Growth Business with AI</p>
           <p className="mt-5 text-white/75 max-w-xl mx-auto">
             Business, intelligence artificielle et produits numériques en Afrique.
-            Une matinée en ligne pour comprendre où va la digitalisation du continent
-            — et comment l&rsquo;écosystème DIARRA, ABMCY, MAHU et Yes.abmcy y participe.
+            Une matinée à l&rsquo;Université Cheikh Anta Diop de Dakar (UCAD), Sénégal, et diffusée en direct en ligne,
+            pour comprendre où va la digitalisation du continent — et comment l&rsquo;écosystème DIARRA, ABMCY, MAHU et
+            Yes.abmcy y participe.
           </p>
           <a
             href="#billets"
@@ -104,11 +105,12 @@ export default function SummitPage() {
             <div className="mt-10 rounded-2xl border border-green-900/10 bg-green-50/50 p-5">
               <div className="flex items-center gap-2 text-green-800 font-semibold text-sm mb-2">
                 <CheckIcon size={16} />
-                100&nbsp;% en ligne
+                Sur place à l&rsquo;UCAD ou en ligne
               </div>
               <p className="text-sm text-green-900/70">
-                Le lien de connexion sera envoyé par email à tous les inscrits (quel que soit le
-                billet choisi) à l&rsquo;approche de l&rsquo;événement, le <strong>26 octobre 2026</strong>.
+                Rendez-vous à l&rsquo;Université Cheikh Anta Diop de Dakar (UCAD), Sénégal. Le lien de connexion pour
+                suivre l&rsquo;événement en direct sera envoyé par email à tous les inscrits (quel que soit le billet
+                choisi) à l&rsquo;approche de l&rsquo;événement, le <strong>26 octobre 2026</strong>.
               </p>
             </div>
           </div>

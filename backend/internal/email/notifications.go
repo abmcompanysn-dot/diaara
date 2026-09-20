@@ -384,14 +384,15 @@ func (n *NotificationService) SendBroadcast(ctx context.Context, to, subject, bo
 }
 
 // SendSummitConfirmation — confirmation d'inscription au DIARRA Summit
-// (événement en ligne, voir model.SummitRegistration). fullName personnalise
-// la formule d'accroche ; eventDateLabel/eventLink sont passés par
-// l'appelant plutôt que codés en dur ici, pour rester valables si la date ou
-// le lien de connexion changent sans redéploiement du template email.
+// (événement hybride : présentiel à l'UCAD, Dakar, et diffusé en ligne, voir
+// model.SummitRegistration). fullName personnalise la formule d'accroche ;
+// eventDateLabel/eventLink sont passés par l'appelant plutôt que codés en
+// dur ici, pour rester valables si la date ou le lien de connexion changent
+// sans redéploiement du template email.
 func (n *NotificationService) SendSummitConfirmation(ctx context.Context, to, fullName, eventDateLabel, eventLink string) error {
 	body := fmt.Sprintf(`<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Bonjour %s,</p>
-<p style="margin:14px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Votre inscription au <strong>DIARRA Summit</strong> est confirmée. Rendez-vous le <strong>%s</strong>, en ligne, pour parler business, intelligence artificielle et produits numériques en Afrique.</p>
-<p style="margin:14px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#6b7c74;">Le lien de connexion vous sera renvoyé par email à l&rsquo;approche de l&rsquo;événement.</p>`,
+<p style="margin:14px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Votre inscription au <strong>DIARRA Summit</strong> est confirmée. Rendez-vous le <strong>%s</strong>, à l&rsquo;Université Cheikh Anta Diop de Dakar (UCAD) ou en ligne, pour parler business, intelligence artificielle et produits numériques en Afrique.</p>
+<p style="margin:14px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#6b7c74;">Le lien de connexion pour suivre l&rsquo;événement en direct vous sera renvoyé par email à l&rsquo;approche de l&rsquo;événement.</p>`,
 		html.EscapeString(fullName), html.EscapeString(eventDateLabel))
 	inner := contentHTML("Inscription confirmée — DIARRA Summit", body, "Voir la page de l'événement", eventLink)
 	return n.client.Send(ctx, to, "Votre inscription au DIARRA Summit est confirmée", n.renderEmail(inner))
