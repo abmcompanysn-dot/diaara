@@ -42,6 +42,7 @@ const FALLBACK_TIERS = [
       'Tout le Tier Business 2026',
       'Site web vitrine personnel clé en main',
       'Sous-domaine utilisateur.abmcy.com ou utilisateur.diarra.app',
+      'Accès à l’espace de coworking / innovation ABMCY',
       'Carte MAHU Premium + badge de certification ABMCY',
     ],
   },

@@ -73,13 +73,15 @@ var tiers = []ticketTier{
 		title:    "DIARRA Summit — Tier Premium / Site Vitrine",
 		priceCFA: 25000,
 		description: "Tout le Tier Business 2026, plus un site web vitrine personnel clé en main (sous-domaine utilisateur.abmcy.com " +
-			"ou utilisateur.diarra.app), carte MAHU Premium interconnectée, badge de certification et accompagnement prioritaire ABMCY.",
+			"ou utilisateur.diarra.app), carte MAHU Premium interconnectée, accès à l'espace de coworking ABMCY, badge de certification " +
+			"et accompagnement prioritaire ABMCY.",
 		inclusions: []string{
 			"Tout le contenu du Tier Business 2026 (15 000 FCFA)",
 			"Création, design et déploiement de votre site web personnel",
 			"Nom de sous-domaine personnalisé : utilisateur.abmcy.com ou utilisateur.diarra.app",
 			"Intégration des boutons de contact et passerelles de paiement DIARRA",
 			"Carte MAHU Premium interconnectée en temps réel avec votre nouveau site",
+			"Accès à l'espace de coworking / innovation ABMCY pour votre organisation",
 			"Badge de certification et accompagnement prioritaire ABMCY",
 		},
 	},
