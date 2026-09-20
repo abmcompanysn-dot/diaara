@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { ZapIcon, UserIcon, CheckIcon, BriefcaseIcon } from '@/components/icons';
 import { SummitRegistrationForm } from '@/components/summit-registration-form';
 import { SummitTickets } from '@/components/summit-tickets';
@@ -193,6 +194,11 @@ export default function SummitPage() {
           <p className="mt-3 text-sm text-green-900/70 text-center">
             Votre entreprise souhaite être visible auprès des vendeurs et entrepreneurs du DIARRA Summit ?
             Dites-nous-en plus, l&rsquo;équipe DIARRA vous recontacte.
+          </p>
+          <p className="mt-2 text-center">
+            <Link href="/summit/sponsors" className="text-sm font-semibold text-forest underline underline-offset-2">
+              Voir les paliers de sponsoring &rarr;
+            </Link>
           </p>
           <div className="mt-6 rounded-2xl border border-green-900/10 bg-white shadow-lift p-6 sm:p-8">
             <SummitSponsorForm />
