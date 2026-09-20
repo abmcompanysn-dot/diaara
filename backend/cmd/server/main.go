@@ -290,6 +290,10 @@ func main() {
 	supportContactRepo := repository.NewSupportContactRepo(pool)
 	supportContactHandler := handler.NewSupportContactHandler(supportContactRepo, notifications)
 
+	// Inscriptions publiques au DIARRA Summit (26 novembre 2026, en ligne).
+	summitRepo := repository.NewSummitRepo(pool)
+	summitHandler := handler.NewSummitHandler(summitRepo, notifications, os.Getenv("FRONTEND_URL"))
+
 	// Administration
 	adminHandler := handler.NewAdminHandler(productRepo, saleRepo, userRepo, referralRepo, adminPermRepo, payoutRepo, settingsRepo, ticketRepo, pool, storageHealthPinger, storageService, startTime, pawapay, kpay, paypal, notifications, redisCache, webhookHandler)
 	// Journal d'activité admin (backoffice 360°) — voir migration 028.
@@ -599,6 +603,9 @@ func main() {
 		r.Delete("/support-agents/{id}", supportContactHandler.DeleteAgent)
 		r.Get("/support-contacts", supportContactHandler.ListContacts)
 
+		// Inscriptions au DIARRA Summit — même accès que les tickets (tout admin).
+		r.Get("/summit/registrations", summitHandler.List)
+
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAdminScope(model.AdminPermInfra))
 			r.Get("/system/health", adminHandler.SystemHealth)
@@ -646,6 +653,10 @@ func main() {
 	// Widget de contact support public (visiteur non authentifié, sans compte
 	// requis) — soumis à la limite de débit globale par IP (voir plus haut).
 	r.Post("/api/support/contact", supportContactHandler.Contact)
+
+	// Inscription publique au DIARRA Summit (visiteur non authentifié, sans
+	// compte requis) — même régime que le widget de contact ci-dessus.
+	r.Post("/api/summit/register", summitHandler.Register)
 
 	// Support tickets (utilisateur connecté, admin pour tous)
 	r.Route("/api/tickets", func(r chi.Router) {

@@ -57,7 +57,7 @@ const emailLayout = `<!DOCTYPE html>
 <p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:12px;line-height:1.7;color:#6b7c74;text-align:center;">
 &copy; DIARRA &middot; marketplace de produits numériques<br>
 Si vous n&rsquo;êtes pas à l&rsquo;origine de cet email, ignorez-le simplement.<br>
-Vous ne trouvez pas cet email&nbsp;? Vérifiez votre dossier spam, ou écrivez-nous à <a href="mailto:support@abmcy.com" style="color:#0f7a50;">support@abmcy.com</a>.
+Vous ne trouvez pas cet email&nbsp;? Vérifiez votre dossier spam, ou écrivez-nous à <a href="mailto:support@diarra.app" style="color:#0f7a50;">support@diarra.app</a>.
 </p>
 </td>
 </tr>
@@ -381,6 +381,20 @@ func (n *NotificationService) SendAdminMessageWithCommunity(ctx context.Context,
 // admin de confiance, pas une entrée utilisateur non fiable.
 func (n *NotificationService) SendBroadcast(ctx context.Context, to, subject, bodyHTML string) error {
 	return n.client.Send(ctx, to, subject, n.renderEmail(bodyHTML))
+}
+
+// SendSummitConfirmation — confirmation d'inscription au DIARRA Summit
+// (événement en ligne, voir model.SummitRegistration). fullName personnalise
+// la formule d'accroche ; eventDateLabel/eventLink sont passés par
+// l'appelant plutôt que codés en dur ici, pour rester valables si la date ou
+// le lien de connexion changent sans redéploiement du template email.
+func (n *NotificationService) SendSummitConfirmation(ctx context.Context, to, fullName, eventDateLabel, eventLink string) error {
+	body := fmt.Sprintf(`<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Bonjour %s,</p>
+<p style="margin:14px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Votre inscription au <strong>DIARRA Summit</strong> est confirmée. Rendez-vous le <strong>%s</strong>, en ligne, pour parler business, intelligence artificielle et produits numériques en Afrique.</p>
+<p style="margin:14px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#6b7c74;">Le lien de connexion vous sera renvoyé par email à l&rsquo;approche de l&rsquo;événement.</p>`,
+		html.EscapeString(fullName), html.EscapeString(eventDateLabel))
+	inner := contentHTML("Inscription confirmée — DIARRA Summit", body, "Voir la page de l'événement", eventLink)
+	return n.client.Send(ctx, to, "Votre inscription au DIARRA Summit est confirmée", n.renderEmail(inner))
 }
 
 func (n *NotificationService) SendOTP(ctx context.Context, to, code, purpose string) error {

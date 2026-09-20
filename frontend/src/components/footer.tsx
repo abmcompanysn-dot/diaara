@@ -44,6 +44,7 @@ export function Footer() {
             <ul className="space-y-2 text-sm">
               <li><Link href="/sell" className="hover:text-green-300">Vendre sur DIARRA</Link></li>
               <li><Link href="/closer" className="hover:text-green-300">Affiliation</Link></li>
+              <li><Link href="/summit" className="hover:text-green-300">DIARRA Summit</Link></li>
             </ul>
           </div>
           <div>

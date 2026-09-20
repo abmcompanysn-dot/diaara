@@ -747,6 +747,17 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
+  // Inscription publique au DIARRA Summit (26 novembre 2026, en ligne).
+  submitSummitRegistration: (input: { full_name: string; email: string; phone: string; profile: 'vendeur' | 'acheteur' | 'entrepreneur' | 'curieux' }) =>
+    fetchApi<{ id: string }>('/api/summit/register', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+
+  // Admin : liste des inscrits au DIARRA Summit.
+  getSummitRegistrations: () =>
+    fetchApi<{ registrations: any[]; count: number }>('/api/admin/summit/registrations'),
+
   // Diffusion email (admin, scope "users") : subject + html composés par
   // l'admin. test_only n'envoie qu'à l'admin connecté, pour prévisualiser.
   // country (ISO3 ou "UNKNOWN") restreint la diffusion aux comptes de ce pays

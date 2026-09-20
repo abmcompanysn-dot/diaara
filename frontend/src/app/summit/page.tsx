@@ -1,0 +1,153 @@
+import { ZapIcon, UserIcon, CheckIcon, BriefcaseIcon } from '@/components/icons';
+import { SummitRegistrationForm } from '@/components/summit-registration-form';
+import { SummitTickets } from '@/components/summit-tickets';
+
+export const metadata = {
+  title: 'DIARRA Summit',
+  description:
+    'DIARRA Summit, le 26 novembre 2026 en ligne : business, intelligence artificielle et produits numériques en Afrique. Billets et inscription.',
+};
+
+const TOPICS = [
+  {
+    icon: ZapIcon,
+    title: 'IA & digitalisation',
+    desc: "Comment l'intelligence artificielle transforme déjà la vente de produits numériques en Afrique francophone.",
+  },
+  {
+    icon: BriefcaseIcon,
+    title: 'Business & croissance',
+    desc: 'Stratégies concrètes pour lancer et faire grandir une activité de produits digitaux, rentable et durable.',
+  },
+  {
+    icon: UserIcon,
+    title: 'Retours de terrain',
+    desc: "Des vendeurs et entrepreneurs de la plateforme DIARRA partagent ce qui a marché, et ce qui n'a pas marché.",
+  },
+];
+
+const PARTNERS = [
+  {
+    name: 'DIARRA',
+    role: 'Infrastructure de paiement mobile sécurisée et hébergement de sous-domaines applicatifs (.diarra.app).',
+  },
+  {
+    name: 'ABMCY',
+    role: "Réseau d'affaires, accompagnement entrepreneurial et hébergement de vitrines professionnelles (.abmcy.com).",
+  },
+  {
+    name: 'MAHU',
+    role: "Support matériel, cartes connectées et technologies d'identification numérique.",
+  },
+];
+
+export default function SummitPage() {
+  return (
+    <>
+      <section className="gradient-green text-white relative overflow-hidden">
+        <div className="wax-pattern absolute inset-0" aria-hidden />
+        <div className="relative max-w-4xl mx-auto px-4 py-20 text-center">
+          <p className="font-mono text-sm text-green-300 uppercase tracking-widest mb-4">
+            // événement en ligne &middot; 26 novembre 2026
+          </p>
+          <h1 className="font-display text-4xl sm:text-5xl font-bold tracking-tight">
+            DIARRA Summit
+          </h1>
+          <p className="mt-5 text-white/75 max-w-xl mx-auto">
+            Business, intelligence artificielle et produits numériques en Afrique.
+            Une matinée en ligne pour comprendre où va la digitalisation du continent
+            — et comment l&rsquo;écosystème DIARRA, ABMCY et MAHU y participe.
+          </p>
+          <a
+            href="#billets"
+            className="inline-block mt-8 px-7 h-12 leading-12 rounded-full bg-lime text-green-950 font-semibold text-sm hover:brightness-95 transition"
+          >
+            Voir les billets
+          </a>
+        </div>
+      </section>
+
+      <section className="py-16 max-w-6xl mx-auto px-4">
+        <div className="grid lg:grid-cols-2 gap-12 items-start">
+          <div>
+            <p className="font-mono text-sm text-green-700/60 uppercase tracking-widest mb-6">
+              // au programme
+            </p>
+            <div className="space-y-6">
+              {TOPICS.map((t) => (
+                <div key={t.title} className="flex gap-4">
+                  <span className="shrink-0 w-11 h-11 rounded-xl bg-green-100 text-green-700 flex items-center justify-center">
+                    <t.icon size={20} />
+                  </span>
+                  <div>
+                    <h3 className="font-semibold text-green-950">{t.title}</h3>
+                    <p className="mt-1 text-sm text-green-900/70">{t.desc}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            <div className="mt-10 rounded-2xl border border-green-900/10 bg-green-50/50 p-5">
+              <div className="flex items-center gap-2 text-green-800 font-semibold text-sm mb-2">
+                <CheckIcon size={16} />
+                100&nbsp;% en ligne
+              </div>
+              <p className="text-sm text-green-900/70">
+                Le lien de connexion sera envoyé par email à tous les inscrits (quel que soit le
+                billet choisi) à l&rsquo;approche de l&rsquo;événement, le <strong>26 novembre 2026</strong>.
+              </p>
+            </div>
+          </div>
+
+          <div id="inscription" className="rounded-2xl border border-green-900/10 bg-white shadow-lift p-6 sm:p-8">
+            <h2 className="font-display text-xl font-bold text-green-950">Je m&rsquo;inscris</h2>
+            <p className="mt-1 text-sm text-green-900/60">
+              Quelques infos et c&rsquo;est fait — la confirmation arrive par email.
+            </p>
+            <div className="mt-6">
+              <SummitRegistrationForm />
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section id="billets" className="py-16 bg-green-50/40">
+        <div className="max-w-6xl mx-auto px-4">
+          <p className="font-mono text-sm text-green-700/60 uppercase tracking-widest mb-2 text-center">
+            // billets
+          </p>
+          <h2 className="font-display text-3xl font-bold text-green-950 text-center">
+            Choisissez votre formule
+          </h2>
+          <p className="mt-3 text-green-900/70 text-center max-w-xl mx-auto">
+            Paiement sécurisé par mobile money (Wave, Orange Money, MTN MoMo) via DIARRA.
+            Une équipe DIARRA / ABMCY / MAHU vous recontacte sous 48h pour la mise en place
+            des éléments inclus dans votre formule.
+          </p>
+          <div className="mt-10">
+            <SummitTickets />
+          </div>
+        </div>
+      </section>
+
+      <section className="py-16 max-w-4xl mx-auto px-4">
+        <p className="font-mono text-sm text-green-700/60 uppercase tracking-widest mb-2 text-center">
+          // écosystème & partenaires
+        </p>
+        <h2 className="font-display text-2xl font-bold text-green-950 text-center mb-10">
+          Un événement porté par trois acteurs complémentaires
+        </h2>
+        <div className="grid sm:grid-cols-3 gap-6">
+          {PARTNERS.map((p) => (
+            <div key={p.name} className="rounded-2xl border border-green-900/10 bg-white shadow-lift p-6 text-center">
+              <div className="mx-auto w-14 h-14 rounded-full bg-forest text-white flex items-center justify-center font-display font-bold text-sm mb-4">
+                {p.name}
+              </div>
+              <p className="text-sm text-green-900/70">{p.role}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+    </>
+  );
+}

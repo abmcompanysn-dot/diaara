@@ -91,7 +91,7 @@ export default function CGUPage() {
         <div>
           <h2 className="font-display font-bold text-xl text-green-950 mb-2">9. Contact</h2>
           <p>
-            Pour toute question : <a href="mailto:support@abmcy.com" className="text-green-700 underline">support@abmcy.com</a>.
+            Pour toute question : <a href="mailto:support@diarra.app" className="text-green-700 underline">support@diarra.app</a>.
           </p>
         </div>
 

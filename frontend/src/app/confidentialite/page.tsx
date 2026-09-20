@@ -61,7 +61,7 @@ export default function ConfidentialitePage() {
           <h2 className="font-display font-bold text-xl text-green-950 mb-2">Vos droits</h2>
           <p>
             Vous pouvez demander l&apos;accès, la correction ou la suppression de vos données personnelles
-            à tout moment en écrivant à <a href="mailto:support@abmcy.com" className="text-green-700 underline">support@abmcy.com</a>.
+            à tout moment en écrivant à <a href="mailto:support@diarra.app" className="text-green-700 underline">support@diarra.app</a>.
           </p>
         </div>
 

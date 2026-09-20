@@ -6,6 +6,7 @@ export const CATEGORY_LABELS: Record<string, string> = {
   pdf: 'PDF',
   software: 'Logiciels',
   service: 'Services',
+  event: 'Événements',
   other: 'Autres',
 };
 

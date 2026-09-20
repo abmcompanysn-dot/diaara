@@ -28,7 +28,7 @@ export default function MentionsLegalesPage() {
             <li><strong>Date d&apos;immatriculation :</strong> 13/02/2026</li>
             <li><strong>Siège :</strong> Dakar Médina, Rue 13 x 12, Dakar, Sénégal</li>
             <li><strong>Téléphone :</strong> +221 77 758 79 99</li>
-            <li><strong>Contact :</strong> <a href="mailto:support@abmcy.com" className="text-green-700 underline">support@abmcy.com</a></li>
+            <li><strong>Contact :</strong> <a href="mailto:support@diarra.app" className="text-green-700 underline">support@diarra.app</a></li>
             <li><strong>Activités déclarées :</strong> Commerce général, import-export, prestations de services, développement logiciel et solutions numériques, organisation de voyages, événementiel, e-commerce.</li>
             <li><strong>Gérant :</strong> Brunel Mahuzonsou Atekossi</li>
           </ul>
