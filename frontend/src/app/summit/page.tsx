@@ -66,7 +66,8 @@ export default function SummitPage() {
           <h1 className="font-display text-4xl sm:text-5xl font-bold tracking-tight">
             DIARRA Summit
           </h1>
-          <p className="mt-3 text-lg text-green-300 font-semibold">Growth Business with AI</p>
+          <p className="mt-3 text-lg text-green-300 font-semibold">Faire croître son business avec l&rsquo;IA</p>
+          <p className="mt-1 text-sm text-green-300/70 font-medium uppercase tracking-wide">Growth Business with AI</p>
           <p className="mt-5 text-white/75 max-w-xl mx-auto">
             Business, intelligence artificielle et produits numériques en Afrique.
             Une matinée à l&rsquo;Université Cheikh Anta Diop de Dakar (UCAD), Sénégal, et diffusée en direct en ligne,
@@ -79,6 +80,20 @@ export default function SummitPage() {
           >
             Voir les billets
           </a>
+        </div>
+        {/* Visuel hero : à ajouter dans /public/summit/hero.jpg (voir le
+            prompt fourni à l'utilisateur pour le générer). Tant que le
+            fichier n'existe pas, le navigateur affiche une icône d'image
+            cassée ici — inoffensif en attendant, mais à remplacer avant
+            publication finale de la page. */}
+        <div className="relative max-w-4xl mx-auto px-4 pb-16">
+          <div className="rounded-2xl overflow-hidden border border-white/10 shadow-2xl aspect-video bg-black/20">
+            <img
+              src="/summit/hero.jpg"
+              alt="DIARRA Summit — Growth Business with AI"
+              className="w-full h-full object-cover"
+            />
+          </div>
         </div>
       </section>
 
