@@ -300,6 +300,24 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  // Billet PDF (QR de vérification) d'une commande payée — pas un fetchApi
+  // JSON classique : c'est un lien direct vers un flux PDF binaire, à
+  // utiliser dans un <a href> / window.open, pas un appel await.
+  ticketPdfUrl: (checkoutToken: string) => `${apiOrigin}/api/orders/${encodeURIComponent(checkoutToken)}/ticket.pdf`,
+
+  // Scan à l'entrée (admin ou vendeur propriétaire de l'événement — filtré
+  // côté backend). status: false = consulter sans marquer utilisé.
+  getTicketScanStatus: (token: string) =>
+    fetchApi<{ buyer_name: string; event_title: string; offer_title: string; already_used: boolean; checked_in_at: string | null }>(
+      `/api/events/scan?token=${encodeURIComponent(token)}`
+    ),
+
+  confirmTicketScan: (token: string) =>
+    fetchApi<{ buyer_name: string; event_title: string; offer_title: string; already_used: boolean; checked_in_at: string | null }>(
+      `/api/events/scan?token=${encodeURIComponent(token)}`,
+      { method: 'POST' }
+    ),
+
   // Orders
   createOrder: (data: {
     product_id: string;
@@ -805,7 +823,7 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
-  // Inscription publique au DIARRA Summit (26 novembre 2026, en ligne).
+  // Inscription publique au DIARRA Summit (26 octobre 2026, en ligne).
   submitSummitRegistration: (input: { full_name: string; email: string; phone: string; profile: 'vendeur' | 'acheteur' | 'entrepreneur' | 'curieux' }) =>
     fetchApi<{ id: string }>('/api/summit/register', {
       method: 'POST',

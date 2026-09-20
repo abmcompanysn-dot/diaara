@@ -290,7 +290,7 @@ func main() {
 	supportContactRepo := repository.NewSupportContactRepo(pool)
 	supportContactHandler := handler.NewSupportContactHandler(supportContactRepo, notifications)
 
-	// Inscriptions publiques au DIARRA Summit (26 novembre 2026, en ligne).
+	// Inscriptions publiques au DIARRA Summit (26 octobre 2026, en ligne).
 	summitRepo := repository.NewSummitRepo(pool)
 	summitHandler := handler.NewSummitHandler(summitRepo, notifications, os.Getenv("FRONTEND_URL"))
 
@@ -299,6 +299,11 @@ func main() {
 	// n'importe quel vendeur.
 	eventRepo := repository.NewEventRepo(pool)
 	eventHandler := handler.NewEventHandler(eventRepo, productRepo, storageService, notifications, os.Getenv("FRONTEND_URL"))
+
+	// Billets PDF (QR de vérification à l'entrée) — générés à la demande,
+	// jamais au moment du webhook de paiement (voir internal/eventfile).
+	eventTicketRepo := repository.NewEventTicketRepo(pool)
+	eventTicketHandler := handler.NewEventTicketHandler(saleRepo, productRepo, eventRepo, eventTicketRepo, os.Getenv("FRONTEND_URL"))
 
 	// Administration
 	adminHandler := handler.NewAdminHandler(productRepo, saleRepo, userRepo, referralRepo, adminPermRepo, payoutRepo, settingsRepo, ticketRepo, pool, storageHealthPinger, storageService, startTime, pawapay, kpay, paypal, notifications, redisCache, webhookHandler)
@@ -435,6 +440,17 @@ func main() {
 		r.Get("/{id}/registrations", eventHandler.ListRegistrations)
 	})
 
+	// Scan des billets (vérification à l'entrée) — accessible à tout
+	// utilisateur authentifié, mais restreint en pratique aux admins et au
+	// vendeur propriétaire de l'événement scanné : ce filtrage est fait
+	// DANS le handler (event.VendorID == userID), pas ici, car il dépend du
+	// billet scanné (impossible à exprimer comme middleware générique).
+	r.Route("/api/events/scan", func(r chi.Router) {
+		r.Use(middleware.RequireAuth(jwtManager))
+		r.Get("/", eventTicketHandler.ScanStatus)
+		r.Post("/", eventTicketHandler.ScanConfirm)
+	})
+
 	// Orders
 	// Public : indique au checkout si le bouton carte/PayPal doit être affiché
 	// (voir model.SettingCardPaymentEnabled et SaleHandler.CheckoutConfig).
@@ -447,6 +463,10 @@ func main() {
 		// invité et exige un email, même déjà connecté).
 		r.With(middleware.OptionalAuth(jwtManager)).Post("/", saleHandler.Create)
 		r.Get("/status", saleHandler.CheckoutStatus) // Public (suivi par token, ex: /api/orders/status?token=...)
+		// Billet PDF (QR de vérification) — public par checkout_token, même
+		// régime que /status ci-dessus. Ne renvoie un PDF que si la vente est
+		// une offre d'événement payée (voir EventTicketHandler.PDF).
+		r.Get("/{token}/ticket.pdf", eventTicketHandler.PDF)
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAuth(jwtManager))
 			r.Get("/", saleHandler.List)

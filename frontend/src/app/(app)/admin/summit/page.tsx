@@ -57,7 +57,7 @@ export default function AdminSummitPage() {
       <PageHeader
         eyebrow="// administration"
         title="DIARRA Summit"
-        description="Événement en ligne du 26 novembre 2026 — inscrits et billets"
+        description="Événement en ligne du 26 octobre 2026 — inscrits et billets"
         actions={
           <Button variant="outline" size="sm" render={<Link href="/admin" />}>
             <ArrowLeftIcon size={16} className="mr-2" />

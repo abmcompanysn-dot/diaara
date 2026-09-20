@@ -1,4 +1,4 @@
-// Commande ponctuelle : crée les 3 billets DIARRA Summit (26 novembre 2026)
+// Commande ponctuelle : crée les 3 billets DIARRA Summit (26 octobre 2026)
 // comme des produits catalogue normaux, sous un compte vendeur dédié
 // "DIARRA Summit". Volontairement séparée de cmd/server — ce n'est pas du
 // code qui tourne en continu, juste un script à exécuter une fois (et à
@@ -48,10 +48,10 @@ var tiers = []ticketTier{
 	{
 		title:    "DIARRA Summit — Tier Essentiel",
 		priceCFA: 5000,
-		description: "Accès de base au DIARRA Summit (26 novembre 2026, en ligne) : identité numérique / carte connectée MAHU, " +
+		description: "Accès de base au DIARRA Summit (26 octobre 2026, en ligne) : identité numérique / carte connectée MAHU, " +
 			"référencement au répertoire des partenaires ABMCY & DIARRA, support technique initial.",
 		inclusions: []string{
-			"Accès à l'événement DIARRA Summit en ligne du 26 novembre 2026",
+			"Accès à l'événement DIARRA Summit en ligne du 26 octobre 2026",
 			"Création et activation de votre identité numérique / carte connectée MAHU",
 			"Référencement de base au sein du répertoire des partenaires (ABMCY & DIARRA)",
 			"Support technique initial",

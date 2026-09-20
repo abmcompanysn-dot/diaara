@@ -1,11 +1,12 @@
 import { ZapIcon, UserIcon, CheckIcon, BriefcaseIcon } from '@/components/icons';
 import { SummitRegistrationForm } from '@/components/summit-registration-form';
 import { SummitTickets } from '@/components/summit-tickets';
+import { SummitSponsorForm } from '@/components/summit-sponsor-form';
 
 export const metadata = {
-  title: 'DIARRA Summit',
+  title: 'DIARRA Summit — Growth Business with AI',
   description:
-    'DIARRA Summit, le 26 novembre 2026 en ligne : business, intelligence artificielle et produits numériques en Afrique. Billets et inscription.',
+    'DIARRA Summit, le 26 octobre 2026 en ligne : business, intelligence artificielle et produits numériques en Afrique. Billets et inscription.',
 };
 
 const TOPICS = [
@@ -29,15 +30,27 @@ const TOPICS = [
 const PARTNERS = [
   {
     name: 'DIARRA',
+    logo: '/brand/diarra-icon.png',
+    logoBg: '#0E6B46',
     role: 'Infrastructure de paiement mobile sécurisée et hébergement de sous-domaines applicatifs (.diarra.app).',
   },
   {
     name: 'ABMCY',
+    logo: '/partners/abmcy.png',
+    logoBg: '#000000',
     role: "Réseau d'affaires, accompagnement entrepreneurial et hébergement de vitrines professionnelles (.abmcy.com).",
   },
   {
     name: 'MAHU',
+    logo: '/partners/mahu.png',
+    logoBg: '#000000',
     role: "Support matériel, cartes connectées et technologies d'identification numérique.",
+  },
+  {
+    name: 'Yes.abmcy',
+    logo: '/partners/yes-abmcy.svg',
+    logoBg: '#00a884',
+    role: "Messagerie instantanée intégrée pour échanger directement entre acheteurs et vendeurs (yes.abmcy.com).",
   },
 ];
 
@@ -48,15 +61,16 @@ export default function SummitPage() {
         <div className="wax-pattern absolute inset-0" aria-hidden />
         <div className="relative max-w-4xl mx-auto px-4 py-20 text-center">
           <p className="font-mono text-sm text-green-300 uppercase tracking-widest mb-4">
-            // événement en ligne &middot; 26 novembre 2026
+            // événement en ligne &middot; 26 octobre 2026
           </p>
           <h1 className="font-display text-4xl sm:text-5xl font-bold tracking-tight">
             DIARRA Summit
           </h1>
+          <p className="mt-3 text-lg text-green-300 font-semibold">Growth Business with AI</p>
           <p className="mt-5 text-white/75 max-w-xl mx-auto">
             Business, intelligence artificielle et produits numériques en Afrique.
             Une matinée en ligne pour comprendre où va la digitalisation du continent
-            — et comment l&rsquo;écosystème DIARRA, ABMCY et MAHU y participe.
+            — et comment l&rsquo;écosystème DIARRA, ABMCY, MAHU et Yes.abmcy y participe.
           </p>
           <a
             href="#billets"
@@ -94,7 +108,7 @@ export default function SummitPage() {
               </div>
               <p className="text-sm text-green-900/70">
                 Le lien de connexion sera envoyé par email à tous les inscrits (quel que soit le
-                billet choisi) à l&rsquo;approche de l&rsquo;événement, le <strong>26 novembre 2026</strong>.
+                billet choisi) à l&rsquo;approche de l&rsquo;événement, le <strong>26 octobre 2026</strong>.
               </p>
             </div>
           </div>
@@ -121,7 +135,7 @@ export default function SummitPage() {
           </h2>
           <p className="mt-3 text-green-900/70 text-center max-w-xl mx-auto">
             Paiement sécurisé par mobile money (Wave, Orange Money, MTN MoMo) via DIARRA.
-            Une équipe DIARRA / ABMCY / MAHU vous recontacte sous 48h pour la mise en place
+            Une équipe DIARRA / ABMCY / MAHU / Yes.abmcy vous recontacte sous 48h pour la mise en place
             des éléments inclus dans votre formule.
           </p>
           <div className="mt-10">
@@ -135,17 +149,37 @@ export default function SummitPage() {
           // écosystème & partenaires
         </p>
         <h2 className="font-display text-2xl font-bold text-green-950 text-center mb-10">
-          Un événement porté par trois acteurs complémentaires
+          Un événement porté par quatre acteurs complémentaires
         </h2>
-        <div className="grid sm:grid-cols-3 gap-6">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
           {PARTNERS.map((p) => (
             <div key={p.name} className="rounded-2xl border border-green-900/10 bg-white shadow-lift p-6 text-center">
-              <div className="mx-auto w-14 h-14 rounded-full bg-forest text-white flex items-center justify-center font-display font-bold text-sm mb-4">
-                {p.name}
+              <div
+                className="mx-auto w-16 h-16 rounded-2xl overflow-hidden flex items-center justify-center mb-4"
+                style={{ backgroundColor: p.logoBg }}
+              >
+                <img src={p.logo} alt={p.name} className="w-full h-full object-cover" />
               </div>
+              <p className="font-display font-bold text-green-950 mb-1">{p.name}</p>
               <p className="text-sm text-green-900/70">{p.role}</p>
             </div>
           ))}
+        </div>
+      </section>
+
+      <section id="sponsors" className="py-16 bg-green-50/40">
+        <div className="max-w-md mx-auto px-4">
+          <p className="font-mono text-sm text-green-700/60 uppercase tracking-widest mb-2 text-center">
+            // votre marque ici
+          </p>
+          <h2 className="font-display text-2xl font-bold text-green-950 text-center">Devenir sponsor</h2>
+          <p className="mt-3 text-sm text-green-900/70 text-center">
+            Votre entreprise souhaite être visible auprès des vendeurs et entrepreneurs du DIARRA Summit ?
+            Dites-nous-en plus, l&rsquo;équipe DIARRA vous recontacte.
+          </p>
+          <div className="mt-6 rounded-2xl border border-green-900/10 bg-white shadow-lift p-6 sm:p-8">
+            <SummitSponsorForm />
+          </div>
         </div>
       </section>
     </>

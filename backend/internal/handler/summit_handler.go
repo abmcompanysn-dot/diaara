@@ -18,7 +18,7 @@ const maxSummitFieldLen = 200
 // summitEventDateLabel / summitEventFrontendPath — date et page publique du
 // DIARRA Summit, reprises dans l'email de confirmation. À ajuster ici si la
 // date change (pas de table de config dédiée pour un événement ponctuel).
-const summitEventDateLabel = "26 novembre 2026"
+const summitEventDateLabel = "26 octobre 2026"
 const summitEventFrontendPath = "/summit"
 
 // SummitHandler expose l'inscription publique au DIARRA Summit et

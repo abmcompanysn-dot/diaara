@@ -13,7 +13,7 @@ const PROFILES: { value: Profile; label: string }[] = [
   { value: 'curieux', label: 'Curieux' },
 ];
 
-// Formulaire d'inscription publique au DIARRA Summit (26 novembre 2026, en
+// Formulaire d'inscription publique au DIARRA Summit (26 octobre 2026, en
 // ligne). Même esprit que SupportContactWidget : pas de compte requis,
 // soumis à la limite de débit globale côté backend.
 export function SummitRegistrationForm() {

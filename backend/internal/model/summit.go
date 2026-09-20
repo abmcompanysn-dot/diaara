@@ -3,7 +3,7 @@ package model
 import "time"
 
 // SummitRegistration — inscription à un événement DIARRA Summit (ex: celui
-// du 26 novembre 2026, en ligne, sur la digitalisation par l'IA et les
+// du 26 octobre 2026, en ligne, sur la digitalisation par l'IA et les
 // produits numériques). Public : ne requiert pas de compte DIARRA.
 type SummitRegistration struct {
 	ID          string    `json:"id"`

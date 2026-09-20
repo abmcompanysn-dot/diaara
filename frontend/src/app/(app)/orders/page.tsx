@@ -8,7 +8,7 @@ import { ProductImage } from '@/components/product-image';
 import { PageHeader } from '@/components/page-header';
 import { PageLoader } from '@/components/page-loader';
 import { EmptyState } from '@/components/empty-state';
-import { PackageIcon, SearchIcon, XIcon, DownloadIcon, HeadsetIcon, FileIcon } from '@/components/icons';
+import { PackageIcon, SearchIcon, XIcon, DownloadIcon, HeadsetIcon, FileIcon, ZapIcon } from '@/components/icons';
 import { ORDER_STATUS_LABELS, SALE_STATUS_BADGE, formatPrice } from '@/lib/constants';
 import { friendlyError } from '@/lib/error-messages';
 import { openSaleReceipt } from '@/lib/sale-receipt';
@@ -21,6 +21,7 @@ interface Order {
   status: string;
   buyer_name?: string;
   payment_reference: string;
+  checkout_token?: string;
   created_at: string;
 }
 
@@ -254,6 +255,16 @@ export default function OrdersPage() {
                               <FileIcon size={14} />
                               Reçu
                             </Button>
+                            {product?.category === 'event' && order.checkout_token && (
+                              <Button
+                                variant="outline"
+                                render={<a href={api.ticketPdfUrl(order.checkout_token)} target="_blank" rel="noopener noreferrer" />}
+                                className="h-9 gap-1.5"
+                              >
+                                <ZapIcon size={14} />
+                                Billet (QR)
+                              </Button>
+                            )}
                           </>
                         ) : (
                           <p className="flex-1 text-xs text-yellow-700 bg-yellow-50 rounded-lg px-3 py-2">

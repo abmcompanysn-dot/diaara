@@ -177,6 +177,24 @@ func scanEventOffer(row pgx.Row) (*model.EventOffer, error) {
 	return o, nil
 }
 
+// EventAndOfferByProductID retrouve l'événement et l'offre payante qui a
+// créé ce Product (voir EventHandler.createOfferProduct) — utilisé pour
+// générer le billet PDF d'une vente à partir de sale.ProductID, sans avoir à
+// faire porter cette information par Sale elle-même (qui n'a pas besoin de
+// connaître les événements pour le reste de la marketplace).
+func (r *EventRepo) EventAndOfferByProductID(ctx context.Context, productID string) (*model.Event, *model.EventOffer, error) {
+	offer, err := scanEventOffer(r.pool.QueryRow(ctx,
+		`SELECT `+eventOfferColumns+` FROM event_offers WHERE product_id = $1`, productID))
+	if err != nil {
+		return nil, nil, err
+	}
+	event, err := r.FindByID(ctx, offer.EventID)
+	if err != nil {
+		return nil, nil, err
+	}
+	return event, offer, nil
+}
+
 func (r *EventRepo) CreateOffer(ctx context.Context, eventID, title string, isFree bool, productID *string, sortOrder int) (*model.EventOffer, error) {
 	row := r.pool.QueryRow(ctx,
 		`INSERT INTO event_offers (event_id, title, is_free, product_id, sort_order)
