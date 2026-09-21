@@ -305,6 +305,11 @@ func main() {
 	eventTicketRepo := repository.NewEventTicketRepo(pool)
 	eventTicketHandler := handler.NewEventTicketHandler(saleRepo, productRepo, eventRepo, eventTicketRepo, os.Getenv("FRONTEND_URL"))
 
+	// Paliers et sponsors du DIARRA Summit — éditables depuis l'admin (voir
+	// migration 036_summit_sponsors.sql), affichés sur /summit/sponsors.
+	summitSponsorRepo := repository.NewSummitSponsorRepo(pool)
+	summitSponsorHandler := handler.NewSummitSponsorHandler(summitSponsorRepo, storageService)
+
 	// Administration
 	adminHandler := handler.NewAdminHandler(productRepo, saleRepo, userRepo, referralRepo, adminPermRepo, payoutRepo, settingsRepo, ticketRepo, pool, storageHealthPinger, storageService, startTime, pawapay, kpay, paypal, notifications, redisCache, webhookHandler)
 	// Journal d'activité admin (backoffice 360°) — voir migration 028.
@@ -663,6 +668,21 @@ func main() {
 		// Inscriptions au DIARRA Summit — même accès que les tickets (tout admin).
 		r.Get("/summit/registrations", summitHandler.List)
 
+		// Paliers + sponsors du Summit (CRUD complet) — même accès que le
+		// reste de l'administration Summit ci-dessus.
+		r.Get("/summit/sponsor-tiers", summitSponsorHandler.ListTiers)
+		r.Post("/summit/sponsor-tiers", summitSponsorHandler.CreateTier)
+		r.Put("/summit/sponsor-tiers/{id}", summitSponsorHandler.UpdateTier)
+		r.Delete("/summit/sponsor-tiers/{id}", summitSponsorHandler.DeleteTier)
+		r.Get("/summit/sponsors", summitSponsorHandler.ListSponsors)
+		r.Post("/summit/sponsors", summitSponsorHandler.CreateSponsor)
+		r.Put("/summit/sponsors/{id}", summitSponsorHandler.UpdateSponsor)
+		r.Delete("/summit/sponsors/{id}", summitSponsorHandler.DeleteSponsor)
+		// Upload de logo sponsor — réutilise ProductHandler.Upload (ne dépend
+		// que de l'utilisateur connecté, pas du rôle vendeur : le rôle exigé
+		// vient uniquement du middleware de route, différent ici).
+		r.Post("/summit/sponsors/upload", productHandler.Upload)
+
 		r.Group(func(r chi.Router) {
 			r.Use(middleware.RequireAdminScope(model.AdminPermInfra))
 			r.Get("/system/health", adminHandler.SystemHealth)
@@ -714,6 +734,10 @@ func main() {
 	// Inscription publique au DIARRA Summit (visiteur non authentifié, sans
 	// compte requis) — même régime que le widget de contact ci-dessus.
 	r.Post("/api/summit/register", summitHandler.Register)
+
+	// Paliers + sponsors publiés, pour /summit/sponsors.
+	r.Get("/api/summit/sponsors", summitSponsorHandler.Public)
+	r.Get("/api/summit/sponsors/{id}/logo", summitSponsorHandler.Logo)
 
 	// Support tickets (utilisateur connecté, admin pour tous)
 	r.Route("/api/tickets", func(r chi.Router) {

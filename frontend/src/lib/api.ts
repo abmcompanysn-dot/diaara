@@ -520,6 +520,47 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  // Sponsors DIARRA Summit — lecture publique, gestion admin.
+  getSummitSponsors: () => fetchApi<{ tiers: any[]; sponsors: any[] }>('/api/summit/sponsors', { skipAuth: true }),
+
+  adminListSponsorTiers: () => fetchApi<{ tiers: any[] }>('/api/admin/summit/sponsor-tiers'),
+
+  adminCreateSponsorTier: (data: { name: string; price_cfa: number; perks: string[]; highlight?: boolean; sort_order?: number }) =>
+    fetchApi<any>('/api/admin/summit/sponsor-tiers', { method: 'POST', body: JSON.stringify(data) }),
+
+  adminUpdateSponsorTier: (
+    id: string,
+    data: { name?: string; price_cfa?: number; perks?: string[]; highlight?: boolean; sort_order?: number }
+  ) => fetchApi<any>(`/api/admin/summit/sponsor-tiers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+
+  adminDeleteSponsorTier: (id: string) =>
+    fetchApi<void>(`/api/admin/summit/sponsor-tiers/${id}`, { method: 'DELETE' }),
+
+  adminListSponsors: () => fetchApi<{ sponsors: any[] }>('/api/admin/summit/sponsors'),
+
+  adminCreateSponsor: (data: {
+    tier_id?: string;
+    name: string;
+    logo_key?: string;
+    website_url?: string;
+    published?: boolean;
+    sort_order?: number;
+  }) => fetchApi<any>('/api/admin/summit/sponsors', { method: 'POST', body: JSON.stringify(data) }),
+
+  adminUpdateSponsor: (
+    id: string,
+    data: { tier_id?: string; name?: string; logo_key?: string; website_url?: string; published?: boolean; sort_order?: number }
+  ) => fetchApi<any>(`/api/admin/summit/sponsors/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+
+  adminDeleteSponsor: (id: string) => fetchApi<void>(`/api/admin/summit/sponsors/${id}`, { method: 'DELETE' }),
+
+  adminUploadSponsorLogo: (formData: FormData) =>
+    fetchApi<{ file_key: string; size: string }>('/api/admin/summit/sponsors/upload', {
+      method: 'POST',
+      body: formData as any,
+      headers: {},
+    }),
+
   // Renvoie une URL signée de courte durée vers le fichier livrable du
   // produit, pour le vérifier avant de le modérer.
   getAdminProductDownloadUrl: (id: string) =>

@@ -327,6 +327,12 @@ export default function AdminDashboardPage() {
                 <span className="text-sm font-medium text-green-950">DIARRA Summit (inscrits & billets)</span>
               </Link>
               <Link
+                href="/admin/summit-sponsors"
+                className="flex items-center justify-between p-3 rounded-lg hover:bg-green-900/5 transition-colors"
+              >
+                <span className="text-sm font-medium text-green-950">Sponsors DIARRA Summit (paliers & logos)</span>
+              </Link>
+              <Link
                 href="/admin/events"
                 className="flex items-center justify-between p-3 rounded-lg hover:bg-green-900/5 transition-colors"
               >

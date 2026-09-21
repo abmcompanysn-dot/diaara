@@ -58,9 +58,19 @@ const PARTNERS = [
 export default function SummitPage() {
   return (
     <>
-      <section className="gradient-green text-white relative overflow-hidden">
-        <div className="wax-pattern absolute inset-0" aria-hidden />
-        <div className="relative max-w-4xl mx-auto px-4 py-20 text-center">
+      <section className="relative overflow-hidden text-white">
+        {/* Image de fond pleine section (même traitement que /summit/sponsors,
+            à la demande de l'utilisateur) : l'image couvre toute la section
+            hero, avec un voile dégradé pour garder le texte lisible. */}
+        <img
+          src="/summit/hero.jpg"
+          alt=""
+          aria-hidden
+          className="absolute inset-0 w-full h-full object-cover"
+        />
+        <div className="absolute inset-0 bg-linear-to-b from-forest-2/80 via-forest-2/75 to-forest-2/90" aria-hidden />
+        <div className="wax-pattern absolute inset-0 opacity-20" aria-hidden />
+        <div className="relative max-w-4xl mx-auto px-4 py-24 text-center">
           <p className="font-mono text-sm text-green-300 uppercase tracking-widest mb-4">
             // UCAD, Dakar &amp; en ligne &middot; 26 octobre 2026
           </p>
@@ -69,7 +79,7 @@ export default function SummitPage() {
           </h1>
           <p className="mt-3 text-lg text-green-300 font-semibold">Faire croître son business avec l&rsquo;IA</p>
           <p className="mt-1 text-sm text-green-300/70 font-medium uppercase tracking-wide">Growth Business with AI</p>
-          <p className="mt-5 text-white/75 max-w-xl mx-auto">
+          <p className="mt-5 text-white/85 max-w-xl mx-auto">
             Business, intelligence artificielle et produits numériques en Afrique.
             Une matinée à l&rsquo;Université Cheikh Anta Diop de Dakar (UCAD), Sénégal, et diffusée en direct en ligne,
             pour comprendre où va la digitalisation du continent — et comment l&rsquo;écosystème DIARRA, ABMCY, MAHU et
@@ -81,20 +91,6 @@ export default function SummitPage() {
           >
             Voir les billets
           </a>
-        </div>
-        {/* Visuel hero : à ajouter dans /public/summit/hero.jpg (voir le
-            prompt fourni à l'utilisateur pour le générer). Tant que le
-            fichier n'existe pas, le navigateur affiche une icône d'image
-            cassée ici — inoffensif en attendant, mais à remplacer avant
-            publication finale de la page. */}
-        <div className="relative max-w-4xl mx-auto px-4 pb-16">
-          <div className="rounded-2xl overflow-hidden border border-white/10 shadow-2xl aspect-video bg-black/20">
-            <img
-              src="/summit/hero.jpg"
-              alt="DIARRA Summit — Growth Business with AI"
-              className="w-full h-full object-cover"
-            />
-          </div>
         </div>
       </section>
 
