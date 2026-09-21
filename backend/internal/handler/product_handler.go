@@ -297,6 +297,37 @@ func validCoverImage(data []byte) bool {
 	return allowedCoverImageTypes[http.DetectContentType(data)]
 }
 
+// validateCoverImageKey re-télécharge le fichier pointé par key et vérifie
+// son contenu réel — indispensable partout où une clé S3 arrive par JSON
+// (Create/Update) plutôt que par l'upload multipart lui-même : Upload()
+// applique déjà validCoverImage() au moment de l'upload, mais rien
+// n'empêchait jusqu'ici un client d'appeler Create/Update avec la clé d'un
+// fichier uploadé SANS type=cover (donc jamais validé), ou même une clé
+// bricolée à la main. Sans ce contrôle, un vendeur pouvait uploader un SVG
+// avec <script>, puis le poser comme cover_image_key : /api/products/{id}/cover
+// le resservait en image/svg+xml (Content-Type dérivé de l'extension de la
+// clé, voir imageContentType) et exécutait son script sur l'origine DIARRA
+// pour tout visiteur — XSS stockée (audit sécurité 2026-09-21). Renvoie une
+// erreur explicite plutôt que silencieuse pour que l'appelant renvoie 400.
+// Fonction libre (pas méthode) : réutilisée par EventHandler, qui n'a pas
+// de dépendance à ProductHandler, seulement au même StorageService.
+func validateCoverImageKey(ctx context.Context, storage StorageService, key string) error {
+	if key == "" {
+		return nil
+	}
+	if storage == nil {
+		return fmt.Errorf("stockage non configuré")
+	}
+	data, err := storage.Download(ctx, key)
+	if err != nil {
+		return fmt.Errorf("cover_image_key introuvable")
+	}
+	if !validCoverImage(data) {
+		return fmt.Errorf("cover_image_key: type de fichier non autorisé")
+	}
+	return nil
+}
+
 // Preview — public (produits approuvés) ou vendeur/admin (produit en
 // attente). Redirige vers une URL signée (1 h) de l'aperçu filigrané
 // d'indice donné (0 = premier).
@@ -481,6 +512,11 @@ func (h *ProductHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := validateCoverImageKey(r.Context(), h.storage, input.CoverImageKey); err != nil {
+		http.Error(w, `{"error":"invalid_cover_image"}`, http.StatusBadRequest)
+		return
+	}
+
 	product, err := h.productRepo.Create(r.Context(), input, userID)
 	if err != nil {
 		http.Error(w, `{"error":"creation_failed"}`, http.StatusInternalServerError)
@@ -580,13 +616,22 @@ func (h *ProductHandler) AutoCreate(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"upload_failed"}`, http.StatusInternalServerError)
 			return
 		}
-		coverKey := "covers/" + key
-		if err := h.storage.Upload(r.Context(), coverKey, compressCoverImage(data)); err != nil {
-			http.Error(w, `{"error":"upload_failed"}`, http.StatusInternalServerError)
-			return
-		}
 		input.FileKey = key
-		input.CoverImageKey = coverKey
+		// Le fichier "file" sert aussi de couverture sur ce flux automatisé —
+		// mais seulement s'il est réellement une image raster (même contrôle
+		// que Upload()/validCoverImage : un appelant de ce endpoint pourrait
+		// autrement poser un SVG/HTML comme couverture, resservi ensuite en
+		// image/svg+xml et exécuté sur l'origine DIARRA — voir audit sécurité
+		// 2026-09-21). Un fichier non-image (PDF, logiciel...) reste vendable
+		// normalement, juste sans couverture générée depuis ce fichier.
+		if validCoverImage(data) {
+			coverKey := "covers/" + key
+			if err := h.storage.Upload(r.Context(), coverKey, compressCoverImage(data)); err != nil {
+				http.Error(w, `{"error":"upload_failed"}`, http.StatusInternalServerError)
+				return
+			}
+			input.CoverImageKey = coverKey
+		}
 	} else if imagePrompt != "" {
 		input.ImagePrompt = &imagePrompt
 	} else {
@@ -784,6 +829,15 @@ func (h *ProductHandler) UpdateAutomation(w http.ResponseWriter, r *http.Request
 		}
 	}
 
+	// Branche JSON uniquement : la branche multipart ci-dessus valide déjà le
+	// contenu de "cover" via validCoverImage avant d'écrire input.CoverImageKey.
+	if !strings.HasPrefix(r.Header.Get("Content-Type"), "multipart/form-data") && input.CoverImageKey != nil {
+		if err := validateCoverImageKey(r.Context(), h.storage, *input.CoverImageKey); err != nil {
+			http.Error(w, `{"error":"invalid_cover_image"}`, http.StatusBadRequest)
+			return
+		}
+	}
+
 	updated, err := h.productRepo.Update(r.Context(), id, input)
 	if err != nil {
 		http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
@@ -959,6 +1013,13 @@ func (h *ProductHandler) Update(w http.ResponseWriter, r *http.Request) {
 		}
 		if minVal == nil || *minVal <= 0 {
 			http.Error(w, `{"error":"min_price_required_for_flexible_pricing"}`, http.StatusBadRequest)
+			return
+		}
+	}
+
+	if input.CoverImageKey != nil {
+		if err := validateCoverImageKey(r.Context(), h.storage, *input.CoverImageKey); err != nil {
+			http.Error(w, `{"error":"invalid_cover_image"}`, http.StatusBadRequest)
 			return
 		}
 	}

@@ -87,6 +87,12 @@ func (h *EventHandler) Create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"meeting_link_required_for_free_offer"}`, http.StatusBadRequest)
 		return
 	}
+	if input.CoverImageKey != nil {
+		if err := validateCoverImageKey(r.Context(), h.storage, *input.CoverImageKey); err != nil {
+			http.Error(w, `{"error":"invalid_cover_image"}`, http.StatusBadRequest)
+			return
+		}
+	}
 
 	event, err := h.eventRepo.Create(r.Context(), input, userID)
 	if err != nil {
@@ -176,6 +182,12 @@ func (h *EventHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
 		return
+	}
+	if input.CoverImageKey != nil {
+		if err := validateCoverImageKey(r.Context(), h.storage, *input.CoverImageKey); err != nil {
+			http.Error(w, `{"error":"invalid_cover_image"}`, http.StatusBadRequest)
+			return
+		}
 	}
 
 	event, err := h.eventRepo.Update(r.Context(), id, userID, input)

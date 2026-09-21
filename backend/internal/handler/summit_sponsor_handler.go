@@ -157,6 +157,12 @@ func (h *SummitSponsorHandler) CreateSponsor(w http.ResponseWriter, r *http.Requ
 		http.Error(w, `{"error":"name_required"}`, http.StatusBadRequest)
 		return
 	}
+	if input.LogoKey != nil {
+		if err := validateCoverImageKey(r.Context(), h.storage, *input.LogoKey); err != nil {
+			http.Error(w, `{"error":"invalid_logo"}`, http.StatusBadRequest)
+			return
+		}
+	}
 	sponsor, err := h.repo.Create(r.Context(), input)
 	if err != nil {
 		http.Error(w, `{"error":"creation_failed"}`, http.StatusInternalServerError)
@@ -173,6 +179,12 @@ func (h *SummitSponsorHandler) UpdateSponsor(w http.ResponseWriter, r *http.Requ
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
 		return
+	}
+	if input.LogoKey != nil {
+		if err := validateCoverImageKey(r.Context(), h.storage, *input.LogoKey); err != nil {
+			http.Error(w, `{"error":"invalid_logo"}`, http.StatusBadRequest)
+			return
+		}
 	}
 	sponsor, err := h.repo.Update(r.Context(), id, input)
 	if err != nil {
