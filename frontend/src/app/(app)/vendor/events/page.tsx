@@ -8,7 +8,8 @@ import { Badge } from '@/components/ui/badge';
 import { PageHeader } from '@/components/page-header';
 import { PageLoader } from '@/components/page-loader';
 import { EmptyState } from '@/components/empty-state';
-import { ZapIcon, EditIcon, UserIcon } from '@/components/icons';
+import { ConfirmDialog } from '@/components/confirm-dialog';
+import { ZapIcon, EditIcon, UserIcon, TrashIcon } from '@/components/icons';
 import { PRODUCT_STATUS_BADGE, PRODUCT_STATUS_LABELS } from '@/lib/constants';
 import { friendlyError } from '@/lib/error-messages';
 
@@ -26,14 +27,33 @@ export default function VendorEventsPage() {
   const [events, setEvents] = useState<EventItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [toDelete, setToDelete] = useState<EventItem | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
-  useEffect(() => {
+  const load = () => {
     api
       .getVendorEvents()
       .then((res) => setEvents(res.events || []))
       .catch((err: any) => setError(friendlyError(err)))
       .finally(() => setLoading(false));
-  }, []);
+  };
+
+  useEffect(load, []);
+
+  const handleDelete = async () => {
+    if (!toDelete) return;
+    setDeleting(true);
+    try {
+      await api.deleteEvent(toDelete.id);
+      setToDelete(null);
+      load();
+    } catch (err: any) {
+      setError(friendlyError(err));
+      setToDelete(null);
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   if (loading)
     return (
@@ -107,6 +127,15 @@ export default function VendorEventsPage() {
                       <EditIcon size={16} className="mr-1.5" />
                       Modifier
                     </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-destructive hover:text-destructive hover:bg-destructive/10"
+                      onClick={() => setToDelete(event)}
+                    >
+                      <TrashIcon size={16} className="mr-1.5" />
+                      Supprimer
+                    </Button>
                   </div>
                 </div>
               </div>
@@ -114,6 +143,17 @@ export default function VendorEventsPage() {
           </div>
         )}
       </section>
+
+      <ConfirmDialog
+        open={!!toDelete}
+        title="Supprimer cet événement ?"
+        description={`« ${toDelete?.title} » sera définitivement supprimé, ainsi que ses offres et ses inscriptions.`}
+        confirmLabel={deleting ? 'Suppression...' : 'Supprimer'}
+        cancelLabel="Annuler"
+        danger
+        onConfirm={handleDelete}
+        onCancel={() => setToDelete(null)}
+      />
     </main>
   );
 }

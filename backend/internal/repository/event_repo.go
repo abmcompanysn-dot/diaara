@@ -145,12 +145,28 @@ func (r *EventRepo) Update(ctx context.Context, id, vendorID string, input model
 }
 
 // Delete supprime l'événement (CASCADE sur event_offers/event_registrations,
-// voir migration 034). Utilisé uniquement en nettoyage quand la création
-// d'une offre échoue à mi-chemin (voir EventHandler.Create) — pas exposé
-// comme action normale du vendeur pour l'instant (pas de route DELETE).
+// voir migration 034). Utilisé en nettoyage quand la création d'une offre
+// échoue à mi-chemin (voir EventHandler.Create) — sans vérification de
+// propriétaire, car appelé juste après Create par le même flux (le
+// vendorID n'est pas encore remis en cause à ce stade).
 func (r *EventRepo) Delete(ctx context.Context, id string) error {
 	_, err := r.pool.Exec(ctx, `DELETE FROM events WHERE id = $1`, id)
 	return err
+}
+
+// DeleteOwned — suppression exposée au vendeur (route DELETE), filtrée par
+// vendor_id : renvoie ErrEventNotFound si l'événement n'existe pas OU
+// n'appartient pas à ce vendeur (jamais de distinction entre les deux côté
+// appelant, pour ne pas révéler l'existence d'un événement d'un tiers).
+func (r *EventRepo) DeleteOwned(ctx context.Context, id, vendorID string) error {
+	tag, err := r.pool.Exec(ctx, `DELETE FROM events WHERE id = $1 AND vendor_id = $2`, id, vendorID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrEventNotFound
+	}
+	return nil
 }
 
 func (r *EventRepo) UpdateModerationStatus(ctx context.Context, id, status string, note *string) error {
@@ -207,6 +223,36 @@ func (r *EventRepo) CreateOffer(ctx context.Context, eventID, title string, isFr
 
 func (r *EventRepo) FindOfferByID(ctx context.Context, id string) (*model.EventOffer, error) {
 	return scanEventOffer(r.pool.QueryRow(ctx, `SELECT `+eventOfferColumns+` FROM event_offers WHERE id = $1`, id))
+}
+
+// UpdateOfferTitle — seul le titre de l'offre est modifiable ici ; le prix
+// vit sur le Product lié (voir ProductRepo.Update) et is_free/product_id ne
+// changent jamais après création (transformer une offre gratuite en payante
+// demanderait de créer un Product a posteriori — non géré, le vendeur
+// recrée l'offre à la place, voir EventHandler.AddOffer/DeleteOffer).
+func (r *EventRepo) UpdateOfferTitle(ctx context.Context, id, title string) (*model.EventOffer, error) {
+	row := r.pool.QueryRow(ctx,
+		`UPDATE event_offers SET title = $2 WHERE id = $1 RETURNING `+eventOfferColumns,
+		id, title,
+	)
+	return scanEventOffer(row)
+}
+
+// DeleteOffer supprime une offre (CASCADE sur ses éventuelles inscriptions
+// gratuites déjà enregistrées, voir migration 034). N'affecte pas le
+// Product lié d'une offre payante — laissé tel quel plutôt que supprimé,
+// pour ne jamais faire disparaître un produit déjà potentiellement acheté.
+func (r *EventRepo) DeleteOffer(ctx context.Context, id string) error {
+	_, err := r.pool.Exec(ctx, `DELETE FROM event_offers WHERE id = $1`, id)
+	return err
+}
+
+// CountOffers — nombre d'offres restantes pour un événement, pour empêcher
+// de supprimer la dernière (un événement doit garder au moins une offre).
+func (r *EventRepo) CountOffers(ctx context.Context, eventID string) (int, error) {
+	var n int
+	err := r.pool.QueryRow(ctx, `SELECT count(*) FROM event_offers WHERE event_id = $1`, eventID).Scan(&n)
+	return n, err
 }
 
 // ListOffersWithProduct — offres d'un événement, enrichies du prix/slug du

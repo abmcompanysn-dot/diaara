@@ -191,6 +191,202 @@ func (h *EventHandler) Update(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(event)
 }
 
+// Delete — DELETE /api/vendor/events/{id} (propriétaire uniquement).
+func (h *EventHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	id := chi.URLParam(r, "id")
+	if err := h.eventRepo.DeleteOwned(r.Context(), id, userID); err != nil {
+		if err == repository.ErrEventNotFound {
+			http.Error(w, `{"error":"not_found_or_forbidden"}`, http.StatusNotFound)
+			return
+		}
+		http.Error(w, `{"error":"delete_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// ownedOffer vérifie que l'offre offerID appartient bien à un événement du
+// vendeur userID, et renvoie l'événement + l'offre si c'est le cas. Utilisé
+// par UpdateOffer/DeleteOffer pour ne jamais laisser un vendeur toucher à
+// l'offre d'un autre (l'ID d'offre seul ne porte aucune info de
+// propriétaire, il faut remonter à l'événement).
+func (h *EventHandler) ownedOffer(ctx context.Context, offerID, userID string) (*model.Event, *model.EventOffer, error) {
+	offer, err := h.eventRepo.FindOfferByID(ctx, offerID)
+	if err != nil {
+		return nil, nil, repository.ErrEventOfferNotFound
+	}
+	event, err := h.eventRepo.FindByID(ctx, offer.EventID)
+	if err != nil || event.VendorID != userID {
+		return nil, nil, repository.ErrEventOfferNotFound
+	}
+	return event, offer, nil
+}
+
+// UpdateOffer — PUT /api/vendor/events/offers/{offerId} (propriétaire de
+// l'événement uniquement). Le titre se modifie directement ; le prix d'une
+// offre payante passe par le Product lié (voir eventOfferOwnedProduct ci-
+// dessous) — is_free et product_id restent figés après création (voir
+// EventRepo.UpdateOfferTitle).
+func (h *EventHandler) UpdateOffer(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	offerID := chi.URLParam(r, "offerId")
+	_, offer, err := h.ownedOffer(r.Context(), offerID, userID)
+	if err != nil {
+		http.Error(w, `{"error":"not_found_or_forbidden"}`, http.StatusNotFound)
+		return
+	}
+
+	var input struct {
+		Title    *string `json:"title,omitempty"`
+		PriceCFA *int    `json:"price_cfa,omitempty"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+
+	if input.Title != nil && strings.TrimSpace(*input.Title) != "" {
+		if _, err := h.eventRepo.UpdateOfferTitle(r.Context(), offerID, strings.TrimSpace(*input.Title)); err != nil {
+			http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
+			return
+		}
+	}
+	if input.PriceCFA != nil {
+		if offer.IsFree || offer.ProductID == nil {
+			http.Error(w, `{"error":"offer_is_free"}`, http.StatusBadRequest)
+			return
+		}
+		if *input.PriceCFA <= 0 {
+			http.Error(w, `{"error":"invalid_price"}`, http.StatusBadRequest)
+			return
+		}
+		price := *input.PriceCFA
+		if _, err := h.productRepo.Update(r.Context(), *offer.ProductID, model.UpdateProductInput{PriceCFA: &price}); err != nil {
+			http.Error(w, `{"error":"price_update_failed"}`, http.StatusInternalServerError)
+			return
+		}
+	}
+
+	updated, err := h.eventRepo.FindOfferByID(r.Context(), offerID)
+	if err != nil {
+		http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(updated)
+}
+
+// AddOffer — POST /api/vendor/events/{id}/offers (propriétaire uniquement).
+// Ajoute une offre à un événement existant, jusqu'à maxEventOffers au total
+// — même validation que Create pour une offre payante (Product généré).
+func (h *EventHandler) AddOffer(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	eventID := chi.URLParam(r, "id")
+	event, err := h.eventRepo.FindByID(r.Context(), eventID)
+	if err != nil || event.VendorID != userID {
+		http.Error(w, `{"error":"not_found_or_forbidden"}`, http.StatusNotFound)
+		return
+	}
+
+	count, err := h.eventRepo.CountOffers(r.Context(), event.ID)
+	if err != nil {
+		http.Error(w, `{"error":"count_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	if count >= maxEventOffers {
+		http.Error(w, `{"error":"max_offers_reached"}`, http.StatusBadRequest)
+		return
+	}
+
+	var input model.CreateEventOfferInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+	input.Title = strings.TrimSpace(input.Title)
+	if input.Title == "" {
+		http.Error(w, `{"error":"offer_title_required"}`, http.StatusBadRequest)
+		return
+	}
+	if input.IsFree {
+		if event.MeetingLink == nil || strings.TrimSpace(*event.MeetingLink) == "" {
+			http.Error(w, `{"error":"meeting_link_required_for_free_offer"}`, http.StatusBadRequest)
+			return
+		}
+		offer, err := h.eventRepo.CreateOffer(r.Context(), event.ID, input.Title, true, nil, count)
+		if err != nil {
+			http.Error(w, `{"error":"offer_creation_failed"}`, http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusCreated)
+		json.NewEncoder(w).Encode(offer)
+		return
+	}
+
+	if input.PriceCFA <= 0 {
+		http.Error(w, `{"error":"offer_price_required"}`, http.StatusBadRequest)
+		return
+	}
+	productID, err := h.createOfferProduct(r.Context(), event, input, userID)
+	if err != nil {
+		http.Error(w, `{"error":"offer_product_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	offer, err := h.eventRepo.CreateOffer(r.Context(), event.ID, input.Title, false, &productID, count)
+	if err != nil {
+		http.Error(w, `{"error":"offer_creation_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(offer)
+}
+
+// DeleteOffer — DELETE /api/vendor/events/offers/{offerId} (propriétaire
+// uniquement). Refuse de supprimer la dernière offre restante : un
+// événement publié doit toujours avoir au moins une façon de s'inscrire.
+func (h *EventHandler) DeleteOffer(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	offerID := chi.URLParam(r, "offerId")
+	event, _, err := h.ownedOffer(r.Context(), offerID, userID)
+	if err != nil {
+		http.Error(w, `{"error":"not_found_or_forbidden"}`, http.StatusNotFound)
+		return
+	}
+	count, err := h.eventRepo.CountOffers(r.Context(), event.ID)
+	if err != nil {
+		http.Error(w, `{"error":"count_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	if count <= 1 {
+		http.Error(w, `{"error":"cannot_delete_last_offer"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.eventRepo.DeleteOffer(r.Context(), offerID); err != nil {
+		http.Error(w, `{"error":"delete_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // ListVendor — GET /api/vendor/events (événements du vendeur connecté).
 func (h *EventHandler) ListVendor(w http.ResponseWriter, r *http.Request) {
 	userID := middleware.GetUserID(r.Context())

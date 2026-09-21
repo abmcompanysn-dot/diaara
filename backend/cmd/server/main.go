@@ -442,7 +442,11 @@ func main() {
 		r.Get("/", eventHandler.ListVendor)
 		r.Post("/", eventHandler.Create)
 		r.Put("/{id}", eventHandler.Update)
+		r.Delete("/{id}", eventHandler.Delete)
 		r.Get("/{id}/registrations", eventHandler.ListRegistrations)
+		r.Post("/{id}/offers", eventHandler.AddOffer)
+		r.Put("/offers/{offerId}", eventHandler.UpdateOffer)
+		r.Delete("/offers/{offerId}", eventHandler.DeleteOffer)
 	})
 
 	// Scan des billets (vérification à l'entrée) — accessible à tout

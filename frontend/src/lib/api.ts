@@ -286,8 +286,22 @@ export const api = {
 
   getVendorEvents: () => fetchApi<{ events: any[] }>('/api/vendor/events'),
 
+  deleteEvent: (id: string) => fetchApi<void>(`/api/vendor/events/${id}`, { method: 'DELETE' }),
+
   getEventRegistrations: (id: string) =>
     fetchApi<{ registrations: any[] }>(`/api/vendor/events/${id}/registrations`),
+
+  // Offres d'un événement (jusqu'à 3) : ajout, modification (titre et/ou
+  // prix d'une offre payante), suppression (refusée s'il ne reste qu'une
+  // seule offre — voir EventHandler.DeleteOffer côté backend).
+  addEventOffer: (eventId: string, data: { title: string; is_free: boolean; price_cfa?: number }) =>
+    fetchApi<any>(`/api/vendor/events/${eventId}/offers`, { method: 'POST', body: JSON.stringify(data) }),
+
+  updateEventOffer: (offerId: string, data: { title?: string; price_cfa?: number }) =>
+    fetchApi<any>(`/api/vendor/events/offers/${offerId}`, { method: 'PUT', body: JSON.stringify(data) }),
+
+  deleteEventOffer: (offerId: string) =>
+    fetchApi<void>(`/api/vendor/events/offers/${offerId}`, { method: 'DELETE' }),
 
   getEvents: () => fetchApi<{ events: any[] }>('/api/events', { skipAuth: true }),
 
