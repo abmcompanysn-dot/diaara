@@ -413,5 +413,9 @@ func (c *PayPalClient) VerifyWebhookSignature(ctx context.Context, headers http.
 	if err := c.do(ctx, http.MethodPost, "/v1/notifications/verify-webhook-signature", body, &resp); err != nil {
 		return false, err
 	}
+	// DIAGNOSTIC TEMPORAIRE (à retirer une fois la cause du rejet trouvée) —
+	// affiche ce qui a réellement été envoyé à PayPal pour vérification.
+	fmt.Printf("paypal_verify_diag status=%q auth_algo=%q cert_url=%q transmission_id=%q transmission_time=%q webhook_id=%q\n",
+		resp.VerificationStatus, body["auth_algo"], body["cert_url"], body["transmission_id"], body["transmission_time"], body["webhook_id"])
 	return resp.VerificationStatus == "SUCCESS", nil
 }

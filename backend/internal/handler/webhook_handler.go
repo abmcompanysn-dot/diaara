@@ -591,6 +591,7 @@ func (h *WebhookHandler) PayPalWebhook(w http.ResponseWriter, r *http.Request) {
 	}
 	valid, err := h.paypal.VerifyWebhookSignature(r.Context(), r.Header, body)
 	if err != nil || !valid {
+		log.Printf("paypal_webhook_verify_failed valid=%v err=%v transmission_id=%s", valid, err, r.Header.Get("Paypal-Transmission-Id"))
 		http.Error(w, `{"error":"invalid_signature"}`, http.StatusUnauthorized)
 		return
 	}
