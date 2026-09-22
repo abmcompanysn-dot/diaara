@@ -1721,7 +1721,21 @@ func (h *AdminHandler) CreateDirectPayout(w http.ResponseWriter, r *http.Request
 		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
 		return
 	}
-	if input.AmountCFA <= 0 || input.Country == "" || input.Operator == "" || input.Phone == "" {
+	if input.AmountCFA <= 0 {
+		http.Error(w, `{"error":"missing_required_fields"}`, http.StatusBadRequest)
+		return
+	}
+	usePayPal := input.Channel == "paypal"
+	if usePayPal {
+		if strings.TrimSpace(input.PayPalEmail) == "" {
+			http.Error(w, `{"error":"missing_required_fields"}`, http.StatusBadRequest)
+			return
+		}
+		if !looksLikeEmail(strings.TrimSpace(input.PayPalEmail)) {
+			http.Error(w, `{"error":"invalid_paypal_email"}`, http.StatusBadRequest)
+			return
+		}
+	} else if input.Country == "" || input.Operator == "" || input.Phone == "" {
 		http.Error(w, `{"error":"missing_required_fields"}`, http.StatusBadRequest)
 		return
 	}
@@ -1742,29 +1756,45 @@ func (h *AdminHandler) CreateDirectPayout(w http.ResponseWriter, r *http.Request
 		}
 		return
 	}
-	if h.pawapay == nil {
-		http.Error(w, `{"error":"payment_not_configured"}`, http.StatusServiceUnavailable)
-		return
-	}
 
-	op, err := payment.ResolveOperator(input.Country, input.Operator)
-	if err != nil {
-		http.Error(w, `{"error":"unsupported_operator"}`, http.StatusBadRequest)
-		return
-	}
-	msisdn, err := payment.NormalizePhone(op.DialCode, input.Phone)
-	if err != nil {
-		http.Error(w, `{"error":"invalid_phone_number"}`, http.StatusBadRequest)
-		return
-	}
+	var payout *model.Payout
+	var desc string
 
-	payout, err := h.payoutRepo.Create(r.Context(), adminID, input.AmountCFA, msisdn, op.Provider, "pawapay")
-	if err != nil {
-		http.Error(w, `{"error":"payout_creation_failed"}`, http.StatusInternalServerError)
-		return
+	if usePayPal {
+		if h.paypal == nil {
+			http.Error(w, `{"error":"payment_not_configured"}`, http.StatusServiceUnavailable)
+			return
+		}
+		email := strings.TrimSpace(input.PayPalEmail)
+		var err error
+		payout, err = h.payoutRepo.CreatePayPal(r.Context(), adminID, input.AmountCFA, email)
+		if err != nil {
+			http.Error(w, `{"error":"payout_creation_failed"}`, http.StatusInternalServerError)
+			return
+		}
+		desc = fmt.Sprintf("Versement direct de %d FCFA vers %s (paypal)", input.AmountCFA, email)
+	} else {
+		if h.pawapay == nil {
+			http.Error(w, `{"error":"payment_not_configured"}`, http.StatusServiceUnavailable)
+			return
+		}
+		op, err := payment.ResolveOperator(input.Country, input.Operator)
+		if err != nil {
+			http.Error(w, `{"error":"unsupported_operator"}`, http.StatusBadRequest)
+			return
+		}
+		msisdn, err := payment.NormalizePhone(op.DialCode, input.Phone)
+		if err != nil {
+			http.Error(w, `{"error":"invalid_phone_number"}`, http.StatusBadRequest)
+			return
+		}
+		payout, err = h.payoutRepo.Create(r.Context(), adminID, input.AmountCFA, msisdn, op.Provider, "pawapay")
+		if err != nil {
+			http.Error(w, `{"error":"payout_creation_failed"}`, http.StatusInternalServerError)
+			return
+		}
+		desc = fmt.Sprintf("Versement direct de %d FCFA vers %s (%s)", input.AmountCFA, msisdn, op.Provider)
 	}
-
-	desc := fmt.Sprintf("Versement direct de %d FCFA vers %s (%s)", input.AmountCFA, msisdn, op.Provider)
 	if input.Note != "" {
 		desc += " — " + input.Note
 	}

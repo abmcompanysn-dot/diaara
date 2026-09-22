@@ -117,15 +117,18 @@ export default function AdminPayoutsPage() {
   const [newPhone, setNewPhone] = useState('');
   const [newNote, setNewNote] = useState('');
 
-  // Versement direct (argent réellement envoyé via PawaPay, vers n'importe
-  // quel numéro) — en 2 temps : formulaire puis code de vérification envoyé
-  // à l'email de l'admin (step-up, voir AdminHandler.SendPayoutOTP).
+  // Versement direct (argent réellement envoyé via PawaPay ou PayPal, vers
+  // n'importe quel destinataire) — en 2 temps : formulaire puis code de
+  // vérification envoyé à l'email de l'admin (step-up, voir
+  // AdminHandler.SendPayoutOTP). Channel bascule les champs affichés/requis.
   const [showDirect, setShowDirect] = useState(false);
   const [directStep, setDirectStep] = useState<'form' | 'otp'>('form');
+  const [directChannel, setDirectChannel] = useState<'mobile_money' | 'paypal'>('mobile_money');
   const [directAmount, setDirectAmount] = useState('');
   const [directCountry, setDirectCountry] = useState('SEN');
   const [directOperator, setDirectOperator] = useState('');
   const [directPhone, setDirectPhone] = useState('');
+  const [directPayPalEmail, setDirectPayPalEmail] = useState('');
   const [directNote, setDirectNote] = useState('');
   const [directOtp, setDirectOtp] = useState('');
   const [directBusy, setDirectBusy] = useState(false);
@@ -241,9 +244,11 @@ export default function AdminPayoutsPage() {
   function resetDirectForm() {
     setShowDirect(false);
     setDirectStep('form');
+    setDirectChannel('mobile_money');
     setDirectAmount('');
     setDirectOperator('');
     setDirectPhone('');
+    setDirectPayPalEmail('');
     setDirectNote('');
     setDirectOtp('');
     setDirectError('');
@@ -256,7 +261,12 @@ export default function AdminPayoutsPage() {
       setDirectError('Montant invalide.');
       return;
     }
-    if (!directOperator || !directPhone.trim()) {
+    if (directChannel === 'paypal') {
+      if (!directPayPalEmail.trim() || !directPayPalEmail.includes('@')) {
+        setDirectError('Email PayPal valide requis.');
+        return;
+      }
+    } else if (!directOperator || !directPhone.trim()) {
       setDirectError('Opérateur et numéro requis.');
       return;
     }
@@ -281,9 +291,10 @@ export default function AdminPayoutsPage() {
     try {
       await api.createDirectPayout({
         amount_cfa: Number(directAmount),
-        country: directCountry,
-        operator: directOperator,
-        phone: directPhone.trim(),
+        channel: directChannel,
+        ...(directChannel === 'paypal'
+          ? { paypal_email: directPayPalEmail.trim() }
+          : { country: directCountry, operator: directOperator, phone: directPhone.trim() }),
         note: directNote.trim() || undefined,
         otp_code: directOtp.trim(),
       });
@@ -402,8 +413,9 @@ export default function AdminPayoutsPage() {
           <div className="mb-6 p-5 rounded-xl border border-green-900/10 bg-white shadow-card space-y-3">
             <h2 className="font-display font-bold text-green-950">Versement direct</h2>
             <p className="text-xs text-green-900/60">
-              Envoie réellement de l'argent via PawaPay, vers n'importe quel numéro (pas forcément un
-              vendeur DIARRA). Un code de vérification est envoyé à votre email avant l'envoi.
+              Envoie réellement de l'argent via PawaPay ou PayPal, vers n'importe quel destinataire
+              (pas forcément un vendeur DIARRA). Un code de vérification est envoyé à votre email
+              avant l'envoi.
             </p>
 
             {directError && (
@@ -414,6 +426,32 @@ export default function AdminPayoutsPage() {
 
             {directStep === 'form' ? (
               <>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setDirectChannel('mobile_money')}
+                    aria-pressed={directChannel === 'mobile_money'}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium border-2 transition-all ${
+                      directChannel === 'mobile_money'
+                        ? 'border-green-600 bg-green-50/60 text-green-950'
+                        : 'border-green-900/10 text-green-900/60 hover:border-green-900/25'
+                    }`}
+                  >
+                    Mobile money (PawaPay)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDirectChannel('paypal')}
+                    aria-pressed={directChannel === 'paypal'}
+                    className={`px-3 py-1.5 rounded-lg text-sm font-medium border-2 transition-all ${
+                      directChannel === 'paypal'
+                        ? 'border-green-600 bg-green-50/60 text-green-950'
+                        : 'border-green-900/10 text-green-900/60 hover:border-green-900/25'
+                    }`}
+                  >
+                    PayPal
+                  </button>
+                </div>
                 <div className="grid gap-3 sm:grid-cols-2">
                   <Input
                     type="number"
@@ -421,41 +459,52 @@ export default function AdminPayoutsPage() {
                     value={directAmount}
                     onChange={(e) => setDirectAmount(e.target.value)}
                   />
-                  <Select
-                    value={directCountry}
-                    onValueChange={(v) => {
-                      setDirectCountry(v || 'SEN');
-                      setDirectOperator('');
-                    }}
-                  >
-                    <SelectTrigger className="bg-white">
-                      <SelectValue placeholder="Pays" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {PAYOUT_COUNTRIES.map((c) => (
-                        <SelectItem key={c.code} value={c.code}>
-                          {c.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Select value={directOperator} onValueChange={(v) => setDirectOperator(v || '')}>
-                    <SelectTrigger className="bg-white">
-                      <SelectValue placeholder="Opérateur" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(PAYOUT_COUNTRIES.find((c) => c.code === directCountry)?.operators || []).map((op) => (
-                        <SelectItem key={op.provider} value={op.provider}>
-                          {op.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Input
-                    placeholder="Numéro de téléphone"
-                    value={directPhone}
-                    onChange={(e) => setDirectPhone(e.target.value)}
-                  />
+                  {directChannel === 'paypal' ? (
+                    <Input
+                      type="email"
+                      placeholder="email@exemple.com (compte PayPal destinataire)"
+                      value={directPayPalEmail}
+                      onChange={(e) => setDirectPayPalEmail(e.target.value)}
+                    />
+                  ) : (
+                    <>
+                      <Select
+                        value={directCountry}
+                        onValueChange={(v) => {
+                          setDirectCountry(v || 'SEN');
+                          setDirectOperator('');
+                        }}
+                      >
+                        <SelectTrigger className="bg-white">
+                          <SelectValue placeholder="Pays" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {PAYOUT_COUNTRIES.map((c) => (
+                            <SelectItem key={c.code} value={c.code}>
+                              {c.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Select value={directOperator} onValueChange={(v) => setDirectOperator(v || '')}>
+                        <SelectTrigger className="bg-white">
+                          <SelectValue placeholder="Opérateur" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {(PAYOUT_COUNTRIES.find((c) => c.code === directCountry)?.operators || []).map((op) => (
+                            <SelectItem key={op.provider} value={op.provider}>
+                              {op.label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <Input
+                        placeholder="Numéro de téléphone"
+                        value={directPhone}
+                        onChange={(e) => setDirectPhone(e.target.value)}
+                      />
+                    </>
+                  )}
                 </div>
                 <Input
                   placeholder="Note / référence (optionnel)"

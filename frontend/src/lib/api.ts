@@ -809,16 +809,20 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
-  // Versement direct (argent réellement envoyé via PawaPay, vers n'importe
-  // quel numéro) — step-up OTP obligatoire avant l'envoi.
+  // Versement direct (argent réellement envoyé via PawaPay ou PayPal, vers
+  // n'importe quel destinataire) — step-up OTP obligatoire avant l'envoi.
+  // channel: "mobile_money" (défaut) exige country/operator/phone ; "paypal"
+  // exige paypal_email.
   sendDirectPayoutOtp: () =>
     fetchApi<{ status: string }>('/api/admin/payouts/send-otp', { method: 'POST' }),
 
   createDirectPayout: (data: {
     amount_cfa: number;
-    country: string;
-    operator: string;
-    phone: string;
+    channel?: 'mobile_money' | 'paypal';
+    country?: string;
+    operator?: string;
+    phone?: string;
+    paypal_email?: string;
     note?: string;
     otp_code: string;
   }) =>

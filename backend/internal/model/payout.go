@@ -53,19 +53,26 @@ type ManualPayoutInput struct {
 	Note      string `json:"note"`
 }
 
-// DirectPayoutInput — versement RÉEL (déclenché via PawaPay, pas juste
-// enregistré) depuis le dashboard admin, vers n'importe quel numéro — pas
-// forcément un vendeur DIARRA (ex: payer un prestataire externe). Distinct de
-// ManualPayoutInput (qui ne fait que consigner un versement déjà fait à la
-// main ailleurs) : ici de l'argent part réellement, d'où l'OTPCode (step-up,
-// voir OTPPurposeAdminPayout) exigé juste avant l'envoi.
+// DirectPayoutInput — versement RÉEL (déclenché via PawaPay ou PayPal, pas
+// juste enregistré) depuis le dashboard admin, vers n'importe quel
+// destinataire — pas forcément un vendeur DIARRA (ex: payer un prestataire
+// externe). Distinct de ManualPayoutInput (qui ne fait que consigner un
+// versement déjà fait à la main ailleurs) : ici de l'argent part réellement,
+// d'où l'OTPCode (step-up, voir OTPPurposeAdminPayout) exigé juste avant
+// l'envoi.
+//
+// Channel choisit le prestataire :
+//   - "mobile_money" (défaut si vide, rétrocompatible) : Country + Operator + Phone
+//   - "paypal"                                          : PayPalEmail
 type DirectPayoutInput struct {
-	AmountCFA int    `json:"amount_cfa"`
-	Country   string `json:"country"`  // ISO 3166-1 alpha-3
-	Operator  string `json:"operator"` // code PawaPay, ex "WAVE_SEN" — voir payment.XOFOperators
-	Phone     string `json:"phone"`
-	Note      string `json:"note,omitempty"`
-	OTPCode   string `json:"otp_code"`
+	AmountCFA   int    `json:"amount_cfa"`
+	Channel     string `json:"channel"` // "mobile_money" | "paypal"
+	Country     string `json:"country"` // ISO 3166-1 alpha-3
+	Operator    string `json:"operator"` // code PawaPay, ex "WAVE_SEN" — voir payment.XOFOperators
+	Phone       string `json:"phone"`
+	PayPalEmail string `json:"paypal_email"`
+	Note        string `json:"note,omitempty"`
+	OTPCode     string `json:"otp_code"`
 }
 
 // CreatePayoutInput — le montant à verser. Le compte mobile money destinataire
