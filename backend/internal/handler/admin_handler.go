@@ -66,6 +66,9 @@ type AdminHandler struct {
 	// gatewayRepo : gestion des clients de la passerelle de paiement (ex.
 	// ABMCY Core) — mêmes principes que activityRepo ci-dessus.
 	gatewayRepo *repository.GatewayRepo
+	// yesRepo : gestion des clients API YES Messaging (migration 037) —
+	// mêmes principes que gatewayRepo ci-dessus.
+	yesRepo *repository.YesIntegrationRepo
 	// otpService : step-up avant un versement direct (voir
 	// CreateDirectPayout) — mêmes principes que activityRepo ci-dessus.
 	otpService *otp.Service
@@ -80,6 +83,11 @@ func (h *AdminHandler) SetActivityRepo(repo *repository.AdminActivityRepo) {
 // après construction.
 func (h *AdminHandler) SetGatewayRepo(repo *repository.GatewayRepo) {
 	h.gatewayRepo = repo
+}
+
+// SetYesRepo branche la gestion des clients API YES Messaging après construction.
+func (h *AdminHandler) SetYesRepo(repo *repository.YesIntegrationRepo) {
+	h.yesRepo = repo
 }
 
 // SetOTPService branche le step-up email avant un versement direct (voir
@@ -146,6 +154,50 @@ func (h *AdminHandler) CreateGatewayClient(w http.ResponseWriter, r *http.Reques
 	// api_key et hmac_secret ne sont JAMAIS revus après cette réponse (seuls
 	// leurs hashs sont en base) — à copier immédiatement côté client.
 	json.NewEncoder(w).Encode(map[string]interface{}{"client": client, "api_key": key, "hmac_secret": hmacSecret})
+}
+
+// CreateYesClient — POST /api/admin/yes/clients (scope "finance"). Même
+// principe que CreateGatewayClient : secret HMAC renvoyé UNE SEULE FOIS,
+// jamais stocké en clair (voir migrations/037_yes_integration.sql). Ici
+// l'api_key reste en clair en base (identifiant, comparé directement par
+// middleware.RequireYesClient) — seul le secret HMAC est hashé.
+func (h *AdminHandler) CreateYesClient(w http.ResponseWriter, r *http.Request) {
+	if h.yesRepo == nil {
+		http.Error(w, `{"error":"yes_integration_not_configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+	var input struct {
+		Name string `json:"name"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+	if input.Name == "" {
+		http.Error(w, `{"error":"name_required"}`, http.StatusBadRequest)
+		return
+	}
+	apiKey, err := auth.GenerateToken()
+	if err != nil {
+		http.Error(w, `{"error":"key_generation_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	apiSecret, err := auth.GenerateToken()
+	if err != nil {
+		http.Error(w, `{"error":"key_generation_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	client, err := h.yesRepo.CreateClient(r.Context(), input.Name, apiKey, auth.HashToken(apiSecret))
+	if err != nil {
+		http.Error(w, `{"error":"client_creation_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	// api_secret n'est JAMAIS revu après cette réponse (seul son hash est en
+	// base) — à copier immédiatement côté YES. api_key, lui, reste
+	// consultable (client.APIKey) puisqu'il n'est jamais secret en soi.
+	json.NewEncoder(w).Encode(map[string]interface{}{"client": client, "api_secret": apiSecret})
 }
 
 // SetGatewayClientLimits — PUT /api/admin/gateway/clients/{id}/limits

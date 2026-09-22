@@ -27,6 +27,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	chiCors "github.com/go-chi/cors"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -111,6 +112,9 @@ func main() {
 	// Passerelle de paiement pour des applications externes (ex. ABMCY Core)
 	// — voir migration 029 et internal/handler/gateway_handler.go.
 	gatewayRepo := repository.NewGatewayRepo(pool)
+	// Liaison DIARRA <-> YES Messaging (achat conversationnel "in-chat") —
+	// voir migration 037 et internal/handler/yes_handler.go.
+	yesRepo := repository.NewYesIntegrationRepo(pool)
 
 	// OTP service
 	otpService := otp.NewService(otpRepo)
@@ -262,6 +266,11 @@ func main() {
 	// passerelle (voir gateway_relay.go) — même pattern de setter que
 	// SetWebhookHandler ci-dessus.
 	webhookHandler.SetGatewayRepo(gatewayRepo)
+	// Liaison DIARRA <-> YES Messaging — YES_DELIVERY_FULFILL_URL optionnel :
+	// vide = notifications sortantes désactivées (log seulement), utile en
+	// dev tant que YES n'a pas d'URL de test disponible.
+	yesHandler := handler.NewYesHandler(yesRepo, saleRepo, productRepo, referralRepo, settingsRepo, pawapay, s3, notifications, os.Getenv("YES_DELIVERY_FULFILL_URL"))
+	webhookHandler.SetYesHandler(yesHandler)
 	feedHandler := handler.NewFeedHandler(productRepo, os.Getenv("FRONTEND_URL"))
 	donationHandler := handler.NewDonationHandler(donationRepo, settingsRepo, donationService)
 
@@ -316,6 +325,8 @@ func main() {
 	adminHandler.SetActivityRepo(repository.NewAdminActivityRepo(pool))
 	// Gestion des clients de la passerelle de paiement (ex. ABMCY Core).
 	adminHandler.SetGatewayRepo(gatewayRepo)
+	// Gestion des clients API YES Messaging (migration 037).
+	adminHandler.SetYesRepo(yesRepo)
 	// Step-up OTP email avant un versement direct (voir CreateDirectPayout).
 	adminHandler.SetOTPService(otpService)
 
@@ -323,6 +334,7 @@ func main() {
 
 	r.Use(middleware.RequestLogger)
 	r.Use(chimw.Recoverer)
+	r.Use(middleware.Metrics)
 	r.Use(middleware.NewRateLimiter(redisCache, 10, 40).Middleware)
 	r.Use(middleware.SecurityHeaders)
 
@@ -340,6 +352,10 @@ func main() {
 	r.Use(corsHandler.Handler)
 
 	r.Get("/health", healthHandler.ServeHTTP)
+	// Métriques Prometheus (scrapées via annotations pod, voir k8s/backend.yaml)
+	// — pas de garde d'accès : jamais exposé hors du cluster (pas de route
+	// Ingress dessus), seul un scraper interne au réseau k8s peut l'atteindre.
+	r.Handle("/metrics", promhttp.Handler())
 
 	// authRateLimiter : strict, réservé aux routes NON authentifiées sensibles
 	// au brute-force (mot de passe, réinitialisation). 0.2 req/s (1 toutes les
@@ -642,6 +658,10 @@ func main() {
 			r.Get("/gateway/stats", adminHandler.GatewayStats)
 			r.Post("/gateway/transactions/{id}/check-provider", adminHandler.CheckGatewayTransactionProvider)
 
+			// Clients API YES Messaging (achat conversationnel) — voir
+			// /api/yes/* ci-dessous.
+			r.Post("/yes/clients", adminHandler.CreateYesClient)
+
 			// Programme de reversement automatique ("Fidélisation") — cagnotte,
 			// destinataires, historique des versements.
 			r.Get("/donations", donationHandler.Get)
@@ -719,6 +739,19 @@ func main() {
 		r.Get("/payouts/{client_ref}", gatewayHandler.GetTransaction(model.GatewayTxTypePayout))
 		r.Post("/refunds", gatewayHandler.CreateRefund)
 		r.Get("/refunds/{client_ref}", gatewayHandler.GetTransaction(model.GatewayTxTypeRefund))
+	})
+
+	// Liaison DIARRA <-> YES Messaging (achat conversationnel "in-chat") —
+	// auth HMAC dédiée (X-API-Key + X-Signature-SHA256), volontairement
+	// séparée du système gateway_clients ci-dessus (protocole différent, voir
+	// migrations/037_yes_integration.sql). YES appelle ces deux endpoints ;
+	// le webhook sortant DIARRA -> YES (delivery/fulfill) part de
+	// YesHandler.NotifyDelivery, branché dans ConfirmPaidSale.
+	r.Route("/api/yes", func(r chi.Router) {
+		r.Use(middleware.RequireYesClient(yesHandler.LookupClient))
+		r.Post("/session/initiate", yesHandler.InitiateSession)
+		r.Post("/checkout/in-chat", yesHandler.InChatCheckout)
+		r.Post("/vendors/review", yesHandler.SubmitVendorReview)
 	})
 
 	r.Route("/api/automation/products", func(r chi.Router) {

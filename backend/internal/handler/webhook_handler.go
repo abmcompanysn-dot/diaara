@@ -47,6 +47,11 @@ type WebhookHandler struct {
 	// webhooks agrégateur continuent de ne traiter que les sales/payouts
 	// internes DIARRA, comme avant l'existence de la passerelle.
 	gatewayRepo *repository.GatewayRepo
+	// yesHandler : même pattern, pour notifier YES Messaging (livraison,
+	// voir NotifyDelivery) quand une vente confirmée payée provient du flux
+	// conversationnel "in-chat" (migration 037). nil-safe : une vente
+	// classique (pas de conversational_sessions liée) n'est jamais affectée.
+	yesHandler *YesHandler
 }
 
 // SetGatewayRepo branche le relais webhook agrégateur -> client externe
@@ -54,6 +59,13 @@ type WebhookHandler struct {
 // webhook PawaPay avant la résolution vers une sale/payout DIARRA).
 func (h *WebhookHandler) SetGatewayRepo(repo *repository.GatewayRepo) {
 	h.gatewayRepo = repo
+}
+
+// SetYesHandler branche la notification de livraison vers YES Messaging
+// (voir ConfirmPaidSale, qui l'appelle après confirmation normale du
+// paiement).
+func (h *WebhookHandler) SetYesHandler(yh *YesHandler) {
+	h.yesHandler = yh
 }
 
 func NewWebhookHandler(
@@ -1188,6 +1200,13 @@ func (h *WebhookHandler) confirmPaidSaleUnguarded(ctx context.Context, sale *mod
 		// (PayoutHandler.Earnings) serait sinon obsolète jusqu'à
 		// expiration de son TTL (30s).
 		h.cache.Del(ctx, vendorBalanceCacheKey(product.VendorID))
+	}
+	// Si cette vente provient du flux conversationnel YES (in-chat checkout),
+	// notifie YES pour qu'il affiche la carte de livraison dans le chat — no-op
+	// silencieux pour une vente classique (voir YesHandler.NotifyDelivery,
+	// qui vérifie lui-même l'existence d'une conversational_sessions liée).
+	if h.yesHandler != nil {
+		go h.yesHandler.NotifyDelivery(context.Background(), sale.ID)
 	}
 	return nil
 }

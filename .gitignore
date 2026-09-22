@@ -23,3 +23,6 @@ build/
 # Logs
 *.log
 .gstack/
+
+# Monitoring (secrets/mot de passe Grafana en clair dans les manifestes)
+k8s-monitoring/
