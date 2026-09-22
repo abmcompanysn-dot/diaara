@@ -47,6 +47,12 @@ type YesHandler struct {
 	// gateway_clients où chaque client a sa propre callback_url — pas besoin
 	// de la stocker en base pour un seul destinataire fixe.
 	deliveryFulfillURL string
+	// frontendURL — sert de base à ReturnUrl (PawaPay EXIGE une URL http(s)
+	// valide, jamais un token brut — voir createPaymentPage). YES ne sert
+	// aucune page web de retour ; l'acheteur atterrit ici après paiement
+	// mobile money, DIARRA affiche juste une confirmation minimale (le vrai
+	// statut de la conversation reste piloté par YES via ses propres appels).
+	frontendURL string
 }
 
 func NewYesHandler(
@@ -59,12 +65,13 @@ func NewYesHandler(
 	storageSvc *storage.S3Storage,
 	notifications *email.NotificationService,
 	deliveryFulfillURL string,
+	frontendURL string,
 ) *YesHandler {
 	return &YesHandler{
 		yesRepo: yesRepo, saleRepo: saleRepo, productRepo: productRepo,
 		referralRepo: referralRepo, settingsRepo: settingsRepo,
 		pawapay: pawapay, storage: storageSvc, notifications: notifications,
-		deliveryFulfillURL: deliveryFulfillURL,
+		deliveryFulfillURL: deliveryFulfillURL, frontendURL: frontendURL,
 	}
 }
 
@@ -198,9 +205,12 @@ func (h *YesHandler) InitiateSession(w http.ResponseWriter, r *http.Request) {
 
 // createPaymentPage — même construction que SaleHandler.initiatePaymentPage
 // (PawaPay Payment Page hébergée), reprise ici car ce handler n'a pas accès
-// à frontendURL de SaleHandler ; ReturnUrl pointe vers un endpoint dédié côté
-// YES plutôt que /checkout/return de DIARRA — c'est YES qui pilote le retour
-// de l'acheteur dans ce flux conversationnel.
+// à SaleHandler directement. ReturnUrl réutilise /checkout/return (page
+// DIARRA existante, affiche juste une confirmation minimale) — PawaPay
+// EXIGE une URL http(s) valide, jamais un token brut. YES ne sert aucune
+// page web ; c'est lui qui pilote le retour dans la conversation via ses
+// propres appels (in-chat checkout), cette URL n'est qu'un filet de
+// sécurité pour l'acheteur qui atterrit dessus après paiement mobile money.
 func (h *YesHandler) createPaymentPage(ctx context.Context, sale *model.Sale, product *model.Product, country string) (*payment.PaymentPageResponse, error) {
 	reason := payment.SanitizePaymentReason(product.Title, 50)
 	currency := payment.CountryCurrency[country]
@@ -211,9 +221,10 @@ func (h *YesHandler) createPaymentPage(ctx context.Context, sale *model.Sale, pr
 	if err != nil {
 		return nil, err
 	}
+	returnURL := h.frontendURL + "/checkout/return?token=" + *sale.CheckoutToken
 	return h.pawapay.CreatePaymentPage(ctx, payment.PaymentPageRequest{
 		DepositId: sale.PaymentReference,
-		ReturnUrl: *sale.CheckoutToken, // YES gère son propre retour ; le token reste utile pour CheckSaleProvider
+		ReturnUrl: returnURL,
 		AmountDetails: payment.AmountDetails{
 			Amount:   amount,
 			Currency: currency,

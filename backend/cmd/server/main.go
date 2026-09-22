@@ -269,7 +269,7 @@ func main() {
 	// Liaison DIARRA <-> YES Messaging — YES_DELIVERY_FULFILL_URL optionnel :
 	// vide = notifications sortantes désactivées (log seulement), utile en
 	// dev tant que YES n'a pas d'URL de test disponible.
-	yesHandler := handler.NewYesHandler(yesRepo, saleRepo, productRepo, referralRepo, settingsRepo, pawapay, s3, notifications, os.Getenv("YES_DELIVERY_FULFILL_URL"))
+	yesHandler := handler.NewYesHandler(yesRepo, saleRepo, productRepo, referralRepo, settingsRepo, pawapay, s3, notifications, os.Getenv("YES_DELIVERY_FULFILL_URL"), os.Getenv("FRONTEND_URL"))
 	webhookHandler.SetYesHandler(yesHandler)
 	feedHandler := handler.NewFeedHandler(productRepo, os.Getenv("FRONTEND_URL"))
 	donationHandler := handler.NewDonationHandler(donationRepo, settingsRepo, donationService)
