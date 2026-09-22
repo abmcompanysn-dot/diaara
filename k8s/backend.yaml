@@ -12,6 +12,13 @@ spec:
     metadata:
       labels:
         app: backend
+      annotations:
+        # Découverte auto par Prometheus (voir k8s-monitoring/11-prometheus-config.yaml,
+        # job kubernetes-pods) — endpoint /metrics ajouté dans main.go, jamais
+        # exposé hors cluster (pas de route Ingress dessus).
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8080"
+        prometheus.io/path: "/metrics"
     spec:
       # Le VPS résout son propre hostname vers 127.0.1.1 (config cloud-init),
       # ce qui casse la connexion SMTP sortante vers le serveur mail depuis
