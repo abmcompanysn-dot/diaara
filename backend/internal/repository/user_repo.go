@@ -437,7 +437,7 @@ type UserWithStats struct {
 func (r *UserRepo) ListAllUsersWithStats(ctx context.Context) ([]*UserWithStats, error) {
 	rows, err := r.pool.Query(ctx, `
 		SELECT u.id, u.email, u.phone, u.is_admin, u.email_verified_at, u.phone_verified_at,
-		       u.locked_until, u.created_at, u.updated_at,
+		       u.locked_until, u.yes_chat_enabled, u.created_at, u.updated_at,
 		       COALESCE(ARRAY_AGG(DISTINCT ur.role) FILTER (WHERE ur.role IS NOT NULL), ARRAY[]::text[]),
 		       COALESCE(stats.products_sold, 0), COALESCE(stats.revenue_generated, 0)
 		FROM users u
@@ -460,7 +460,7 @@ func (r *UserRepo) ListAllUsersWithStats(ctx context.Context) ([]*UserWithStats,
 	for rows.Next() {
 		u := &UserWithStats{}
 		if err := rows.Scan(&u.ID, &u.Email, &u.Phone, &u.IsAdmin, &u.EmailVerifiedAt, &u.PhoneVerifiedAt,
-			&u.LockedUntil, &u.CreatedAt, &u.UpdatedAt, &u.Roles, &u.ProductsSold, &u.RevenueGeneratedCFA); err != nil {
+			&u.LockedUntil, &u.YesChatEnabled, &u.CreatedAt, &u.UpdatedAt, &u.Roles, &u.ProductsSold, &u.RevenueGeneratedCFA); err != nil {
 			return nil, err
 		}
 		out = append(out, u)

@@ -205,7 +205,16 @@ export const api = {
     fetchApi<{
       product: any;
       vendor_tracking?: { facebook_pixel_id?: string | null; google_tag_id?: string | null };
+      yes_chat_enabled?: boolean;
     }>(`/api/products/${id}`),
+
+  // Achat conversationnel "in-chat" via YES Business (bêta, réservé aux
+  // vendeurs activés — voir Product.yes_chat_enabled)
+  openVendorConversation: (data: { product_id: string; referral_link_id?: string; country: string }) =>
+    fetchApi<{ micro_ticket_sale_id: string; payment_redirect_url: string }>('/api/vendor-chat/open', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 
   // Boutique publique d'un vendeur (partageable via QR code)
   getVendorShop: (vendorId: string) =>
@@ -645,6 +654,12 @@ export const api = {
 
   reactivateUser: (id: string) =>
     fetchApi<void>(`/api/admin/users/${id}/reactivate`, { method: 'PUT' }),
+
+  setYesChatEnabled: (id: string, enabled: boolean) =>
+    fetchApi<{ status: string }>(`/api/admin/users/${id}/yes-chat`, {
+      method: 'PUT',
+      body: JSON.stringify({ enabled }),
+    }),
 
   // Gestion des droits admin (réservé aux admins à accès complet)
   getAdmins: () => fetchApi<{ admins: any[] }>('/api/admin/admins'),

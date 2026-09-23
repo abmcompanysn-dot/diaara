@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { ProductImage } from '@/components/product-image';
 import { VendorChat } from '@/components/vendor-chat';
+import { VendorChatYes, VendorChatYesLoggedOut } from '@/components/vendor-chat-yes';
 import { firebaseEnabled } from '@/lib/firebase';
 import { ArrowLeftIcon, CheckIcon, LockIcon, ZapIcon, LinkIcon, CopyIcon, DownloadIcon } from '@/components/icons';
 import { CATEGORY_LABELS, PAYMENT_LOGOS } from '@/lib/constants';
@@ -45,6 +46,7 @@ export default function ProductDetailPage() {
     facebook_pixel_id?: string | null;
     google_tag_id?: string | null;
   } | null>(null);
+  const [yesChatEnabled, setYesChatEnabled] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
@@ -103,6 +105,7 @@ export default function ProductDetailPage() {
       const result = await api.getProduct(id);
       setProduct(result.product);
       setVendorTracking(result.vendor_tracking || null);
+      setYesChatEnabled(!!result.yes_chat_enabled);
     } catch (err) {
       setError('Produit introuvable');
     } finally {
@@ -281,7 +284,25 @@ export default function ProductDetailPage() {
             </ul>
           </div>
 
-          {firebaseEnabled && user && user.id !== product.vendor_id && (
+          {user && user.id !== product.vendor_id && yesChatEnabled && (
+            <div className="mt-6 bg-white rounded-xl p-6 sm:p-8 shadow-card border border-green-900/5">
+              <p className="font-mono text-sm text-green-700/60 uppercase tracking-widest mb-4">
+                // contacter le vendeur
+              </p>
+              <VendorChatYes productId={product.id} priceCfa={product.price_cfa} country="SEN" />
+            </div>
+          )}
+
+          {!user && yesChatEnabled && (
+            <div className="mt-6 bg-white rounded-xl p-6 sm:p-8 shadow-card border border-green-900/5">
+              <p className="font-mono text-sm text-green-700/60 uppercase tracking-widest mb-4">
+                // contacter le vendeur
+              </p>
+              <VendorChatYesLoggedOut />
+            </div>
+          )}
+
+          {firebaseEnabled && !yesChatEnabled && user && user.id !== product.vendor_id && (
             <div className="mt-6 bg-white rounded-xl p-6 sm:p-8 shadow-card border border-green-900/5">
               <p className="font-mono text-sm text-green-700/60 uppercase tracking-widest mb-4">
                 // contacter le vendeur

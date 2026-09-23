@@ -31,6 +31,7 @@ interface User {
   is_admin: boolean;
   roles: string[];
   locked_until: string | null;
+  yes_chat_enabled: boolean;
   created_at: string;
   products_sold: number;
   revenue_generated_cfa: number;
@@ -72,6 +73,7 @@ function RowMenu({
   onReactivate,
   onPromote,
   onMessage,
+  onYesChat,
 }: {
   user: User;
   onRole: (role: string, action: 'grant' | 'revoke') => void;
@@ -79,6 +81,7 @@ function RowMenu({
   onReactivate: () => void;
   onPromote: () => void;
   onMessage: () => void;
+  onYesChat: () => void;
 }) {
   const [open, setOpen] = useState(false);
   const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null);
@@ -178,6 +181,20 @@ function RowMenu({
               >
                 Promouvoir en admin
               </button>
+              {user.roles?.includes('vendeur') && (
+                <>
+                  <div className="my-1 border-t border-green-900/10" />
+                  <button
+                    onClick={() => {
+                      onYesChat();
+                      setOpen(false);
+                    }}
+                    className="w-full text-left px-3 py-2 hover:bg-green-900/5 text-green-950"
+                  >
+                    {user.yes_chat_enabled ? 'Désactiver' : 'Activer'} le chat vendeur (YES, bêta)
+                  </button>
+                </>
+              )}
             </>
           )}
           <div className="my-1 border-t border-green-900/10" />
@@ -304,6 +321,15 @@ export default function AdminUsersPage() {
   const handleReactivate = async (id: string) => {
     try {
       await api.reactivateUser(id);
+      loadUsers();
+    } catch (err: any) {
+      setError(friendlyError(err));
+    }
+  };
+
+  const handleYesChatToggle = async (user: User) => {
+    try {
+      await api.setYesChatEnabled(user.id, !user.yes_chat_enabled);
       loadUsers();
     } catch (err: any) {
       setError(friendlyError(err));
@@ -590,6 +616,7 @@ export default function AdminUsersPage() {
                             onReactivate={() => handleReactivate(user.id)}
                             onPromote={() => setToPromote(user)}
                             onMessage={() => openMessage(user)}
+                            onYesChat={() => handleYesChatToggle(user)}
                           />
                         </TableCell>
                       </TableRow>

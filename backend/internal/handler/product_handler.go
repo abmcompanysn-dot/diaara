@@ -168,14 +168,23 @@ func (h *ProductHandler) Get(w http.ResponseWriter, r *http.Request) {
 
 	// Pixel/tag pub du vendeur (facultatif, géré par le vendeur lui-même) —
 	// injecté côté frontend sur la page produit, comme sur sa boutique.
+	// yes_chat_enabled : si vrai, le frontend affiche le bouton "Discuter
+	// avec le vendeur" (YES Business, bêta) à la place du chat Firebase
+	// gratuit — voir migration 039, YesHandler.OpenConversation.
 	vendorTracking := map[string]interface{}{}
+	yesChatEnabled := false
 	if vendor, err := h.userRepo.FindByID(r.Context(), product.VendorID); err == nil {
 		vendorTracking["facebook_pixel_id"] = vendor.FacebookPixelID
 		vendorTracking["google_tag_id"] = vendor.GoogleTagID
+		yesChatEnabled = vendor.YesChatEnabled
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"product": product, "vendor_tracking": vendorTracking})
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"product":          product,
+		"vendor_tracking":  vendorTracking,
+		"yes_chat_enabled": yesChatEnabled,
+	})
 }
 
 // Upload — vendeur authentifié, fichier multipart → R2
