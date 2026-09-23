@@ -291,6 +291,8 @@ func main() {
 	webhookHandler.SetYesHandler(yesHandler)
 	feedHandler := handler.NewFeedHandler(productRepo, os.Getenv("FRONTEND_URL"))
 	donationHandler := handler.NewDonationHandler(donationRepo, settingsRepo, donationService)
+	// "Dernières mises à jour" admin -> dashboard vendeur (pas d'email).
+	announcementHandler := handler.NewAnnouncementHandler(repository.NewAnnouncementRepo(pool))
 
 	// Temps réel (LISTEN/NOTIFY + WebSocket)
 	hub := realtime.NewHub(pool)
@@ -587,6 +589,9 @@ func main() {
 	r.Route("/api/vendor", func(r chi.Router) {
 		r.Use(middleware.RequireAuth(jwtManager))
 		r.Use(middleware.RequireRole(model.RoleVendeur))
+		// "Dernières mises à jour" — lecture seule (voir /api/admin/announcements
+		// pour la gestion admin).
+		r.Get("/announcements", announcementHandler.List)
 		r.Get("/earnings", payoutHandler.Earnings)
 		r.Get("/payout-limits", payoutHandler.Limits)
 		r.Get("/payout-method", payoutHandler.GetPayoutMethod)
@@ -634,6 +639,12 @@ func main() {
 			// Achat conversationnel YES Business (bêta) — activable par
 			// vendeur, voir migration 039.
 			r.Put("/users/{id}/yes-chat", adminHandler.SetYesChatEnabled)
+
+			// "Dernières mises à jour" — annonces admin visibles sur le
+			// dashboard vendeur (voir migration 040), pas d'email.
+			r.Get("/announcements", announcementHandler.List)
+			r.Post("/announcements", announcementHandler.Create)
+			r.Delete("/announcements/{id}", announcementHandler.Delete)
 			r.Post("/users/{id}/message", adminHandler.SendUserMessage)
 			r.Post("/broadcast", adminHandler.SendBroadcast)
 		})
