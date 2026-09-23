@@ -1,15 +1,10 @@
 package handler
 
 import (
-	"bytes"
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"log"
 	"net/http"
-	"strconv"
 	"time"
 
 	"github.com/diarra/backend/internal/email"
@@ -19,77 +14,59 @@ import (
 	"github.com/diarra/backend/internal/repository"
 	"github.com/diarra/backend/internal/service"
 	"github.com/diarra/backend/internal/storage"
+	"github.com/go-chi/chi/v5"
 )
 
-// yes_handler.go — liaison DIARRA <-> YES Messaging (achat conversationnel
-// "in-chat", voir migrations/037_yes_integration.sql et
-// middleware/yes_client.go). YES gère l'état de la conversation ; DIARRA
-// reste seul responsable de l'encaissement (PawaPay/PayPal), de la livraison
-// (URL signée MinIO) et de la réputation vendeur.
+// yes_handler.go — achat conversationnel "in-chat" via YES.abmcy Business.
+// DIARRA est le SEUL appelant des 5 endpoints YES Business (session/initiate,
+// session/{id}/status, session/{id}/send-offer, session/{id}/review,
+// delivery/fulfill) — YES n'appelle jamais DIARRA en retour (voir doc
+// d'intégration fournie par YES le 2026-09-22, JOURNAL-MODIFICATIONS.md).
+// DIARRA reste seul responsable de l'encaissement (PawaPay, micro-ticket +
+// solde), de la livraison (URL signée MinIO) et du recueil des avis
+// (l'interface YES n'a pas de composant de notation propre).
 //
-// Isolé dans son propre fichier, comme gateway_relay.go, pour ne pas toucher
-// à la logique déjà en place de sale_handler.go/webhook_handler.go — cette
-// intégration réutilise leurs briques existantes (payment.PawaPayClient,
-// calcul de commission, storage.S3Storage) sans les dupliquer.
+// Toutes les routes de ce handler sont des routes DIARRA classiques
+// (authentification JWT normale, acheteur ou vendeur connecté).
 
 type YesHandler struct {
 	yesRepo       *repository.YesIntegrationRepo
 	saleRepo      *repository.SaleRepo
 	productRepo   *repository.ProductRepo
+	userRepo      *repository.UserRepo
 	referralRepo  *repository.ReferralRepo
 	settingsRepo  *repository.SettingsRepo
 	pawapay       *payment.PawaPayClient
+	yesBusiness   *payment.YesBusinessClient
 	storage       *storage.S3Storage
 	notifications *email.NotificationService
-	// deliveryFulfillURL — endpoint YES qui reçoit la notification de
-	// livraison (POST .../yes/delivery/fulfill côté YES, voir contrat
-	// d'intégration). Un seul partenaire YES, contrairement à
-	// gateway_clients où chaque client a sa propre callback_url — pas besoin
-	// de la stocker en base pour un seul destinataire fixe.
-	deliveryFulfillURL string
-	// frontendURL — sert de base à ReturnUrl (PawaPay EXIGE une URL http(s)
-	// valide, jamais un token brut — voir createPaymentPage). YES ne sert
-	// aucune page web de retour ; l'acheteur atterrit ici après paiement
-	// mobile money, DIARRA affiche juste une confirmation minimale (le vrai
-	// statut de la conversation reste piloté par YES via ses propres appels).
-	frontendURL string
+	frontendURL   string
 }
 
 func NewYesHandler(
 	yesRepo *repository.YesIntegrationRepo,
 	saleRepo *repository.SaleRepo,
 	productRepo *repository.ProductRepo,
+	userRepo *repository.UserRepo,
 	referralRepo *repository.ReferralRepo,
 	settingsRepo *repository.SettingsRepo,
 	pawapay *payment.PawaPayClient,
+	yesBusiness *payment.YesBusinessClient,
 	storageSvc *storage.S3Storage,
 	notifications *email.NotificationService,
-	deliveryFulfillURL string,
 	frontendURL string,
 ) *YesHandler {
 	return &YesHandler{
-		yesRepo: yesRepo, saleRepo: saleRepo, productRepo: productRepo,
+		yesRepo: yesRepo, saleRepo: saleRepo, productRepo: productRepo, userRepo: userRepo,
 		referralRepo: referralRepo, settingsRepo: settingsRepo,
-		pawapay: pawapay, storage: storageSvc, notifications: notifications,
-		deliveryFulfillURL: deliveryFulfillURL, frontendURL: frontendURL,
+		pawapay: pawapay, yesBusiness: yesBusiness, storage: storageSvc, notifications: notifications,
+		frontendURL: frontendURL,
 	}
-}
-
-// LookupClient — passé à middleware.RequireYesClient (voir main.go). Ne
-// résout que des clients actifs (filtré dans le repo), comme LookupClient
-// gateway.
-func (h *YesHandler) LookupClient(ctx context.Context, apiKey string) (middleware.YesClientLookup, error) {
-	c, err := h.yesRepo.FindClientByAPIKey(ctx, apiKey)
-	if err != nil {
-		return middleware.YesClientLookup{}, err
-	}
-	return middleware.YesClientLookup{ID: c.ID, APISecretHash: c.APISecretHash}, nil
 }
 
 // resolveReferralLink — même validation que SaleHandler.Create (produit
-// correspondant, pas d'auto-référencement acheteur ni vendeur), mais
-// silencieuse : un lien invalide ne doit pas faire échouer un micro-ticket,
-// seulement priver la session de commission d'affiliation.
+// correspondant, pas d'auto-référencement acheteur), mais silencieuse : un
+// lien invalide ne doit pas faire échouer l'ouverture d'une conversation.
 func (h *YesHandler) resolveReferralLink(ctx context.Context, referralLinkID, buyerID, productID string) *string {
 	if referralLinkID == "" {
 		return nil
@@ -102,25 +79,33 @@ func (h *YesHandler) resolveReferralLink(ctx context.Context, referralLinkID, bu
 	return &id
 }
 
-// InitiateSession — POST /api/yes/session/initiate (YES -> DIARRA) :
-// encaisse le micro-ticket (600 FCFA), crée la session de liaison. N'ouvre
-// PAS elle-même la conversation côté YES (YES l'a déjà créée avant cet
-// appel, c'est lui qui pilote son propre état) — DIARRA se contente de
-// confirmer que le paiement est en cours et de renvoyer l'URL de paiement
-// hébergée (mobile money, seul canal pour un montant aussi faible — voir
-// model.MicroTicketAmountCFA).
-func (h *YesHandler) InitiateSession(w http.ResponseWriter, r *http.Request) {
-	var input model.InitiateSessionInput
+// OpenConversation — POST /api/vendor-chat/open (acheteur connecté) : le
+// clic "Discuter avec le vendeur" sur une fiche produit. Encaisse le
+// micro-ticket (PawaPay) et crée une session "pending". L'appel à YES
+// session/initiate n'intervient qu'APRÈS confirmation du paiement (voir
+// OnSaleConfirmed, branché sur ConfirmPaidSale) — tant que le micro-ticket
+// n'est pas payé, DIARRA n'a encore rien demandé à YES.
+func (h *YesHandler) OpenConversation(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	var input model.OpenConversationInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
 		return
 	}
-	if input.YesConversationID == "" || input.ProductID == "" || input.BuyerID == "" || input.Country == "" {
+	if input.ProductID == "" || input.Country == "" {
 		http.Error(w, `{"error":"missing_required_fields"}`, http.StatusBadRequest)
 		return
 	}
 	if h.pawapay == nil {
 		http.Error(w, `{"error":"payment_not_configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+	if h.yesBusiness == nil {
+		http.Error(w, `{"error":"yes_not_configured"}`, http.StatusServiceUnavailable)
 		return
 	}
 
@@ -133,29 +118,25 @@ func (h *YesHandler) InitiateSession(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"product_not_available"}`, http.StatusBadRequest)
 		return
 	}
+	if product.VendorID == userID {
+		http.Error(w, `{"error":"cannot_chat_with_self"}`, http.StatusBadRequest)
+		return
+	}
 	if product.PriceCFA <= model.MicroTicketAmountCFA {
 		http.Error(w, `{"error":"price_too_low_for_conversational_flow"}`, http.StatusBadRequest)
 		return
 	}
 
-	var referralLinkID *string
-	if input.ReferralLinkID != nil {
-		referralLinkID = h.resolveReferralLink(r.Context(), *input.ReferralLinkID, input.BuyerID, product.ID)
-	}
+	referralLinkID := h.resolveReferralLink(r.Context(), safeStr(input.ReferralLinkID), userID, product.ID)
 
-	// Vente "micro-ticket" : une Sale normale, montant fixe, commission
-	// calculée EXACTEMENT comme une vente classique (même taux
-	// SettingCommissionRatePct) — voir SaleHandler.Create pour la même
-	// logique, dupliquée ici volontairement car il n'existe pas encore de
-	// fonction partagée extraite (à faire si un 3e appelant apparaît).
 	rate := h.settingsRepo.GetFloat(r.Context(), model.SettingCommissionRatePct, service.DefaultPlatformFeePct)
 	rate = service.EffectivePlatformFeePct(model.MicroTicketAmountCFA, rate)
 	platformFee := int(float64(model.MicroTicketAmountCFA) * rate / 100.0)
 	checkoutToken := newUUID()
 	microSale := &model.Sale{
 		ProductID:        product.ID,
-		BuyerID:          input.BuyerID,
-		BuyerName:        "Acheteur YES",
+		BuyerID:          userID,
+		BuyerName:        "Acheteur",
 		Country:          &input.Country,
 		AmountCFA:        model.MicroTicketAmountCFA,
 		PlatformFeeCFA:   platformFee,
@@ -163,12 +144,23 @@ func (h *YesHandler) InitiateSession(w http.ResponseWriter, r *http.Request) {
 		PaymentProvider:  "pawapay",
 		PaymentReference: newUUID(),
 		CheckoutToken:    &checkoutToken,
+		ReferralLinkID:   referralLinkID,
 		Status:           string(model.SalePending),
 	}
-
 	created, err := h.saleRepo.Create(r.Context(), microSale)
 	if err != nil {
 		http.Error(w, `{"error":"sale_creation_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	if _, err := h.yesRepo.CreatePendingSession(r.Context(), &model.ConversationalSession{
+		ProductID:         product.ID,
+		BuyerID:           userID,
+		SellerID:          product.VendorID,
+		ReferralLinkID:    referralLinkID,
+		MicroTicketSaleID: created.ID,
+	}); err != nil {
+		http.Error(w, `{"error":"session_creation_failed"}`, http.StatusInternalServerError)
 		return
 	}
 
@@ -178,39 +170,15 @@ func (h *YesHandler) InitiateSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	session, err := h.yesRepo.CreateSession(r.Context(), &model.ConversationalSession{
-		YesConversationID: input.YesConversationID,
-		ProductID:         product.ID,
-		BuyerID:           input.BuyerID,
-		SellerID:          product.VendorID,
-		ReferralLinkID:    referralLinkID,
-		MicroTicketSaleID: &created.ID,
-		Status:            model.SessionMicroTicketPaid,
-	})
-	if err != nil {
-		if repository.IsUniqueViolation(err) {
-			http.Error(w, `{"error":"session_already_exists"}`, http.StatusConflict)
-			return
-		}
-		http.Error(w, `{"error":"session_creation_failed"}`, http.StatusInternalServerError)
-		return
-	}
-
 	writeJSON(w, map[string]interface{}{
-		"session_id":            session.ID,
-		"micro_ticket_sale_id":  created.ID,
-		"payment_redirect_url":  page.RedirectUrl,
+		"micro_ticket_sale_id": created.ID,
+		"payment_redirect_url": page.RedirectUrl,
 	})
 }
 
 // createPaymentPage — même construction que SaleHandler.initiatePaymentPage
-// (PawaPay Payment Page hébergée), reprise ici car ce handler n'a pas accès
-// à SaleHandler directement. ReturnUrl réutilise /checkout/return (page
-// DIARRA existante, affiche juste une confirmation minimale) — PawaPay
-// EXIGE une URL http(s) valide, jamais un token brut. YES ne sert aucune
-// page web ; c'est lui qui pilote le retour dans la conversation via ses
-// propres appels (in-chat checkout), cette URL n'est qu'un filet de
-// sécurité pour l'acheteur qui atterrit dessus après paiement mobile money.
+// (PawaPay Payment Page hébergée). ReturnUrl pointe vers /checkout/return
+// (page DIARRA existante) — PawaPay exige une URL http(s) valide.
 func (h *YesHandler) createPaymentPage(ctx context.Context, sale *model.Sale, product *model.Product, country string) (*payment.PaymentPageResponse, error) {
 	reason := payment.SanitizePaymentReason(product.Title, 50)
 	currency := payment.CountryCurrency[country]
@@ -240,32 +208,185 @@ func (h *YesHandler) createPaymentPage(ctx context.Context, sale *model.Sale, pr
 	})
 }
 
-// InChatCheckout — POST /api/yes/checkout/in-chat (YES -> DIARRA) : le
-// client a cliqué "Payer et débloquer" dans le chat. Encaisse le SOLDE
-// (product.PriceCFA - MicroTicketAmountCFA) via une nouvelle Sale.
-func (h *YesHandler) InChatCheckout(w http.ResponseWriter, r *http.Request) {
-	var input model.InChatCheckoutInput
-	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
-		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+func buyerDisplayName(u *model.User) string {
+	if u.DisplayName != nil && *u.DisplayName != "" {
+		return *u.DisplayName
+	}
+	return "Acheteur DIARRA"
+}
+
+func safeStr(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+// OnSaleConfirmed — appelé par ConfirmPaidSale (webhook_handler.go) pour
+// TOUTE vente confirmée payée, pas seulement celles du flux conversationnel
+// — no-op silencieux si sale.ID ne correspond à aucune conversational_sessions
+// (micro_ticket_sale_id ni sale_id). Distingue les deux étapes possibles :
+//   - micro-ticket confirmé (session "pending") -> appelle YES session/initiate
+//   - solde confirmé (session "offer_sent", sale_id déjà posé) -> génère
+//     l'URL signée et appelle YES delivery/fulfill
+func (h *YesHandler) OnSaleConfirmed(ctx context.Context, sale *model.Sale) {
+	if h.yesBusiness == nil {
 		return
 	}
-	if input.SessionID == "" {
-		http.Error(w, `{"error":"missing_session_id"}`, http.StatusBadRequest)
+	if session, err := h.yesRepo.FindSessionByMicroTicketSaleID(ctx, sale.ID); err == nil {
+		h.openSessionOnYes(ctx, session)
 		return
 	}
-	if h.pawapay == nil {
-		http.Error(w, `{"error":"payment_not_configured"}`, http.StatusServiceUnavailable)
+	if session, err := h.yesRepo.FindSessionBySaleID(ctx, sale.ID); err == nil {
+		h.fulfillDelivery(ctx, session)
+		return
+	}
+	// Ni l'un ni l'autre : vente classique, hors flux conversationnel.
+}
+
+// openSessionOnYes — micro-ticket confirmé payé : DIARRA appelle enfin YES
+// session/initiate (jamais avant, voir doc : "un paiement échoué en amont ne
+// produit aucun webhook" — DIARRA ne veut pas ouvrir de session YES pour un
+// paiement qui pourrait encore échouer).
+func (h *YesHandler) openSessionOnYes(ctx context.Context, session *model.ConversationalSession) {
+	product, err := h.productRepo.FindByID(ctx, session.ProductID)
+	if err != nil {
+		log.Printf("yes open session: produit introuvable pour session=%s: %v", session.ID, err)
+		return
+	}
+	seller, err := h.userRepo.FindByID(ctx, session.SellerID)
+	if err != nil || seller.Email == "" {
+		log.Printf("yes open session: vendeur/email introuvable pour session=%s: %v", session.ID, err)
+		return
+	}
+	buyer, err := h.userRepo.FindByID(ctx, session.BuyerID)
+	if err != nil {
+		log.Printf("yes open session: acheteur introuvable pour session=%s: %v", session.ID, err)
 		return
 	}
 
-	session, err := h.yesRepo.FindSessionByID(r.Context(), input.SessionID)
+	resp, err := h.yesBusiness.InitiateSession(ctx, payment.InitiateSessionRequest{
+		ProductID:         product.ID,
+		ProductName:       product.Title,
+		SellerHandle:      seller.Email, // handle YES = email DIARRA du vendeur (voir doc 2026-09-22)
+		BuyerExternalID:   buyer.ID,
+		BuyerDisplayName:  buyerDisplayName(buyer),
+		MicroTicketAmount: model.MicroTicketAmountCFA,
+		FinalAmount:       product.PriceCFA - model.MicroTicketAmountCFA,
+		Currency:          "XOF",
+	})
+	if err != nil {
+		log.Printf("yes open session: session/initiate échoué pour session=%s: %v", session.ID, err)
+		return
+	}
+	if err := h.yesRepo.OpenSessionAfterPayment(ctx, session.ID, resp.SessionID, resp.ChatURL); err != nil {
+		log.Printf("yes open session: statut DIARRA non mis à jour pour session=%s (yes_session_id=%s): %v", session.ID, resp.SessionID, err)
+	}
+}
+
+// fulfillDelivery — solde confirmé payé : génère l'URL signée et appelle YES
+// delivery/fulfill.
+func (h *YesHandler) fulfillDelivery(ctx context.Context, session *model.ConversationalSession) {
+	if session.YesSessionID == nil {
+		log.Printf("yes fulfill delivery: session=%s sans yes_session_id, incohérence (jamais ouverte côté YES)", session.ID)
+		return
+	}
+	product, err := h.productRepo.FindByID(ctx, session.ProductID)
+	if err != nil {
+		log.Printf("yes fulfill delivery: produit introuvable pour session=%s: %v", session.ID, err)
+		return
+	}
+	expiry := 5 * time.Minute
+	url, err := h.storage.GenerateSignedURL(ctx, product.FileKey, expiry)
+	if err != nil {
+		log.Printf("yes fulfill delivery: URL signée échouée pour session=%s: %v", session.ID, err)
+		return
+	}
+	err = h.yesBusiness.FulfillDelivery(ctx, payment.FulfillDeliveryRequest{
+		SessionID:         *session.YesSessionID,
+		Status:            "COMPLETED",
+		DeliveryURL:       url,
+		DeliveryExpiresAt: time.Now().Add(expiry).UTC().Format(time.RFC3339),
+	})
+	if err != nil {
+		log.Printf("yes fulfill delivery: delivery/fulfill échoué pour session=%s: %v", session.ID, err)
+		return
+	}
+	if err := h.yesRepo.CompleteSession(ctx, session.ID); err != nil {
+		log.Printf("yes fulfill delivery: statut DIARRA non mis à jour pour session=%s: %v", session.ID, err)
+	}
+}
+
+// SendOffer — POST /api/vendor-chat/{id}/send-offer (vendeur connecté) : le
+// vendeur décide que la conversation est prête à passer au paiement du
+// solde. Appelle YES send-offer.
+func (h *YesHandler) SendOffer(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	if h.yesBusiness == nil {
+		http.Error(w, `{"error":"yes_not_configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+	sessionID := chi.URLParam(r, "id")
+	session, err := h.yesRepo.FindSessionByID(r.Context(), sessionID)
 	if err != nil {
 		http.Error(w, `{"error":"session_not_found"}`, http.StatusNotFound)
 		return
 	}
-	if session.Status != model.SessionMicroTicketPaid {
-		http.Error(w, `{"error":"session_not_payable","detail":"session déjà complétée ou annulée"}`, http.StatusConflict)
+	if session.SellerID != userID {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
 		return
+	}
+	if session.Status != model.SessionOpened || session.YesSessionID == nil {
+		http.Error(w, `{"error":"session_not_open"}`, http.StatusConflict)
+		return
+	}
+
+	resp, err := h.yesBusiness.SendOffer(r.Context(), *session.YesSessionID)
+	if err != nil {
+		http.Error(w, `{"error":"send_offer_failed"}`, http.StatusBadGateway)
+		return
+	}
+	if err := h.yesRepo.SetOfferSent(r.Context(), session.ID); err != nil {
+		log.Printf("yes send-offer: statut DIARRA non mis à jour pour session=%s: %v", session.ID, err)
+	}
+
+	writeJSON(w, map[string]interface{}{"status": resp.Status, "checkout_url": resp.CheckoutURL})
+}
+
+// InitiateBalanceCheckout — POST /api/vendor-chat/{id}/checkout (acheteur
+// connecté) : l'acheteur clique "Payer" pour le solde. Encaisse le SOLDE via
+// PawaPay, comme OpenConversation encaisse le micro-ticket.
+func (h *YesHandler) InitiateBalanceCheckout(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	sessionID := chi.URLParam(r, "id")
+	session, err := h.yesRepo.FindSessionByID(r.Context(), sessionID)
+	if err != nil {
+		http.Error(w, `{"error":"session_not_found"}`, http.StatusNotFound)
+		return
+	}
+	if session.BuyerID != userID {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
+	if session.Status != model.SessionOfferSent {
+		http.Error(w, `{"error":"session_not_payable"}`, http.StatusConflict)
+		return
+	}
+
+	var input struct {
+		Country string `json:"country"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&input)
+	if input.Country == "" {
+		input.Country = "SEN"
 	}
 
 	product, err := h.productRepo.FindByID(r.Context(), session.ProductID)
@@ -273,10 +394,9 @@ func (h *YesHandler) InChatCheckout(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"product_not_found"}`, http.StatusNotFound)
 		return
 	}
-
 	balance := product.PriceCFA - model.MicroTicketAmountCFA
 	if balance <= 0 {
-		http.Error(w, `{"error":"invalid_balance","detail":"le prix du produit doit dépasser le montant du micro-ticket"}`, http.StatusConflict)
+		http.Error(w, `{"error":"invalid_balance"}`, http.StatusConflict)
 		return
 	}
 
@@ -287,7 +407,8 @@ func (h *YesHandler) InChatCheckout(w http.ResponseWriter, r *http.Request) {
 	sale := &model.Sale{
 		ProductID:        product.ID,
 		BuyerID:          session.BuyerID,
-		BuyerName:        "Acheteur YES",
+		BuyerName:        "Acheteur",
+		Country:          &input.Country,
 		AmountCFA:        balance,
 		PlatformFeeCFA:   platformFee,
 		VendorAmountCFA:  balance - platformFee,
@@ -315,116 +436,53 @@ func (h *YesHandler) InChatCheckout(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"sale_creation_failed"}`, http.StatusInternalServerError)
 		return
 	}
-
-	// Le pays n'est pas reçu du client ici (contrairement à InitiateSession) —
-	// XOF par défaut, cohérent avec createPaymentPage quand country est vide.
-	page, err := h.createPaymentPage(r.Context(), created, product, "")
+	page, err := h.createPaymentPage(r.Context(), created, product, input.Country)
 	if err != nil {
 		http.Error(w, `{"error":"payment_init_failed"}`, http.StatusBadGateway)
 		return
 	}
-
-	if err := h.yesRepo.CompleteSession(r.Context(), session.ID, created.ID); err != nil {
-		log.Printf("yes in-chat checkout: session %s non mise à jour après vente %s: %v", session.ID, created.ID, err)
+	// La session ne passe "completed" qu'après confirmation réelle du
+	// paiement (voir OnSaleConfirmed, branché sur ConfirmPaidSale) — sale_id
+	// est posé maintenant pour que FindSessionBySaleID le retrouve ensuite.
+	if err := h.yesRepo.SetBalanceSale(r.Context(), session.ID, created.ID); err != nil {
+		log.Printf("yes balance checkout: sale_id non posé pour session=%s: %v", session.ID, err)
 	}
 
 	writeJSON(w, map[string]interface{}{
 		"sale_id":              created.ID,
 		"payment_redirect_url": page.RedirectUrl,
-		"status":               "processing",
 	})
 }
 
-// NotifyDelivery — appelé quand une vente issue d'une session conversationnelle
-// est confirmée payée (voir webhook_handler.go, à brancher dans
-// ConfirmPaidSale : si sale.ID correspond à une conversational_sessions.sale_id,
-// appeler ceci après la confirmation normale). Génère l'URL signée et notifie
-// YES — jamais le paiement lui-même, qui suit le flux PawaPay standard.
-func (h *YesHandler) NotifyDelivery(ctx context.Context, saleID string) {
-	session, err := h.yesRepo.FindSessionBySaleID(ctx, saleID)
-	if err != nil {
-		return // pas une vente issue du flux conversationnel, rien à faire
-	}
-	product, err := h.productRepo.FindByID(ctx, session.ProductID)
-	if err != nil {
-		log.Printf("yes notify delivery: produit introuvable pour session=%s: %v", session.ID, err)
-		return
-	}
-	url, err := h.storage.GenerateSignedURL(ctx, product.FileKey, 5*time.Minute)
-	if err != nil {
-		log.Printf("yes notify delivery: URL signée échouée pour session=%s: %v", session.ID, err)
-		return
-	}
-	h.notifyDelivery(ctx, session, url)
-}
-
-func (h *YesHandler) notifyDelivery(ctx context.Context, session *model.ConversationalSession, downloadURL string) {
-	if h.deliveryFulfillURL == "" {
-		return
-	}
-	payload := map[string]interface{}{
-		"yes_conversation_id": session.YesConversationID,
-		"session_id":          session.ID,
-		"download_url":        downloadURL,
-	}
-	body, err := json.Marshal(payload)
-	if err != nil {
-		return
-	}
-
-	timeoutCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(timeoutCtx, http.MethodPost, h.deliveryFulfillURL, bytes.NewReader(body))
-	if err != nil {
-		return
-	}
-	req.Header.Set("Content-Type", "application/json")
-	ts := strconv.FormatInt(time.Now().Unix(), 10)
-	req.Header.Set("X-Timestamp", ts)
-
-	// Signé avec le secret DIARRA -> YES (côté sortant) — distinct du secret
-	// YES -> DIARRA vérifié par middleware.RequireYesClient (entrant), voir
-	// le commentaire de yes_client.go pour le principe de séparation.
-	outboundSecret := h.settingsRepo.Get(ctx, "yes_outbound_hmac_secret", "")
-	if outboundSecret == "" {
-		log.Printf("yes notify delivery: secret sortant introuvable, notification non envoyée pour session=%s", session.ID)
-		return
-	}
-	mac := hmac.New(sha256.New, []byte(outboundSecret))
-	mac.Write([]byte(ts + "." + string(body)))
-	req.Header.Set("X-Signature-SHA256", hex.EncodeToString(mac.Sum(nil)))
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Printf("yes notify delivery: %s injoignable pour session=%s: %v", h.deliveryFulfillURL, session.ID, err)
-		return
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode >= 300 {
-		log.Printf("yes notify delivery: %s a répondu %d pour session=%s", h.deliveryFulfillURL, resp.StatusCode, session.ID)
-	}
-}
-
-// SubmitVendorReview — POST /api/yes/vendors/review (YES -> DIARRA).
+// SubmitVendorReview — POST /api/vendor-chat/{id}/review (acheteur
+// connecté) : DIARRA recueille l'avis puis le relaie à YES.
 func (h *YesHandler) SubmitVendorReview(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
 	var input model.VendorReviewInput
 	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
 		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
 		return
 	}
-	if input.SessionID == "" || input.Rating < 1 || input.Rating > 5 {
+	if input.Rating < 1 || input.Rating > 5 {
 		http.Error(w, `{"error":"invalid_review"}`, http.StatusBadRequest)
 		return
 	}
-
-	session, err := h.yesRepo.FindSessionByID(r.Context(), input.SessionID)
+	sessionID := chi.URLParam(r, "id")
+	session, err := h.yesRepo.FindSessionByID(r.Context(), sessionID)
 	if err != nil {
 		http.Error(w, `{"error":"session_not_found"}`, http.StatusNotFound)
 		return
 	}
-	if session.Status != model.SessionCompleted {
-		http.Error(w, `{"error":"session_not_completed","detail":"un avis ne peut être laissé qu'après un achat abouti"}`, http.StatusConflict)
+	if session.BuyerID != userID {
+		http.Error(w, `{"error":"forbidden"}`, http.StatusForbidden)
+		return
+	}
+	if session.Status != model.SessionCompleted || session.YesSessionID == nil {
+		http.Error(w, `{"error":"session_not_completed"}`, http.StatusConflict)
 		return
 	}
 
@@ -442,6 +500,19 @@ func (h *YesHandler) SubmitVendorReview(w http.ResponseWriter, r *http.Request) 
 		}
 		http.Error(w, `{"error":"review_save_failed"}`, http.StatusInternalServerError)
 		return
+	}
+
+	if h.yesBusiness != nil {
+		yesSessionID := *session.YesSessionID
+		go func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+			defer cancel()
+			if err := h.yesBusiness.SubmitReview(ctx, yesSessionID, payment.SubmitReviewRequest{
+				Rating: input.Rating, Comment: input.Comment,
+			}); err != nil {
+				log.Printf("yes review: relais vers YES échoué pour session=%s: %v", session.ID, err)
+			}
+		}()
 	}
 
 	writeJSON(w, map[string]interface{}{"review": review})

@@ -1203,10 +1203,11 @@ func (h *WebhookHandler) confirmPaidSaleUnguarded(ctx context.Context, sale *mod
 	}
 	// Si cette vente provient du flux conversationnel YES (in-chat checkout),
 	// notifie YES pour qu'il affiche la carte de livraison dans le chat — no-op
-	// silencieux pour une vente classique (voir YesHandler.NotifyDelivery,
-	// qui vérifie lui-même l'existence d'une conversational_sessions liée).
+	// silencieux pour une vente classique (voir YesHandler.OnSaleConfirmed,
+	// qui vérifie lui-même l'existence d'une conversational_sessions liée —
+	// que ce soit le micro-ticket ou le solde).
 	if h.yesHandler != nil {
-		go h.yesHandler.NotifyDelivery(context.Background(), sale.ID)
+		go h.yesHandler.OnSaleConfirmed(context.Background(), sale)
 	}
 	return nil
 }

@@ -266,10 +266,28 @@ func main() {
 	// passerelle (voir gateway_relay.go) — même pattern de setter que
 	// SetWebhookHandler ci-dessus.
 	webhookHandler.SetGatewayRepo(gatewayRepo)
-	// Liaison DIARRA <-> YES Messaging — YES_DELIVERY_FULFILL_URL optionnel :
-	// vide = notifications sortantes désactivées (log seulement), utile en
-	// dev tant que YES n'a pas d'URL de test disponible.
-	yesHandler := handler.NewYesHandler(yesRepo, saleRepo, productRepo, referralRepo, settingsRepo, pawapay, s3, notifications, os.Getenv("YES_DELIVERY_FULFILL_URL"), os.Getenv("FRONTEND_URL"))
+	// Liaison DIARRA <-> YES.abmcy Business — DIARRA est le SEUL appelant des
+	// 5 endpoints YES Business (session/initiate, session/{id}/status,
+	// send-offer, review, delivery/fulfill), voir payment/yes_business.go et
+	// la doc d'intégration du 2026-09-22. yesBusiness reste nil tant que
+	// YES_BUSINESS_API_KEY/SECRET ne sont pas configurés (comme paypal/kpay) —
+	// YesHandler le gère nil-safe (payment_init_failed sur les routes
+	// concernées, rien de cassé pour le reste de DIARRA).
+	var yesBusiness *payment.YesBusinessClient
+	if os.Getenv("YES_BUSINESS_API_KEY") != "" && os.Getenv("YES_BUSINESS_SECRET") != "" {
+		baseURL := os.Getenv("YES_BUSINESS_BASE_URL")
+		if baseURL == "" {
+			baseURL = "https://yes-api.mahu.cards/business"
+		}
+		yesBusiness = payment.NewYesBusinessClient(payment.YesBusinessConfig{
+			BaseURL: baseURL,
+			APIKey:  os.Getenv("YES_BUSINESS_API_KEY"),
+			Secret:  os.Getenv("YES_BUSINESS_SECRET"),
+		})
+	} else {
+		log.Println("WARNING: YES Business non configuré, achat conversationnel désactivé")
+	}
+	yesHandler := handler.NewYesHandler(yesRepo, saleRepo, productRepo, userRepo, referralRepo, settingsRepo, pawapay, yesBusiness, s3, notifications, os.Getenv("FRONTEND_URL"))
 	webhookHandler.SetYesHandler(yesHandler)
 	feedHandler := handler.NewFeedHandler(productRepo, os.Getenv("FRONTEND_URL"))
 	donationHandler := handler.NewDonationHandler(donationRepo, settingsRepo, donationService)
@@ -325,8 +343,6 @@ func main() {
 	adminHandler.SetActivityRepo(repository.NewAdminActivityRepo(pool))
 	// Gestion des clients de la passerelle de paiement (ex. ABMCY Core).
 	adminHandler.SetGatewayRepo(gatewayRepo)
-	// Gestion des clients API YES Messaging (migration 037).
-	adminHandler.SetYesRepo(yesRepo)
 	// Step-up OTP email avant un versement direct (voir CreateDirectPayout).
 	adminHandler.SetOTPService(otpService)
 
@@ -658,10 +674,6 @@ func main() {
 			r.Get("/gateway/stats", adminHandler.GatewayStats)
 			r.Post("/gateway/transactions/{id}/check-provider", adminHandler.CheckGatewayTransactionProvider)
 
-			// Clients API YES Messaging (achat conversationnel) — voir
-			// /api/yes/* ci-dessous.
-			r.Post("/yes/clients", adminHandler.CreateYesClient)
-
 			// Programme de reversement automatique ("Fidélisation") — cagnotte,
 			// destinataires, historique des versements.
 			r.Get("/donations", donationHandler.Get)
@@ -741,17 +753,17 @@ func main() {
 		r.Get("/refunds/{client_ref}", gatewayHandler.GetTransaction(model.GatewayTxTypeRefund))
 	})
 
-	// Liaison DIARRA <-> YES Messaging (achat conversationnel "in-chat") —
-	// auth HMAC dédiée (X-API-Key + X-Signature-SHA256), volontairement
-	// séparée du système gateway_clients ci-dessus (protocole différent, voir
-	// migrations/037_yes_integration.sql). YES appelle ces deux endpoints ;
-	// le webhook sortant DIARRA -> YES (delivery/fulfill) part de
-	// YesHandler.NotifyDelivery, branché dans ConfirmPaidSale.
-	r.Route("/api/yes", func(r chi.Router) {
-		r.Use(middleware.RequireYesClient(yesHandler.LookupClient))
-		r.Post("/session/initiate", yesHandler.InitiateSession)
-		r.Post("/checkout/in-chat", yesHandler.InChatCheckout)
-		r.Post("/vendors/review", yesHandler.SubmitVendorReview)
+	// Achat conversationnel "in-chat" via YES.abmcy Business — routes DIARRA
+	// classiques (JWT normal), PAS d'auth HMAC entrante : DIARRA est le seul
+	// appelant des endpoints YES Business (voir payment/yes_business.go et
+	// la doc d'intégration du 2026-09-22, JOURNAL-MODIFICATIONS.md). YES
+	// n'appelle jamais DIARRA en retour.
+	r.Route("/api/vendor-chat", func(r chi.Router) {
+		r.Use(middleware.RequireAuth(jwtManager))
+		r.Post("/open", yesHandler.OpenConversation)
+		r.Post("/{id}/send-offer", yesHandler.SendOffer)
+		r.Post("/{id}/checkout", yesHandler.InitiateBalanceCheckout)
+		r.Post("/{id}/review", yesHandler.SubmitVendorReview)
 	})
 
 	r.Route("/api/automation/products", func(r chi.Router) {

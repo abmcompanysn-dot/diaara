@@ -9,10 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-var (
-	ErrYesClientNotFound = errors.New("yes api client not found")
-	ErrSessionNotFound   = errors.New("conversational session not found")
-)
+var ErrSessionNotFound = errors.New("conversational session not found")
 
 type YesIntegrationRepo struct {
 	pool *pgxpool.Pool
@@ -22,48 +19,11 @@ func NewYesIntegrationRepo(pool *pgxpool.Pool) *YesIntegrationRepo {
 	return &YesIntegrationRepo{pool: pool}
 }
 
-// --- Clients API (auth HMAC) -------------------------------------------------
-
-// CreateClient — apiKey en clair (identifiant public, pas secret en soi —
-// voir middleware.RequireYesClient) ; apiSecretHash est le HASH du secret
-// HMAC, jamais le secret brut (généré une seule fois côté handler admin,
-// voir AdminHandler.CreateYesClient).
-func (r *YesIntegrationRepo) CreateClient(ctx context.Context, name, apiKey, apiSecretHash string) (*model.YesAPIClient, error) {
-	c := &model.YesAPIClient{}
-	err := r.pool.QueryRow(ctx,
-		`INSERT INTO yes_api_clients (name, api_key, api_secret_hash) VALUES ($1, $2, $3)
-		 RETURNING id, name, api_key, api_secret_hash, is_active, created_at`,
-		name, apiKey, apiSecretHash,
-	).Scan(&c.ID, &c.Name, &c.APIKey, &c.APISecretHash, &c.IsActive, &c.CreatedAt)
-	return c, err
-}
-
-// FindClientByAPIKey — l'API key est en clair (identifiant, pas secret en
-// soi) ; le secret HMAC lui reste hashé, comparé côté middleware après
-// recalcul de la signature. Ne retourne que les clients actifs.
-func (r *YesIntegrationRepo) FindClientByAPIKey(ctx context.Context, apiKey string) (*model.YesAPIClient, error) {
-	c := &model.YesAPIClient{}
-	err := r.pool.QueryRow(ctx,
-		`SELECT id, name, api_key, api_secret_hash, is_active, created_at
-		 FROM yes_api_clients WHERE api_key = $1 AND is_active = TRUE`,
-		apiKey,
-	).Scan(&c.ID, &c.Name, &c.APIKey, &c.APISecretHash, &c.IsActive, &c.CreatedAt)
-	if err != nil {
-		if err == pgx.ErrNoRows {
-			return nil, ErrYesClientNotFound
-		}
-		return nil, err
-	}
-	return c, nil
-}
-
-// --- Sessions conversationnelles --------------------------------------------
-
-const sessionColumns = `id, yes_conversation_id, product_id, buyer_id, seller_id, referral_link_id, micro_ticket_sale_id, sale_id, status, created_at, updated_at`
+const sessionColumns = `id, yes_session_id, chat_url, product_id, buyer_id, seller_id, referral_link_id, micro_ticket_sale_id, sale_id, status, created_at, updated_at`
 
 func scanSession(row pgx.Row) (*model.ConversationalSession, error) {
 	s := &model.ConversationalSession{}
-	err := row.Scan(&s.ID, &s.YesConversationID, &s.ProductID, &s.BuyerID, &s.SellerID,
+	err := row.Scan(&s.ID, &s.YesSessionID, &s.ChatURL, &s.ProductID, &s.BuyerID, &s.SellerID,
 		&s.ReferralLinkID, &s.MicroTicketSaleID, &s.SaleID, &s.Status, &s.CreatedAt, &s.UpdatedAt)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -74,16 +34,16 @@ func scanSession(row pgx.Row) (*model.ConversationalSession, error) {
 	return s, nil
 }
 
-// CreateSession — posée juste après confirmation du paiement du micro-ticket
-// (voir YesHandler.InitiateSession) : micro_ticket_sale_id est déjà connu à
-// la création, sale_id (le solde) reste NULL jusqu'au checkout in-chat.
-func (r *YesIntegrationRepo) CreateSession(ctx context.Context, s *model.ConversationalSession) (*model.ConversationalSession, error) {
+// CreatePendingSession — posée dès OpenConversation, AVANT confirmation du
+// paiement micro-ticket (statut "pending", yes_session_id/chat_url encore
+// NULL). Voir OpenSessionAfterPayment pour la suite du cycle de vie.
+func (r *YesIntegrationRepo) CreatePendingSession(ctx context.Context, s *model.ConversationalSession) (*model.ConversationalSession, error) {
 	return scanSession(r.pool.QueryRow(ctx,
 		`INSERT INTO conversational_sessions
-		   (yes_conversation_id, product_id, buyer_id, seller_id, referral_link_id, micro_ticket_sale_id, status)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		   (product_id, buyer_id, seller_id, referral_link_id, micro_ticket_sale_id, status)
+		 VALUES ($1, $2, $3, $4, $5, 'pending')
 		 RETURNING `+sessionColumns,
-		s.YesConversationID, s.ProductID, s.BuyerID, s.SellerID, s.ReferralLinkID, s.MicroTicketSaleID, s.Status,
+		s.ProductID, s.BuyerID, s.SellerID, s.ReferralLinkID, s.MicroTicketSaleID,
 	))
 }
 
@@ -92,33 +52,67 @@ func (r *YesIntegrationRepo) FindSessionByID(ctx context.Context, id string) (*m
 		`SELECT `+sessionColumns+` FROM conversational_sessions WHERE id = $1`, id))
 }
 
+// FindSessionByMicroTicketSaleID — retrouve la session "pending" à partir de
+// la vente du MICRO-TICKET, utilisé par YesHandler.OnSaleConfirmed pour
+// savoir qu'une vente confirmée payée doit déclencher l'appel YES
+// session/initiate (voir migrations/038, contrainte UNIQUE sur cette colonne).
+func (r *YesIntegrationRepo) FindSessionByMicroTicketSaleID(ctx context.Context, saleID string) (*model.ConversationalSession, error) {
+	return scanSession(r.pool.QueryRow(ctx,
+		`SELECT `+sessionColumns+` FROM conversational_sessions WHERE micro_ticket_sale_id = $1`, saleID))
+}
+
 // FindSessionBySaleID — retrouve la session à partir de la vente du SOLDE
-// (sale_id), utilisé par YesHandler.NotifyDelivery pour savoir si une vente
-// confirmée payée provient du flux conversationnel (et notifier YES si
-// c'est le cas). Ne matche jamais sur micro_ticket_sale_id : le micro-ticket
-// ne déclenche jamais de livraison.
+// (sale_id), utilisé par YesHandler.OnSaleConfirmed pour savoir qu'une vente
+// confirmée payée doit déclencher l'appel YES delivery/fulfill.
 func (r *YesIntegrationRepo) FindSessionBySaleID(ctx context.Context, saleID string) (*model.ConversationalSession, error) {
 	return scanSession(r.pool.QueryRow(ctx,
 		`SELECT `+sessionColumns+` FROM conversational_sessions WHERE sale_id = $1`, saleID))
 }
 
-// CompleteSession — passe la session à "completed" avec la vente du solde
-// (in-chat checkout réussi). Idempotent au niveau appelant, comme
-// ConfirmPaidSale pour les ventes classiques : ne rien refaire si déjà
-// completed.
-func (r *YesIntegrationRepo) CompleteSession(ctx context.Context, sessionID, saleID string) error {
+// OpenSessionAfterPayment — passe "pending" -> "opened" avec les identifiants
+// renvoyés par YES session/initiate (appelé seulement APRÈS confirmation
+// réelle du paiement micro-ticket, voir YesHandler.OnSaleConfirmed).
+func (r *YesIntegrationRepo) OpenSessionAfterPayment(ctx context.Context, id, yesSessionID, chatURL string) error {
 	_, err := r.pool.Exec(ctx,
-		`UPDATE conversational_sessions SET sale_id = $2, status = 'completed', updated_at = now() WHERE id = $1`,
+		`UPDATE conversational_sessions SET yes_session_id = $2, chat_url = $3, status = 'opened', updated_at = now() WHERE id = $1`,
+		id, yesSessionID, chatURL)
+	return err
+}
+
+// SetOfferSent — passe la session à "offer_sent" après un appel YES
+// send-offer réussi (voir YesHandler.SendOffer).
+func (r *YesIntegrationRepo) SetOfferSent(ctx context.Context, id string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE conversational_sessions SET status = 'offer_sent', updated_at = now() WHERE id = $1`, id)
+	return err
+}
+
+// SetBalanceSale — pose sale_id (la vente du SOLDE, encore "pending") dès sa
+// création, pour que FindSessionBySaleID la retrouve ensuite — NE PASSE PAS
+// le statut à "completed" (voir CompleteSession), qui n'a lieu qu'à la
+// confirmation réelle du paiement.
+func (r *YesIntegrationRepo) SetBalanceSale(ctx context.Context, sessionID, saleID string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE conversational_sessions SET sale_id = $2, updated_at = now() WHERE id = $1`,
 		sessionID, saleID)
+	return err
+}
+
+// CompleteSession — passe la session à "completed" : appelé UNIQUEMENT après
+// confirmation réelle du paiement du solde ET succès de l'appel YES
+// delivery/fulfill (voir YesHandler.OnSaleConfirmed).
+func (r *YesIntegrationRepo) CompleteSession(ctx context.Context, sessionID string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE conversational_sessions SET status = 'completed', updated_at = now() WHERE id = $1`,
+		sessionID)
 	return err
 }
 
 // --- Avis vendeur -------------------------------------------------------------
 
 // CreateReview — un seul avis par session (contrainte UNIQUE session_id en
-// base, voir migrations/037_yes_integration.sql) ; une seconde tentative
-// pour la même session échoue avec une violation unique, à traiter côté
-// handler comme "avis déjà soumis" plutôt qu'une erreur serveur.
+// base) ; une seconde tentative échoue avec une violation unique, à traiter
+// côté handler comme "avis déjà soumis" plutôt qu'une erreur serveur.
 func (r *YesIntegrationRepo) CreateReview(ctx context.Context, rev *model.VendorReview) (*model.VendorReview, error) {
 	out := &model.VendorReview{}
 	err := r.pool.QueryRow(ctx,
@@ -134,8 +128,7 @@ func (r *YesIntegrationRepo) CreateReview(ctx context.Context, rev *model.Vendor
 }
 
 // VendorAverageRating — note moyenne + nombre d'avis d'un vendeur, calculée à
-// la volée (pas de colonne dénormalisée à maintenir — le volume d'avis reste
-// largement dans les capacités d'un COUNT/AVG direct).
+// la volée (pas de colonne dénormalisée à maintenir).
 func (r *YesIntegrationRepo) VendorAverageRating(ctx context.Context, vendorID string) (avg float64, count int, err error) {
 	err = r.pool.QueryRow(ctx,
 		`SELECT COALESCE(AVG(rating), 0), COUNT(*) FROM vendor_reviews WHERE vendor_id = $1`,
