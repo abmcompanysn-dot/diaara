@@ -18,6 +18,12 @@ interface PurchasedProduct {
   cover_image_key?: string;
 }
 
+interface VendorChatSession {
+  kind: 'micro_ticket' | 'balance';
+  status: string;
+  chat_url: string | null;
+}
+
 const POLL_INTERVAL_MS = 3000;
 const MAX_AUTO_POLLS = 20; // ~60s avant de proposer une vérification manuelle
 
@@ -40,6 +46,7 @@ export default function CheckoutReturnView() {
   const [productId, setProductId] = useState('');
   const [product, setProduct] = useState<PurchasedProduct | null>(null);
   const [provider, setProvider] = useState('');
+  const [vendorChat, setVendorChat] = useState<VendorChatSession | null>(null);
   const [timedOut, setTimedOut] = useState(false);
   const [checkingNow, setCheckingNow] = useState(false);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -68,11 +75,20 @@ export default function CheckoutReturnView() {
       try {
         const res = await api.getCheckoutStatus(token);
         const status = res.order?.status;
+        const chatSession: VendorChatSession | undefined = res.order?.vendor_chat_session;
         if (res.order?.product_id) setProductId(res.order.product_id);
         if (res.order?.payment_provider) setProvider(res.order.payment_provider);
+        if (chatSession) setVendorChat(chatSession);
         if (status === 'paid') {
-          stopPolling();
           setStep('done');
+          // Le micro-ticket confirmé "paid" ne veut pas dire que la session
+          // YES est déjà ouverte (l'appel session/initiate part en tâche de
+          // fond après confirmation, voir OnSaleConfirmed) — le polling
+          // continue jusqu'à ce que chat_url arrive, plutôt que de laisser
+          // l'acheteur sur un bouton d'ouverture qui tourne indéfiniment.
+          if (!chatSession || chatSession.chat_url) {
+            stopPolling();
+          }
         } else if (status === 'failed') {
           stopPolling();
           setError('Le paiement a échoué. Vérifiez votre solde et réessayez.');
@@ -121,6 +137,7 @@ export default function CheckoutReturnView() {
       const status = res.order?.status;
       if (res.order?.product_id) setProductId(res.order.product_id);
       if (res.order?.payment_provider) setProvider(res.order.payment_provider);
+      if (res.order?.vendor_chat_session) setVendorChat(res.order.vendor_chat_session);
       if (status === 'paid') {
         setStep('done');
       } else if (status === 'failed') {
@@ -188,7 +205,47 @@ export default function CheckoutReturnView() {
           </div>
         )}
 
-        {step === 'done' && (
+        {step === 'done' && vendorChat && (
+          <div className="text-center py-8">
+            <div className="mx-auto w-14 h-14 rounded-full bg-lime/20 flex items-center justify-center">
+              <CheckIcon size={32} className="text-green-700" />
+            </div>
+            <h1 className="font-display text-lg font-bold mt-4 text-green-950">
+              {vendorChat.kind === 'micro_ticket' ? 'Ticket payé' : 'Paiement confirmé'}
+            </h1>
+            <p className="mt-2 text-sm text-green-900/60 max-w-xs mx-auto">
+              {vendorChat.kind === 'micro_ticket'
+                ? 'Vous pouvez maintenant discuter avec le vendeur.'
+                : 'Le vendeur va confirmer la livraison dans la conversation.'}
+            </p>
+
+            <div className="mt-6">
+              {vendorChat.chat_url ? (
+                <Button
+                  render={
+                    <a href={vendorChat.chat_url} target="_blank" rel="noopener noreferrer" className="block w-full">
+                      Ouvrir la discussion
+                    </a>
+                  }
+                  className="w-full h-11 font-semibold bg-lime text-green-950 hover:bg-green-300"
+                />
+              ) : (
+                <div className="flex flex-col items-center gap-2 py-2">
+                  <div className="w-6 h-6 rounded-full border-2 border-green-100 border-t-lime animate-spin" />
+                  <p className="text-xs text-green-900/50">Ouverture de la discussion…</p>
+                </div>
+              )}
+            </div>
+
+            <div className="mt-4 flex flex-wrap justify-center gap-3">
+              <Button className="h-10" variant="outline" render={<Link href="/catalog" />}>
+                Continuer mes achats
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {step === 'done' && !vendorChat && (
           <div className="text-center py-8">
             {product ? (
               <div className="mx-auto w-20 h-20 rounded-xl overflow-hidden shadow-card">

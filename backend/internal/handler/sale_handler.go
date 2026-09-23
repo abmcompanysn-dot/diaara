@@ -50,6 +50,10 @@ type SaleHandler struct {
 	// (order_not_paid) et empêchant l'email de confirmation de partir
 	// (incident 2026-09-05).
 	webhook *WebhookHandler
+	// yesRepo : pour que CheckoutStatus sache si cette vente provient du
+	// flux conversationnel YES Business (micro-ticket ou solde) et renvoie
+	// le chat_url/statut de session correspondant — voir SetYesRepo.
+	yesRepo *repository.YesIntegrationRepo
 }
 
 func NewSaleHandler(
@@ -84,6 +88,12 @@ func NewSaleHandler(
 // oui — appelé une fois dans main.go juste après la construction des deux).
 func (h *SaleHandler) SetWebhookHandler(webhook *WebhookHandler) {
 	h.webhook = webhook
+}
+
+// SetYesRepo branche l'accès aux sessions conversationnelles YES Business
+// après coup (même pattern que SetWebhookHandler ci-dessus).
+func (h *SaleHandler) SetYesRepo(repo *repository.YesIntegrationRepo) {
+	h.yesRepo = repo
 }
 
 // resolveDepositProvider retourne l'adaptateur PaymentProvider (statut/
@@ -397,6 +407,27 @@ func (h *SaleHandler) CheckoutStatus(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// Vente issue du flux conversationnel YES Business (micro-ticket OU
+	// solde) : le checkout/return doit rediriger vers le chat plutôt que
+	// proposer un téléchargement — voir vendor_chat_session ci-dessous,
+	// utilisé par le frontend pour distinguer ce cas d'un achat classique.
+	var vendorChatSession map[string]interface{}
+	if h.yesRepo != nil {
+		if session, err := h.yesRepo.FindSessionByMicroTicketSaleID(r.Context(), sale.ID); err == nil {
+			vendorChatSession = map[string]interface{}{
+				"kind":     "micro_ticket",
+				"status":   session.Status,
+				"chat_url": session.ChatURL,
+			}
+		} else if session, err := h.yesRepo.FindSessionBySaleID(r.Context(), sale.ID); err == nil {
+			vendorChatSession = map[string]interface{}{
+				"kind":     "balance",
+				"status":   session.Status,
+				"chat_url": session.ChatURL,
+			}
+		}
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"order": map[string]interface{}{
@@ -410,7 +441,8 @@ func (h *SaleHandler) CheckoutStatus(w http.ResponseWriter, r *http.Request) {
 			// pour que le message reflète le VRAI prestataire ("PayPal" au lieu
 			// de "PawaPay" codé en dur, incident 2026-09-04) — jamais exposé
 			// avant, alors que resolveCheckoutProvider connaît déjà cette info.
-			"payment_provider": sale.PaymentProvider,
+			"payment_provider":    sale.PaymentProvider,
+			"vendor_chat_session": vendorChatSession,
 		},
 	})
 }

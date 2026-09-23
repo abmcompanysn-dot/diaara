@@ -261,6 +261,10 @@ func main() {
 	// exactement comme le ferait le webhook (statut + emails + notifs + cagnotte +
 	// cache), pas juste l'afficher (incident 2026-09-05).
 	saleHandler.SetWebhookHandler(webhookHandler)
+	// CheckoutStatus doit savoir si une vente provient du flux
+	// conversationnel YES pour renvoyer chat_url au frontend
+	// (checkout/return) au lieu de proposer un téléchargement.
+	saleHandler.SetYesRepo(yesRepo)
 	gatewayHandler := handler.NewGatewayHandler(gatewayRepo, pawapay, notifications, os.Getenv("FRONTEND_URL"))
 	// Relais des callbacks agrégateur vers les clients externes de la
 	// passerelle (voir gateway_relay.go) — même pattern de setter que
