@@ -287,6 +287,7 @@ func (h *YesHandler) openSessionOnYes(ctx context.Context, session *model.Conver
 		SellerHandle:      seller.Email, // handle YES = email DIARRA du vendeur (voir doc 2026-09-22)
 		BuyerExternalID:   buyer.ID,
 		BuyerDisplayName:  buyerDisplayName(buyer),
+		BuyerContactEmail: buyer.Email, // pour les notifications YES (conversation démarrée, offre) — voir doc 2026-09-23
 		MicroTicketAmount: microTicketAmount,
 		FinalAmount:       product.PriceCFA - microTicketAmount,
 		Currency:          "XOF",

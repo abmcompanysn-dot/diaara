@@ -60,11 +60,18 @@ const (
 )
 
 type InitiateSessionRequest struct {
-	ProductID         string `json:"product_id"`
-	ProductName       string `json:"product_name"`
-	SellerHandle      string `json:"seller_handle"`
-	BuyerExternalID   string `json:"buyer_external_id"`
-	BuyerDisplayName  string `json:"buyer_display_name"`
+	ProductID        string `json:"product_id"`
+	ProductName      string `json:"product_name"`
+	SellerHandle     string `json:"seller_handle"`
+	BuyerExternalID  string `json:"buyer_external_id"`
+	BuyerDisplayName string `json:"buyer_display_name"`
+	// BuyerContactEmail — email réel de l'acheteur (distinct de l'email
+	// synthétique interne diarra-<id>@partners.yes.abmcy que YES provisionne
+	// pour son compte) : sert à YES pour lui envoyer les emails de
+	// notification (conversation démarrée, offre reçue) — voir doc YES
+	// Business du 2026-09-23. Optionnel côté YES (best-effort), mais sans
+	// lui l'acheteur ne reçoit aucun email de leur part.
+	BuyerContactEmail string `json:"buyer_contact_email,omitempty"`
 	MicroTicketAmount int    `json:"micro_ticket_amount"`
 	FinalAmount       int    `json:"final_amount"`
 	Currency          string `json:"currency"`
