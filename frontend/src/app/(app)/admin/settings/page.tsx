@@ -114,6 +114,7 @@ export default function AdminSettingsPage() {
   const [error, setError] = useState('');
   const [commissionRate, setCommissionRate] = useState('15');
   const [cardPaymentEnabled, setCardPaymentEnabled] = useState(true);
+  const [yesMicroTicketAmount, setYesMicroTicketAmount] = useState('600');
   const [gatewayOps, setGatewayOps] = useState<Record<string, GatewayValue>>({});
   const [checkoutProviders, setCheckoutProviders] = useState<Record<string, CheckoutValue>>({});
   // Liens communauté WhatsApp : clé "general" + une clé par ISO3.
@@ -125,6 +126,7 @@ export default function AdminSettingsPage() {
       .then(({ settings }) => {
         setCommissionRate(settings.commission_rate_pct || '15');
         setCardPaymentEnabled(settings.card_payment_enabled !== 'false');
+        setYesMicroTicketAmount(settings.yes_micro_ticket_amount_cfa || '600');
         const g: Record<string, GatewayValue> = {};
         for (const op of OPERATORS) {
           const v = settings[gatewayOpKey(op.code)];
@@ -155,11 +157,17 @@ export default function AdminSettingsPage() {
       setError('Le taux de commission doit être entre 0 et 100.');
       return;
     }
+    const microTicket = parseInt(yesMicroTicketAmount, 10);
+    if (isNaN(microTicket) || microTicket <= 0) {
+      setError('Le montant du ticket de discussion (YES) doit être un nombre positif.');
+      return;
+    }
     setSaving(true);
     try {
       const values: Record<string, string> = {
         commission_rate_pct: String(rate),
         card_payment_enabled: String(cardPaymentEnabled),
+        yes_micro_ticket_amount_cfa: String(microTicket),
       };
       for (const op of OPERATORS) values[gatewayOpKey(op.code)] = gatewayOps[op.code] || 'pawapay';
       // KPay pas encore activé sur ce flux (voir la carte "Paiement à l'achat —
@@ -233,6 +241,30 @@ export default function AdminSettingsPage() {
                 step="0.1"
                 value={commissionRate}
                 onChange={(e) => setCommissionRate(e.target.value)}
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-card border-green-900/5">
+          <CardHeader>
+            <CardTitle>Ticket d&apos;entrée « Discuter avec le vendeur » (YES, bêta)</CardTitle>
+            <CardDescription>
+              Montant payé par l&apos;acheteur pour ouvrir une conversation avec le vendeur, avant
+              de payer le solde. Ne s&apos;applique qu&apos;aux vendeurs pour qui cette bêta est
+              activée (voir /admin/users).
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2 max-w-xs">
+              <Label htmlFor="yes-micro-ticket">Montant (FCFA)</Label>
+              <Input
+                id="yes-micro-ticket"
+                type="number"
+                min={1}
+                step="1"
+                value={yesMicroTicketAmount}
+                onChange={(e) => setYesMicroTicketAmount(e.target.value)}
               />
             </div>
           </CardContent>
