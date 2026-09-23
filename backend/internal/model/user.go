@@ -28,8 +28,12 @@ type User struct {
 	Roles               []string   `json:"roles,omitempty"`
 	FailedLoginAttempts int        `json:"-"`
 	LockedUntil         *time.Time `json:"locked_until,omitempty"`
-	CreatedAt           time.Time  `json:"created_at"`
-	UpdatedAt           time.Time  `json:"updated_at"`
+	// YesChatEnabled — achat conversationnel YES Business en bêta (migration
+	// 039) : réservé aux vendeurs choisis par un admin, pas ouvert par
+	// défaut. Voir YesHandler.OpenConversation, AdminHandler.SetYesChatEnabled.
+	YesChatEnabled bool      `json:"yes_chat_enabled"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 type RegisterInput struct {

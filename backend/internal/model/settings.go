@@ -38,6 +38,12 @@ const (
 	// serveur, en repliant le checkout sur PawaPay (mobile money) seul — voir
 	// SaleHandler.resolveCheckoutProvider et SaleHandler.CheckoutConfig.
 	SettingCardPaymentEnabled = "card_payment_enabled"
+
+	// SettingYesMicroTicketAmountCFA — montant du "ticket d'entrée" (achat
+	// conversationnel YES Business, bêta) qui ouvre la discussion avec le
+	// vendeur, en FCFA. Défaut 600 si absent (voir
+	// model.DefaultYesMicroTicketAmountCFA) — voir YesHandler.OpenConversation.
+	SettingYesMicroTicketAmountCFA = "yes_micro_ticket_amount_cfa"
 )
 
 // WhatsAppCommunitySettingKey — lien communauté WhatsApp spécifique à un pays

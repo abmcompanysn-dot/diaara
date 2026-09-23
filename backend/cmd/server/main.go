@@ -631,6 +631,9 @@ func main() {
 			r.Put("/users/{id}/role", adminHandler.SetRole)
 			r.Put("/users/{id}/suspend", adminHandler.SuspendUser)
 			r.Put("/users/{id}/reactivate", adminHandler.ReactivateUser)
+			// Achat conversationnel YES Business (bêta) — activable par
+			// vendeur, voir migration 039.
+			r.Put("/users/{id}/yes-chat", adminHandler.SetYesChatEnabled)
 			r.Post("/users/{id}/message", adminHandler.SendUserMessage)
 			r.Post("/broadcast", adminHandler.SendBroadcast)
 		})

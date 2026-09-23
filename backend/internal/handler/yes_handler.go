@@ -79,6 +79,12 @@ func (h *YesHandler) resolveReferralLink(ctx context.Context, referralLinkID, bu
 	return &id
 }
 
+// microTicketAmount — montant du ticket d'entrée, réglage admin modifiable
+// (voir model.SettingYesMicroTicketAmountCFA), pas une constante figée.
+func (h *YesHandler) microTicketAmount(ctx context.Context) int {
+	return int(h.settingsRepo.GetFloat(ctx, model.SettingYesMicroTicketAmountCFA, model.DefaultYesMicroTicketAmountCFA))
+}
+
 // OpenConversation — POST /api/vendor-chat/open (acheteur connecté) : le
 // clic "Discuter avec le vendeur" sur une fiche produit. Encaisse le
 // micro-ticket (PawaPay) et crée une session "pending". L'appel à YES
@@ -122,7 +128,16 @@ func (h *YesHandler) OpenConversation(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"cannot_chat_with_self"}`, http.StatusBadRequest)
 		return
 	}
-	if product.PriceCFA <= model.MicroTicketAmountCFA {
+	// Bêta réservée aux vendeurs choisis par un admin (voir migration 039,
+	// AdminHandler.SetYesChatEnabled) — pas ouvert à tout le catalogue.
+	seller, err := h.userRepo.FindByID(r.Context(), product.VendorID)
+	if err != nil || !seller.YesChatEnabled {
+		http.Error(w, `{"error":"vendor_chat_not_available"}`, http.StatusForbidden)
+		return
+	}
+
+	microTicketAmount := h.microTicketAmount(r.Context())
+	if product.PriceCFA <= microTicketAmount {
 		http.Error(w, `{"error":"price_too_low_for_conversational_flow"}`, http.StatusBadRequest)
 		return
 	}
@@ -130,17 +145,17 @@ func (h *YesHandler) OpenConversation(w http.ResponseWriter, r *http.Request) {
 	referralLinkID := h.resolveReferralLink(r.Context(), safeStr(input.ReferralLinkID), userID, product.ID)
 
 	rate := h.settingsRepo.GetFloat(r.Context(), model.SettingCommissionRatePct, service.DefaultPlatformFeePct)
-	rate = service.EffectivePlatformFeePct(model.MicroTicketAmountCFA, rate)
-	platformFee := int(float64(model.MicroTicketAmountCFA) * rate / 100.0)
+	rate = service.EffectivePlatformFeePct(microTicketAmount, rate)
+	platformFee := int(float64(microTicketAmount) * rate / 100.0)
 	checkoutToken := newUUID()
 	microSale := &model.Sale{
 		ProductID:        product.ID,
 		BuyerID:          userID,
 		BuyerName:        "Acheteur",
 		Country:          &input.Country,
-		AmountCFA:        model.MicroTicketAmountCFA,
+		AmountCFA:        microTicketAmount,
 		PlatformFeeCFA:   platformFee,
-		VendorAmountCFA:  model.MicroTicketAmountCFA - platformFee,
+		VendorAmountCFA:  microTicketAmount - platformFee,
 		PaymentProvider:  "pawapay",
 		PaymentReference: newUUID(),
 		CheckoutToken:    &checkoutToken,
@@ -265,14 +280,15 @@ func (h *YesHandler) openSessionOnYes(ctx context.Context, session *model.Conver
 		return
 	}
 
+	microTicketAmount := h.microTicketAmount(ctx)
 	resp, err := h.yesBusiness.InitiateSession(ctx, payment.InitiateSessionRequest{
 		ProductID:         product.ID,
 		ProductName:       product.Title,
 		SellerHandle:      seller.Email, // handle YES = email DIARRA du vendeur (voir doc 2026-09-22)
 		BuyerExternalID:   buyer.ID,
 		BuyerDisplayName:  buyerDisplayName(buyer),
-		MicroTicketAmount: model.MicroTicketAmountCFA,
-		FinalAmount:       product.PriceCFA - model.MicroTicketAmountCFA,
+		MicroTicketAmount: microTicketAmount,
+		FinalAmount:       product.PriceCFA - microTicketAmount,
 		Currency:          "XOF",
 	})
 	if err != nil {
@@ -394,7 +410,7 @@ func (h *YesHandler) InitiateBalanceCheckout(w http.ResponseWriter, r *http.Requ
 		http.Error(w, `{"error":"product_not_found"}`, http.StatusNotFound)
 		return
 	}
-	balance := product.PriceCFA - model.MicroTicketAmountCFA
+	balance := product.PriceCFA - h.microTicketAmount(r.Context())
 	if balance <= 0 {
 		http.Error(w, `{"error":"invalid_balance"}`, http.StatusConflict)
 		return

@@ -2001,6 +2001,34 @@ func (h *AdminHandler) SetAdminStatus(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(map[string]string{"status": "admin_status_updated"})
 }
 
+// SetYesChatEnabled — PUT /api/admin/users/{id}/yes-chat (scope "users") :
+// active/désactive l'achat conversationnel YES Business (bêta, migration
+// 039) pour un vendeur précis — pas ouvert à tout le catalogue par défaut,
+// voir YesHandler.OpenConversation.
+func (h *AdminHandler) SetYesChatEnabled(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	var input struct {
+		Enabled bool `json:"enabled"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+	if err := h.userRepo.SetYesChatEnabled(r.Context(), id, input.Enabled); err != nil {
+		http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	verb := "activé"
+	if !input.Enabled {
+		verb = "désactivé"
+	}
+	h.logActivity(middleware.GetUserID(r.Context()), "yes_chat_toggled", "user", id,
+		fmt.Sprintf("Achat conversationnel YES %s pour ce vendeur", verb))
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"status": "yes_chat_updated"})
+}
+
 // SetAdminPermission — PUT /api/admin/admins/{id}/permission (RequireUnrestrictedAdmin)
 func (h *AdminHandler) SetAdminPermission(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")

@@ -70,12 +70,12 @@ type ConversationalSession struct {
 	UpdatedAt         time.Time                   `json:"updated_at"`
 }
 
-// MicroTicketAmountCFA — montant fixe du "ticket d'entrée" qui ouvre la
-// conversation avec le vendeur (équivalent ~1 USD, facturé en XOF fixe
-// comme le reste de DIARRA — voir décision du 2026-09-22). Même plancher que
+// DefaultYesMicroTicketAmountCFA — valeur par défaut si l'admin n'a jamais
+// touché au réglage (voir model.SettingYesMicroTicketAmountCFA) : équivalent
+// ~1 USD, facturé en XOF fixe comme le reste de DIARRA. Même plancher que
 // PayPalPayoutMinCFA : en dessous, les frais prestataire dépassent l'intérêt
 // du micro-paiement.
-const MicroTicketAmountCFA = 600
+const DefaultYesMicroTicketAmountCFA = 600
 
 // OpenConversationInput — POST /api/vendor-chat/open (acheteur DIARRA ->
 // DIARRA, PAS vers YES directement) : le clic "Discuter avec le vendeur"

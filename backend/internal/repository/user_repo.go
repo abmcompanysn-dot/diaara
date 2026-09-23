@@ -143,14 +143,21 @@ func (r *UserRepo) SetPayoutPayPalEmail(ctx context.Context, userID, email strin
 func (r *UserRepo) FindByID(ctx context.Context, id string) (*model.User, error) {
 	user := &model.User{}
 	err := r.pool.QueryRow(ctx,
-		`SELECT id, email, phone, display_name, shop_name, facebook_pixel_id, google_tag_id, password_hash, is_admin, email_verified_at, phone_verified_at, failed_login_attempts, locked_until, created_at, updated_at
+		`SELECT id, email, phone, display_name, shop_name, facebook_pixel_id, google_tag_id, password_hash, is_admin, email_verified_at, phone_verified_at, failed_login_attempts, locked_until, yes_chat_enabled, created_at, updated_at
 		 FROM users WHERE id = $1`,
 		id,
-	).Scan(&user.ID, &user.Email, &user.Phone, &user.DisplayName, &user.ShopName, &user.FacebookPixelID, &user.GoogleTagID, &user.PasswordHash, &user.IsAdmin, &user.EmailVerifiedAt, &user.PhoneVerifiedAt, &user.FailedLoginAttempts, &user.LockedUntil, &user.CreatedAt, &user.UpdatedAt)
+	).Scan(&user.ID, &user.Email, &user.Phone, &user.DisplayName, &user.ShopName, &user.FacebookPixelID, &user.GoogleTagID, &user.PasswordHash, &user.IsAdmin, &user.EmailVerifiedAt, &user.PhoneVerifiedAt, &user.FailedLoginAttempts, &user.LockedUntil, &user.YesChatEnabled, &user.CreatedAt, &user.UpdatedAt)
 	if err != nil {
 		return nil, ErrUserNotFound
 	}
 	return user, nil
+}
+
+// SetYesChatEnabled — bascule le flag bêta d'achat conversationnel YES
+// Business pour un vendeur (voir migration 039, AdminHandler côté route).
+func (r *UserRepo) SetYesChatEnabled(ctx context.Context, userID string, enabled bool) error {
+	_, err := r.pool.Exec(ctx, `UPDATE users SET yes_chat_enabled = $2, updated_at = now() WHERE id = $1`, userID, enabled)
+	return err
 }
 
 // SetAdTracking enregistre le Facebook Pixel / Google Tag propres au
