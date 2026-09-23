@@ -401,6 +401,26 @@ export const api = {
   remindVendorSale: (id: string) =>
     fetchApi<{ ok: boolean }>(`/api/vendor/sales/${id}/remind`, { method: 'POST' }),
 
+  // "Dernières mises à jour" — annonces admin visibles sur le dashboard vendeur
+  getVendorAnnouncements: () =>
+    fetchApi<{ announcements: { id: string; title: string; body: string; created_at: string }[] }>(
+      '/api/vendor/announcements'
+    ),
+
+  getAdminAnnouncements: () =>
+    fetchApi<{ announcements: { id: string; title: string; body: string; created_at: string }[] }>(
+      '/api/admin/announcements'
+    ),
+
+  createAnnouncement: (data: { title: string; body: string }) =>
+    fetchApi<{ announcement: { id: string; title: string; body: string; created_at: string } }>(
+      '/api/admin/announcements',
+      { method: 'POST', body: JSON.stringify(data) }
+    ),
+
+  deleteAnnouncement: (id: string) =>
+    fetchApi<{ status: string }>(`/api/admin/announcements/${id}`, { method: 'DELETE' }),
+
   // Notifications in-app
   getNotifications: () => fetchApi<{ notifications: any[] }>('/api/notifications'),
 

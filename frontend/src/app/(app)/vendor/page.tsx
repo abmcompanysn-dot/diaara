@@ -31,6 +31,13 @@ interface Notification {
   created_at: string;
 }
 
+interface Announcement {
+  id: string;
+  title: string;
+  body: string;
+  created_at: string;
+}
+
 // Le solde et l'activité récente ne se rafraîchissaient qu'au montage de la
 // page : après une vente, le vendeur recevait bien la notification (email +
 // in-app) mais le dashboard restait figé sur les anciens chiffres tant qu'il
@@ -60,6 +67,7 @@ export default function VendorHomePage() {
   const [tier, setTier] = useState('');
   const [hideBalance, setHideBalance] = useState(false);
   const [activity, setActivity] = useState<Notification[]>([]);
+  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -68,12 +76,17 @@ export default function VendorHomePage() {
     const load = async (showSpinner: boolean) => {
       if (showSpinner) setLoading(true);
       try {
-        const [earnings, notifs] = await Promise.all([api.getVendorEarnings(), api.getNotifications()]);
+        const [earnings, notifs, ann] = await Promise.all([
+          api.getVendorEarnings(),
+          api.getNotifications(),
+          api.getVendorAnnouncements(),
+        ]);
         if (cancelled) return;
         setAvailable(earnings.available);
         setTotalEarned(earnings.total_earned);
         setTier(earnings.tier || '');
         setActivity(notifs.notifications.slice(0, 5));
+        setAnnouncements(ann.announcements.slice(0, 3));
       } catch {
         // Le tableau de bord reste utilisable même si une des deux requêtes échoue
         // (on garde les dernières valeurs connues plutôt que de les effacer).
@@ -187,6 +200,23 @@ export default function VendorHomePage() {
 
       <div className="bg-white rounded-t-[20px] pt-5 pb-10 px-4 sm:px-6">
         <div className="max-w-2xl mx-auto">
+          {announcements.length > 0 && (
+            <div className="mb-6">
+              <h2 className="font-bold text-[15px] text-[#0B2318] mb-3">Dernières mises à jour</h2>
+              <div className="flex flex-col gap-2">
+                {announcements.map((a) => (
+                  <div key={a.id} className="rounded-xl bg-[#F4FBF7] border border-[#DCEAE2] p-3">
+                    <p className="text-[13.5px] font-semibold text-[#0B2318]">{a.title}</p>
+                    <p className="text-[12.5px] text-[#4C6459] mt-1 whitespace-pre-wrap">{a.body}</p>
+                    <p className="text-[10.5px] text-[#4C6459]/70 mt-1.5">
+                      {new Date(a.created_at).toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' })}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="flex items-center justify-between mb-3">
             <h2 className="font-bold text-[15px] text-[#0B2318]">Activité récente</h2>
             <Link href="/vendor/notifications" className="font-mono text-xs font-bold text-[#0E6B46]">
