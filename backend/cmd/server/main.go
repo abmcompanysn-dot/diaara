@@ -291,7 +291,7 @@ func main() {
 	} else {
 		log.Println("WARNING: YES Business non configuré, achat conversationnel désactivé")
 	}
-	yesHandler := handler.NewYesHandler(yesRepo, saleRepo, productRepo, userRepo, referralRepo, settingsRepo, pawapay, yesBusiness, s3, notifications, os.Getenv("FRONTEND_URL"))
+	yesHandler := handler.NewYesHandler(yesRepo, saleRepo, productRepo, userRepo, referralRepo, settingsRepo, pawapay, yesBusiness, s3, notifications, os.Getenv("FRONTEND_URL"), os.Getenv("API_URL"))
 	webhookHandler.SetYesHandler(yesHandler)
 	feedHandler := handler.NewFeedHandler(productRepo, os.Getenv("FRONTEND_URL"))
 	donationHandler := handler.NewDonationHandler(donationRepo, settingsRepo, donationService)

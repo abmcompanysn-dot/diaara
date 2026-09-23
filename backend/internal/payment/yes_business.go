@@ -60,8 +60,14 @@ const (
 )
 
 type InitiateSessionRequest struct {
-	ProductID        string `json:"product_id"`
-	ProductName      string `json:"product_name"`
+	ProductID   string `json:"product_id"`
+	ProductName string `json:"product_name"`
+	// ProductImageURL — URL publique et directement chargeable dans un <img>
+	// (pas d'auth requise côté DIARRA pour la charger, voir doc YES Business
+	// 2026-09-23) : alimente le widget produit épinglé en haut du fil de
+	// conversation. Optionnel — champ vide si le produit n'a pas de
+	// couverture (voir GetCoverURL).
+	ProductImageURL  string `json:"product_image_url,omitempty"`
 	SellerHandle     string `json:"seller_handle"`
 	BuyerExternalID  string `json:"buyer_external_id"`
 	BuyerDisplayName string `json:"buyer_display_name"`
@@ -113,16 +119,16 @@ func (c *YesBusinessClient) SendOffer(ctx context.Context, sessionID string) (*S
 }
 
 type SessionStatusResponse struct {
-	SessionID         string  `json:"session_id"`
-	Status            string  `json:"status"`
-	ProductID         string  `json:"product_id"`
-	SellerHandle      string  `json:"seller_handle"`
-	BuyerHandle       string  `json:"buyer_handle"`
-	ConversationID    string  `json:"conversation_id"`
-	DeliveryURL       string  `json:"delivery_url"`
-	DeliveryExpiresAt string  `json:"delivery_expires_at"`
-	CreatedAt         string  `json:"created_at"`
-	UpdatedAt         string  `json:"updated_at"`
+	SessionID         string `json:"session_id"`
+	Status            string `json:"status"`
+	ProductID         string `json:"product_id"`
+	SellerHandle      string `json:"seller_handle"`
+	BuyerHandle       string `json:"buyer_handle"`
+	ConversationID    string `json:"conversation_id"`
+	DeliveryURL       string `json:"delivery_url"`
+	DeliveryExpiresAt string `json:"delivery_expires_at"`
+	CreatedAt         string `json:"created_at"`
+	UpdatedAt         string `json:"updated_at"`
 }
 
 // GetSessionStatus — GET /api/v1/yes/session/{id}/status. Filet de sécurité

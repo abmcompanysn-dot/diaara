@@ -11,6 +11,11 @@ data:
   # frontend est servi par le Worker Cloudflare "diaara" sur diarra.app ; le
   # backend est joint sur api.diarra.app (ingress ci-contre + Caddy).
   FRONTEND_URL: "https://diarra.app"
+  # Domaine public du backend lui-même — utilisé pour construire des URLs
+  # absolues d'assets publics vers des services tiers (ex. product_image_url
+  # envoyé à YES Business, voir internal/handler/yes_handler.go), qui ne
+  # peuvent pas résoudre un chemin relatif.
+  API_URL: "https://api.diarra.app"
   CORS_ALLOWED_ORIGINS: "https://diarra.app"
   # Défaut sandbox si absent du Secret — mettre l'URL live via le Secret en prod.
   PAYPAL_BASE_URL: "https://api-m.paypal.com"

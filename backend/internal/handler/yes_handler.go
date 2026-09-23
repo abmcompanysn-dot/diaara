@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/diarra/backend/internal/email"
@@ -41,6 +42,12 @@ type YesHandler struct {
 	storage       *storage.S3Storage
 	notifications *email.NotificationService
 	frontendURL   string
+	// apiURL — domaine public du backend (ex. https://api.diarra.app),
+	// utilisé pour construire product_image_url envoyé à YES
+	// session/initiate : doit être une URL publique chargeable dans un
+	// <img> sans authentification (voir doc YES Business 2026-09-23,
+	// GET /api/products/{id}/cover est déjà public — OptionalAuth).
+	apiURL string
 }
 
 func NewYesHandler(
@@ -55,12 +62,13 @@ func NewYesHandler(
 	storageSvc *storage.S3Storage,
 	notifications *email.NotificationService,
 	frontendURL string,
+	apiURL string,
 ) *YesHandler {
 	return &YesHandler{
 		yesRepo: yesRepo, saleRepo: saleRepo, productRepo: productRepo, userRepo: userRepo,
 		referralRepo: referralRepo, settingsRepo: settingsRepo,
 		pawapay: pawapay, yesBusiness: yesBusiness, storage: storageSvc, notifications: notifications,
-		frontendURL: frontendURL,
+		frontendURL: frontendURL, apiURL: strings.TrimSuffix(apiURL, "/"),
 	}
 }
 
@@ -259,6 +267,18 @@ func (h *YesHandler) OnSaleConfirmed(ctx context.Context, sale *model.Sale) {
 	// Ni l'un ni l'autre : vente classique, hors flux conversationnel.
 }
 
+// productImageURL — URL publique de la couverture produit (GET /api/products/{id}/cover
+// est déjà public, OptionalAuth), envoyée à YES pour le widget produit
+// épinglé dans le fil de conversation. Vide si pas de couverture ou si
+// h.apiURL n'est pas configuré — YES traite ce cas normalement (pas
+// d'erreur, juste pas d'image, voir doc 2026-09-23).
+func (h *YesHandler) productImageURL(product *model.Product) string {
+	if product.CoverImageKey == nil || *product.CoverImageKey == "" || h.apiURL == "" {
+		return ""
+	}
+	return h.apiURL + "/api/products/" + product.ID + "/cover"
+}
+
 // openSessionOnYes — micro-ticket confirmé payé : DIARRA appelle enfin YES
 // session/initiate (jamais avant, voir doc : "un paiement échoué en amont ne
 // produit aucun webhook" — DIARRA ne veut pas ouvrir de session YES pour un
@@ -284,7 +304,8 @@ func (h *YesHandler) openSessionOnYes(ctx context.Context, session *model.Conver
 	resp, err := h.yesBusiness.InitiateSession(ctx, payment.InitiateSessionRequest{
 		ProductID:         product.ID,
 		ProductName:       product.Title,
-		SellerHandle:      seller.Email, // handle YES = email DIARRA du vendeur (voir doc 2026-09-22)
+		ProductImageURL:   h.productImageURL(product), // widget produit dans le fil de conversation — voir doc 2026-09-23
+		SellerHandle:      seller.Email,               // handle YES = email DIARRA du vendeur (voir doc 2026-09-22)
 		BuyerExternalID:   buyer.ID,
 		BuyerDisplayName:  buyerDisplayName(buyer),
 		BuyerContactEmail: buyer.Email, // pour les notifications YES (conversation démarrée, offre) — voir doc 2026-09-23
