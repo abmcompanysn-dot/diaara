@@ -114,7 +114,13 @@ export default function CheckoutView() {
         buyer_name: name,
         country,
         payment_method: paymentMethod,
-        ...(guest ? { buyer_email: email } : {}),
+        // Toujours envoyé quand connu, même si `guest` (dérivé de la simple
+        // présence d'un token en localStorage) pense l'utilisateur connecté :
+        // un token expiré/invalide fait retomber le backend (OptionalAuth)
+        // en flux invité côté serveur, qui exige alors buyer_email — sans
+        // ça la commande échoue en 400 alors que le champ email, désactivé
+        // côté UI, semblait déjà rempli (placeholder).
+        ...(email ? { buyer_email: email } : {}),
         ...(isFlexible ? { amount_cfa: amountToPay } : {}),
       });
       const redirectUrl = result.checkout?.redirect_url;
