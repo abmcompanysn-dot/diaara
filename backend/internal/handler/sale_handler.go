@@ -689,6 +689,15 @@ func (h *SaleHandler) initiateDirectDeposit(ctx context.Context, sale *model.Sal
 			{"saleId": sale.ID},
 		},
 	}
+	// Wave (REDIRECT_AUTH) exige successfulUrl/failedUrl — tout autre
+	// opérateur (PROVIDER_AUTH : Orange/MTN/Moov/Free) les REJETTE en
+	// MISSING_PARAMETER... en fait il les rejette s'ils sont absents alors
+	// qu'il ne les attend pas non plus : ne les envoyer QUE pour Wave.
+	if strings.HasPrefix(operator, "WAVE_") {
+		returnURL := h.frontendURL + "/checkout/return?token=" + *sale.CheckoutToken
+		req.SuccessfulUrl = returnURL
+		req.FailedUrl = returnURL
+	}
 	resp, err := h.pawapay.InitiateDeposit(ctx, req)
 	if err != nil {
 		return "", err

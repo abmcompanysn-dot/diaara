@@ -61,6 +61,14 @@ type DepositRequest struct {
 	CustomerMessage   string         `json:"customerMessage,omitempty"`
 	Metadata          []MetadataItem `json:"metadata,omitempty"`
 	CallbackUrl       string         `json:"callbackUrl,omitempty"`
+	// SuccessfulUrl/FailedUrl : requis uniquement pour un opérateur
+	// REDIRECT_AUTH (Wave, voir doc PawaPay "Redirection based flows",
+	// guide Deposits) — confirmé par MISSING_PARAMETER en prod le
+	// 2026-09-24 quand on les omettait pour Wave. Ne pas les envoyer pour
+	// un opérateur PROVIDER_AUTH (Orange/MTN/Moov/Free), qui ne les attend
+	// pas.
+	SuccessfulUrl string `json:"successfulUrl,omitempty"`
+	FailedUrl     string `json:"failedUrl,omitempty"`
 }
 
 type Payer struct {
