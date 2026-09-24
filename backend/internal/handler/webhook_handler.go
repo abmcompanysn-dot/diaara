@@ -1272,11 +1272,19 @@ func (h *WebhookHandler) notifyPaid(ctx context.Context, sale *model.Sale) {
 
 	buyer, err := h.userRepo.FindByID(ctx, sale.BuyerID)
 	if err == nil && buyer.Email != "" && sale.CheckoutToken != nil {
+		// Micro-ticket YES : ce paiement ne couvre que l'accès à la
+		// conversation, jamais le produit — ne PAS joindre le fichier
+		// complet (voir YesHandler.IsMicroTicketSale, incident 2026-09-24).
+		isMicroTicket := h.yesHandler != nil && h.yesHandler.IsMicroTicketSale(ctx, sale.ID)
+		var attachment *email.Attachment
+		if !isMicroTicket {
+			attachment = h.fileAttachment(ctx, product.FileKey)
+		}
 		// Erreur ignorée jusqu'ici (sale=... sans aucune trace nulle part si
 		// Resend/SMTP échoue — incident 2026-09-05 : un acheteur payé n'a
 		// jamais reçu son email de confirmation, sans que rien ne le signale
 		// côté serveur). Désormais loguée explicitement.
-		if sendErr := h.notifications.SendOrderConfirmed(ctx, buyer.Email, sale.BuyerName, product.Title, sale.AmountCFA, *sale.CheckoutToken, h.fileAttachment(ctx, product.FileKey)); sendErr != nil {
+		if sendErr := h.notifications.SendOrderConfirmed(ctx, buyer.Email, sale.BuyerName, product.Title, sale.AmountCFA, *sale.CheckoutToken, attachment, isMicroTicket); sendErr != nil {
 			log.Printf("email confirmation achat: échec envoi à %s pour sale=%s: %v", buyer.Email, sale.ID, sendErr)
 		}
 	}
@@ -1294,6 +1302,14 @@ func (h *WebhookHandler) notifyPaid(ctx context.Context, sale *model.Sale) {
 
 // fileAttachment télécharge le fichier acheté pour le joindre à l'email de
 // confirmation. Retourne nil (pas d'échec) si le stockage n'est pas
+// IsMicroTicketSale délègue à YesHandler (voir YesHandler.IsMicroTicketSale)
+// — exposé ici pour les appelants hors package qui n'ont accès qu'à
+// WebhookHandler, pas directement à yesHandler (champ privé), ex.
+// AdminHandler.deliverManuallyConfirmed.
+func (h *WebhookHandler) IsMicroTicketSale(ctx context.Context, saleID string) bool {
+	return h.yesHandler != nil && h.yesHandler.IsMicroTicketSale(ctx, saleID)
+}
+
 // configuré ou si le téléchargement échoue — l'email part quand même, avec
 // juste le lien de téléchargement (voir NotificationService.SendOrderConfirmed).
 func (h *WebhookHandler) fileAttachment(ctx context.Context, fileKey string) *email.Attachment {

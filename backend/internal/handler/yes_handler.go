@@ -216,6 +216,18 @@ func safeStr(s *string) string {
 	return *s
 }
 
+// IsMicroTicketSale — vrai si sale.ID correspond au micro-ticket d'une
+// session conversationnelle YES (voir WebhookHandler.notifyPaid, qui doit
+// alors ne PAS joindre le fichier complet du produit à l'email de
+// confirmation : le micro-ticket ne paie que l'accès à la conversation,
+// jamais le produit — sa livraison n'arrive qu'après paiement du solde,
+// voir fulfillDelivery). Incident 2026-09-24 : l'email de confirmation du
+// micro-ticket joignait le fichier complet, contournant le paiement du solde.
+func (h *YesHandler) IsMicroTicketSale(ctx context.Context, saleID string) bool {
+	_, err := h.yesRepo.FindSessionByMicroTicketSaleID(ctx, saleID)
+	return err == nil
+}
+
 // OnSaleConfirmed — appelé par ConfirmPaidSale (webhook_handler.go) pour
 // TOUTE vente confirmée payée, pas seulement celles du flux conversationnel
 // — no-op silencieux si sale.ID ne correspond à aucune conversational_sessions

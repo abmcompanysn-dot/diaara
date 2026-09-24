@@ -1514,7 +1514,12 @@ func (h *AdminHandler) deliverManuallyConfirmed(ctx context.Context, sale *model
 	buyer, err := h.userRepo.FindByID(ctx, sale.BuyerID)
 	if err == nil && buyer.Email != "" && sale.CheckoutToken != nil {
 		var attachment *email.Attachment
-		if h.files != nil && product.FileKey != "" {
+		// Micro-ticket YES : ce paiement ne couvre que l'accès à la
+		// conversation, jamais le produit — ne PAS joindre le fichier
+		// complet (même correctif que WebhookHandler.notifyPaid, incident
+		// 2026-09-24).
+		isMicroTicket := h.webhook != nil && h.webhook.IsMicroTicketSale(ctx, sale.ID)
+		if !isMicroTicket && h.files != nil && product.FileKey != "" {
 			if content, derr := h.files.Download(ctx, product.FileKey); derr == nil {
 				ctype := mime.TypeByExtension(filepath.Ext(product.FileKey))
 				if ctype == "" {
@@ -1527,7 +1532,7 @@ func (h *AdminHandler) deliverManuallyConfirmed(ctx context.Context, sale *model
 				}
 			}
 		}
-		_ = h.notifications.SendOrderConfirmed(ctx, buyer.Email, sale.BuyerName, product.Title, sale.AmountCFA, *sale.CheckoutToken, attachment)
+		_ = h.notifications.SendOrderConfirmed(ctx, buyer.Email, sale.BuyerName, product.Title, sale.AmountCFA, *sale.CheckoutToken, attachment, isMicroTicket)
 	}
 
 	if vendor, verr := h.userRepo.FindByID(ctx, product.VendorID); verr == nil && vendor.Email != "" {

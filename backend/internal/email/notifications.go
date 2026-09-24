@@ -206,22 +206,40 @@ const MaxEmailAttachmentBytes = 10 * 1024 * 1024 // 10 Mo
 // session pour accéder à son espace connecté. Si le fichier acheté est fourni
 // (attachment non nil) et sous la limite de taille, il est aussi joint
 // directement à l'email — le lien reste affiché dans tous les cas.
-func (n *NotificationService) SendOrderConfirmed(ctx context.Context, to, buyerName, productTitle string, amountCFA int, checkoutToken string, attachment *Attachment) error {
+// isMicroTicket : true pour un ticket d'entrée YES Business (voir
+// YesHandler.IsMicroTicketSale) — ce paiement n'ouvre que la conversation
+// avec le vendeur, jamais le produit, le texte de l'email le reflète.
+func (n *NotificationService) SendOrderConfirmed(ctx context.Context, to, buyerName, productTitle string, amountCFA int, checkoutToken string, attachment *Attachment, isMicroTicket bool) error {
 	link := fmt.Sprintf("%s/checkout/return?token=%s", n.frontendURL, checkoutToken)
-	note := ""
-	if attachment != nil {
-		note = " Il est aussi joint à cet email."
-	}
-	body := fmt.Sprintf(`<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Bonjour %s, votre commande a été payée avec succès. Téléchargez votre fichier depuis le bouton ci-dessous.%s</p>
+	var subject, title, body, cta string
+	if isMicroTicket {
+		subject = "Discussion ouverte"
+		title = "Ticket payé !"
+		body = fmt.Sprintf(`<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Bonjour %s, votre ticket d&rsquo;entrée a été payé avec succès. Vous pouvez maintenant discuter avec le vendeur avant d&rsquo;acheter.</p>
+<div style="margin:16px 0 0;padding:16px 18px;background-color:#f2f7f4;border-left:4px solid #0f7a50;border-radius:8px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#0a3225;">
+<strong>%s</strong><br>
+Montant payé : <strong>%s FCFA</strong>
+</div>`, buyerName, productTitle, formatCFA(amountCFA))
+		cta = "Ouvrir la discussion"
+	} else {
+		subject = "Commande confirmée"
+		title = "Paiement confirmé !"
+		note := ""
+		if attachment != nil {
+			note = " Il est aussi joint à cet email."
+		}
+		body = fmt.Sprintf(`<p style="margin:0;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">Bonjour %s, votre commande a été payée avec succès. Téléchargez votre fichier depuis le bouton ci-dessous.%s</p>
 <div style="margin:16px 0 0;padding:16px 18px;background-color:#f2f7f4;border-left:4px solid #0f7a50;border-radius:8px;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.6;color:#0a3225;">
 <strong>%s</strong><br>
 Montant payé : <strong>%s FCFA</strong>
 </div>`, buyerName, note, productTitle, formatCFA(amountCFA))
-	inner := contentHTML("Paiement confirmé !", body, "Télécharger mon fichier", link)
-	if attachment != nil && len(attachment.Content) <= MaxEmailAttachmentBytes {
-		return n.client.Send(ctx, to, "Commande confirmée", n.renderEmail(inner), *attachment)
+		cta = "Télécharger mon fichier"
 	}
-	return n.client.Send(ctx, to, "Commande confirmée", n.renderEmail(inner))
+	inner := contentHTML(title, body, cta, link)
+	if attachment != nil && len(attachment.Content) <= MaxEmailAttachmentBytes {
+		return n.client.Send(ctx, to, subject, n.renderEmail(inner), *attachment)
+	}
+	return n.client.Send(ctx, to, subject, n.renderEmail(inner))
 }
 
 // SendPaymentFailed — envoyé quand PawaPay confirme l'échec d'un paiement
