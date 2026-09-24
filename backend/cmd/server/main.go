@@ -27,8 +27,8 @@ import (
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	chiCors "github.com/go-chi/cors"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 func main() {
@@ -115,6 +115,9 @@ func main() {
 	// Liaison DIARRA <-> YES Messaging (achat conversationnel "in-chat") —
 	// voir migration 037 et internal/handler/yes_handler.go.
 	yesRepo := repository.NewYesIntegrationRepo(pool)
+	// Notifications push navigateur — voir migration 042 et
+	// internal/service/push_service.go.
+	pushRepo := repository.NewPushRepo(pool)
 
 	// OTP service
 	otpService := otp.NewService(otpRepo)
@@ -293,6 +296,15 @@ func main() {
 	}
 	yesHandler := handler.NewYesHandler(yesRepo, saleRepo, productRepo, userRepo, referralRepo, settingsRepo, pawapay, yesBusiness, s3, notifications, os.Getenv("FRONTEND_URL"), os.Getenv("API_URL"))
 	webhookHandler.SetYesHandler(yesHandler)
+	// Notifications push navigateur — reste nil-safe (pushSvc.NotifyUser
+	// no-op) tant que VAPID_PUBLIC_KEY/PRIVATE_KEY ne sont pas configurées.
+	if os.Getenv("VAPID_PUBLIC_KEY") != "" && os.Getenv("VAPID_PRIVATE_KEY") != "" {
+		pushSvc := service.NewPushService(pushRepo, os.Getenv("VAPID_PUBLIC_KEY"), os.Getenv("VAPID_PRIVATE_KEY"), os.Getenv("VAPID_SUBJECT"))
+		webhookHandler.SetPushService(pushSvc)
+	} else {
+		log.Println("WARNING: VAPID non configuré, notifications push désactivées")
+	}
+	pushHandler := handler.NewPushHandler(pushRepo)
 	feedHandler := handler.NewFeedHandler(productRepo, os.Getenv("FRONTEND_URL"))
 	donationHandler := handler.NewDonationHandler(donationRepo, settingsRepo, donationService)
 	// "Dernières mises à jour" admin -> dashboard vendeur (pas d'email).
@@ -528,6 +540,13 @@ func main() {
 		r.Get("/unread-count", notificationHandler.UnreadCount)
 		r.Put("/read-all", notificationHandler.MarkAllRead)
 		r.Put("/{id}/read", notificationHandler.MarkRead)
+	})
+
+	// Notifications push navigateur (Web Push + VAPID) — voir migration 042.
+	r.Route("/api/push", func(r chi.Router) {
+		r.Use(middleware.RequireAuth(jwtManager))
+		r.Post("/subscribe", pushHandler.Subscribe)
+		r.Post("/unsubscribe", pushHandler.Unsubscribe)
 	})
 
 	// Closer (affiliation) — liens + stats (email vérifié requis)

@@ -15,6 +15,7 @@ import { Toaster } from '@/components/ui/toast';
 import { PageHeader } from '@/components/page-header';
 import { PayoutMethodForm } from '@/components/payout-method-form';
 import { PhoneVerifyForm } from '@/components/phone-verify-form';
+import { NotificationSettings } from '@/components/notification-settings';
 import { StoreIcon, CheckIcon, WalletIcon } from '@/components/icons';
 import { friendlyError } from '@/lib/error-messages';
 import { findPayoutOperator, maskPhone } from '@/lib/operators';
@@ -265,6 +266,8 @@ export default function AccountPage() {
               )}
             </CardContent>
           </Card>
+
+          <NotificationSettings />
 
           <Button variant="outline" className="h-10" render={<Link href="/dashboard" />}>
             ← Mon espace

@@ -52,6 +52,10 @@ type WebhookHandler struct {
 	// conversationnel "in-chat" (migration 037). nil-safe : une vente
 	// classique (pas de conversational_sessions liée) n'est jamais affectée.
 	yesHandler *YesHandler
+	// pushSvc : notifications Web Push, en plus des notifications in-app
+	// (voir notify ci-dessous) — nil-safe si les clés VAPID ne sont pas
+	// configurées.
+	pushSvc *service.PushService
 }
 
 // SetGatewayRepo branche le relais webhook agrégateur -> client externe
@@ -66,6 +70,11 @@ func (h *WebhookHandler) SetGatewayRepo(repo *repository.GatewayRepo) {
 // paiement).
 func (h *WebhookHandler) SetYesHandler(yh *YesHandler) {
 	h.yesHandler = yh
+}
+
+// SetPushService branche l'envoi de notifications push (voir notify).
+func (h *WebhookHandler) SetPushService(svc *service.PushService) {
+	h.pushSvc = svc
 }
 
 func NewWebhookHandler(
@@ -131,6 +140,13 @@ func (h *WebhookHandler) notify(ctx context.Context, userID, notifType, title, b
 		return
 	}
 	h.notificationRepo.Create(ctx, userID, notifType, title, body, link)
+	// Push navigateur en plus de la notification in-app, sans distinction de
+	// type (demande du 2026-09-24) — en tâche de fond : ne doit jamais
+	// ralentir/faire échouer le chemin appelant (confirmation de paiement,
+	// etc.), le push reste un canal "en plus", jamais critique.
+	if h.pushSvc != nil {
+		go h.pushSvc.NotifyUser(context.Background(), userID, title, body, link, notifType)
+	}
 }
 
 // verifyRequest applique les mêmes vérifications (digest + IP) que le webhook

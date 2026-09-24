@@ -534,6 +534,21 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  // Notifications push navigateur (Web Push + VAPID) — accessible à tout
+  // utilisateur connecté. Persiste côté backend l'abonnement créé par
+  // lib/push.ts (subscribeToPush), qui ne gère que le navigateur.
+  subscribeToPushNotifications: (subscription: PushSubscriptionJSON) =>
+    fetchApi<{ status: string }>('/api/push/subscribe', {
+      method: 'POST',
+      body: JSON.stringify(subscription),
+    }),
+
+  unsubscribeFromPushNotifications: (endpoint: string) =>
+    fetchApi<{ status: string }>('/api/push/unsubscribe', {
+      method: 'POST',
+      body: JSON.stringify({ endpoint }),
+    }),
+
   // Closer (affiliation)
   getCloserLinks: () => fetchApi<{ links: any[] }>('/api/closer/links'),
 

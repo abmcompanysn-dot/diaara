@@ -1,9 +1,11 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import { AuthProvider } from '@/lib/auth';
 import { MobileMenuProvider } from '@/lib/mobile-menu-context';
 import { Header } from '@/components/header';
 import { Footer } from '@/components/footer';
 import { SupportContactWidget } from '@/components/support-contact-widget';
+import { ServiceWorkerRegistration } from '@/components/service-worker-registration';
+import { InstallPromptBanner } from '@/components/install-prompt-banner';
 import './globals.css';
 
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://diarra.app';
@@ -18,6 +20,12 @@ export const metadata: Metadata = {
   },
   description: SITE_DESCRIPTION,
   keywords: ['Diarra', 'DIARRA', 'marketplace numérique Afrique', 'vendre produits numériques', 'mobile money'],
+  manifest: '/manifest.json',
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'black-translucent',
+    title: 'DIARRA',
+  },
   openGraph: {
     type: 'website',
     locale: 'fr_FR',
@@ -29,6 +37,15 @@ export const metadata: Metadata = {
   alternates: {
     canonical: SITE_URL,
   },
+};
+
+// themeColor/viewport ne peuvent plus être dans `metadata` depuis Next.js 14
+// (dépréciation), doivent passer par cet export dédié — sert à la fois à
+// colorer la barre d'adresse navigateur et l'écran de démarrage PWA.
+export const viewport: Viewport = {
+  themeColor: '#0A4F35',
+  width: 'device-width',
+  initialScale: 1,
 };
 
 // Aide Google à reconnaître "Diarra" comme nom de marque/site (utile pour
@@ -89,6 +106,8 @@ export default function RootLayout({
             <div className="flex-1">{children}</div>
             <Footer />
             <SupportContactWidget />
+            <ServiceWorkerRegistration />
+            <InstallPromptBanner />
           </MobileMenuProvider>
         </AuthProvider>
       </body>
