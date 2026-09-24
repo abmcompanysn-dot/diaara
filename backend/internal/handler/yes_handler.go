@@ -110,7 +110,7 @@ func (h *YesHandler) OpenConversation(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
 		return
 	}
-	if input.ProductID == "" || input.Country == "" {
+	if input.ProductID == "" || input.Country == "" || input.Phone == "" || input.Operator == "" {
 		http.Error(w, `{"error":"missing_required_fields"}`, http.StatusBadRequest)
 		return
 	}
@@ -187,47 +187,18 @@ func (h *YesHandler) OpenConversation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	page, err := h.createPaymentPage(r.Context(), created, product, input.Country)
+	returnURL := h.frontendURL + "/checkout/return?token=" + *created.CheckoutToken
+	redirectURL, err := h.pawapay.InitiateDirectDeposit(r.Context(), created.PaymentReference, input.Country, input.Phone, input.Operator, created.AmountCFA, returnURL)
 	if err != nil {
+		log.Printf("yes micro-ticket payment_init_failed sale=%s: %v", created.ID, err)
+		h.saleRepo.UpdateStatus(r.Context(), created.ID, string(model.SaleFailed))
 		http.Error(w, `{"error":"payment_init_failed"}`, http.StatusBadGateway)
 		return
 	}
 
 	writeJSON(w, map[string]interface{}{
 		"micro_ticket_sale_id": created.ID,
-		"payment_redirect_url": page.RedirectUrl,
-	})
-}
-
-// createPaymentPage — même construction que SaleHandler.initiatePaymentPage
-// (PawaPay Payment Page hébergée). ReturnUrl pointe vers /checkout/return
-// (page DIARRA existante) — PawaPay exige une URL http(s) valide.
-func (h *YesHandler) createPaymentPage(ctx context.Context, sale *model.Sale, product *model.Product, country string) (*payment.PaymentPageResponse, error) {
-	reason := payment.SanitizePaymentReason(product.Title, 50)
-	currency := payment.CountryCurrency[country]
-	if currency == "" {
-		currency = "XOF"
-	}
-	amount, err := payment.ConvertFromXOF(sale.AmountCFA, currency)
-	if err != nil {
-		return nil, err
-	}
-	returnURL := h.frontendURL + "/checkout/return?token=" + *sale.CheckoutToken
-	return h.pawapay.CreatePaymentPage(ctx, payment.PaymentPageRequest{
-		DepositId: sale.PaymentReference,
-		ReturnUrl: returnURL,
-		AmountDetails: payment.AmountDetails{
-			Amount:   amount,
-			Currency: currency,
-		},
-		Country:         country,
-		Reason:          reason,
-		CustomerMessage: "PAIEMENT DIARRA",
-		Language:        "FR",
-		Metadata: []payment.MetadataItem{
-			{"saleId": sale.ID},
-			{"product": product.Title},
-		},
+		"payment_redirect_url": redirectURL,
 	})
 }
 
@@ -420,11 +391,17 @@ func (h *YesHandler) InitiateBalanceCheckout(w http.ResponseWriter, r *http.Requ
 	}
 
 	var input struct {
-		Country string `json:"country"`
+		Country  string `json:"country"`
+		Phone    string `json:"phone"`
+		Operator string `json:"operator"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&input)
 	if input.Country == "" {
 		input.Country = "SEN"
+	}
+	if input.Phone == "" || input.Operator == "" {
+		http.Error(w, `{"error":"missing_required_fields"}`, http.StatusBadRequest)
+		return
 	}
 
 	product, err := h.productRepo.FindByID(r.Context(), session.ProductID)
@@ -474,8 +451,11 @@ func (h *YesHandler) InitiateBalanceCheckout(w http.ResponseWriter, r *http.Requ
 		http.Error(w, `{"error":"sale_creation_failed"}`, http.StatusInternalServerError)
 		return
 	}
-	page, err := h.createPaymentPage(r.Context(), created, product, input.Country)
+	returnURL := h.frontendURL + "/checkout/return?token=" + *created.CheckoutToken
+	redirectURL, err := h.pawapay.InitiateDirectDeposit(r.Context(), created.PaymentReference, input.Country, input.Phone, input.Operator, created.AmountCFA, returnURL)
 	if err != nil {
+		log.Printf("yes balance payment_init_failed sale=%s: %v", created.ID, err)
+		h.saleRepo.UpdateStatus(r.Context(), created.ID, string(model.SaleFailed))
 		http.Error(w, `{"error":"payment_init_failed"}`, http.StatusBadGateway)
 		return
 	}
@@ -488,7 +468,7 @@ func (h *YesHandler) InitiateBalanceCheckout(w http.ResponseWriter, r *http.Requ
 
 	writeJSON(w, map[string]interface{}{
 		"sale_id":              created.ID,
-		"payment_redirect_url": page.RedirectUrl,
+		"payment_redirect_url": redirectURL,
 	})
 }
 

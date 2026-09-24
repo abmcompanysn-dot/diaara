@@ -505,6 +505,27 @@ func (r *UserRepo) ListAdminIDs(ctx context.Context) ([]string, error) {
 	return ids, rows.Err()
 }
 
+// ListVendorIDs — identifiants de tous les comptes ayant le rôle vendeur,
+// pour les notifications adressées à l'ensemble des vendeurs (voir
+// AnnouncementHandler.Create).
+func (r *UserRepo) ListVendorIDs(ctx context.Context) ([]string, error) {
+	rows, err := r.pool.Query(ctx, `SELECT user_id FROM user_roles WHERE role = 'vendeur'`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	ids := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
 // ListAdminEmails — emails de tous les administrateurs (notifications par
 // email, ex: nouvelle inscription — voir AuthService.notifyAdminsOfSignup).
 func (r *UserRepo) ListAdminEmails(ctx context.Context) ([]string, error) {

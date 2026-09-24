@@ -210,8 +210,20 @@ export const api = {
 
   // Achat conversationnel "in-chat" via YES Business (bêta, réservé aux
   // vendeurs activés — voir Product.yes_chat_enabled)
-  openVendorConversation: (data: { product_id: string; referral_link_id?: string; country: string }) =>
+  openVendorConversation: (data: {
+    product_id: string;
+    referral_link_id?: string;
+    country: string;
+    phone: string;
+    operator: string;
+  }) =>
     fetchApi<{ micro_ticket_sale_id: string; payment_redirect_url: string }>('/api/vendor-chat/open', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  payVendorChatBalance: (sessionId: string, data: { country: string; phone: string; operator: string }) =>
+    fetchApi<{ sale_id: string; payment_redirect_url: string }>(`/api/vendor-chat/${sessionId}/checkout`, {
       method: 'POST',
       body: JSON.stringify(data),
     }),
@@ -422,12 +434,12 @@ export const api = {
     ),
 
   getAdminAnnouncements: () =>
-    fetchApi<{ announcements: { id: string; title: string; body: string; created_at: string }[] }>(
+    fetchApi<{ announcements: { id: string; title: string; body: string; image_key?: string; created_at: string }[] }>(
       '/api/admin/announcements'
     ),
 
-  createAnnouncement: (data: { title: string; body: string }) =>
-    fetchApi<{ announcement: { id: string; title: string; body: string; created_at: string } }>(
+  createAnnouncement: (data: { title: string; body: string; image_key?: string }) =>
+    fetchApi<{ announcement: { id: string; title: string; body: string; image_key?: string; created_at: string } }>(
       '/api/admin/announcements',
       { method: 'POST', body: JSON.stringify(data) }
     ),

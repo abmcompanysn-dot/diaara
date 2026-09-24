@@ -38,6 +38,12 @@ self.addEventListener('push', (event) => {
     body: payload.body || '',
     icon: payload.icon || '/brand/diarra-icon.png',
     badge: '/brand/diarra-icon.png',
+    // image : grande illustration affichée dans le corps de la notification
+    // (photo du produit vendu, contrairement à icon qui reste une petite
+    // pastille ronde) — absente sur la plupart des notifications système
+    // (Windows/macOS/Android l'ignorent hors Chrome Android), dégradation
+    // silencieuse si non fournie.
+    image: payload.image || undefined,
     data: { url: payload.url || '/' },
     tag: payload.tag, // regroupe/remplace les notifications du même type (ex. "order_paid")
   };

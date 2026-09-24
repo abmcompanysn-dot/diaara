@@ -296,10 +296,12 @@ func main() {
 	}
 	yesHandler := handler.NewYesHandler(yesRepo, saleRepo, productRepo, userRepo, referralRepo, settingsRepo, pawapay, yesBusiness, s3, notifications, os.Getenv("FRONTEND_URL"), os.Getenv("API_URL"))
 	webhookHandler.SetYesHandler(yesHandler)
+	webhookHandler.SetAPIURL(os.Getenv("API_URL"))
 	// Notifications push navigateur — reste nil-safe (pushSvc.NotifyUser
 	// no-op) tant que VAPID_PUBLIC_KEY/PRIVATE_KEY ne sont pas configurées.
+	var pushSvc *service.PushService
 	if os.Getenv("VAPID_PUBLIC_KEY") != "" && os.Getenv("VAPID_PRIVATE_KEY") != "" {
-		pushSvc := service.NewPushService(pushRepo, os.Getenv("VAPID_PUBLIC_KEY"), os.Getenv("VAPID_PRIVATE_KEY"), os.Getenv("VAPID_SUBJECT"))
+		pushSvc = service.NewPushService(pushRepo, os.Getenv("VAPID_PUBLIC_KEY"), os.Getenv("VAPID_PRIVATE_KEY"), os.Getenv("VAPID_SUBJECT"))
 		webhookHandler.SetPushService(pushSvc)
 	} else {
 		log.Println("WARNING: VAPID non configuré, notifications push désactivées")
@@ -307,8 +309,9 @@ func main() {
 	pushHandler := handler.NewPushHandler(pushRepo)
 	feedHandler := handler.NewFeedHandler(productRepo, os.Getenv("FRONTEND_URL"))
 	donationHandler := handler.NewDonationHandler(donationRepo, settingsRepo, donationService)
-	// "Dernières mises à jour" admin -> dashboard vendeur (pas d'email).
-	announcementHandler := handler.NewAnnouncementHandler(repository.NewAnnouncementRepo(pool))
+	// "Dernières mises à jour" admin -> dashboard vendeur : notifie tous les
+	// vendeurs (in-app + push) à chaque publication.
+	announcementHandler := handler.NewAnnouncementHandler(repository.NewAnnouncementRepo(pool), userRepo, notificationRepo, s3, pushSvc, os.Getenv("API_URL"))
 
 	// Temps réel (LISTEN/NOTIFY + WebSocket)
 	hub := realtime.NewHub(pool)
@@ -457,6 +460,10 @@ func main() {
 
 	// Boutique publique d'un vendeur (partageable via QR code)
 	r.Get("/api/vendors/{id}/shop", productHandler.Shop)
+
+	// Image jointe à une annonce admin — publique (chargée directement dans
+	// la notification push, sans authentification possible à ce stade).
+	r.Get("/api/announcements/{id}/image", announcementHandler.Image)
 
 	// Événements (public) — liste, fiche (id ou slug), inscription aux
 	// offres gratuites (même régime que /api/summit/register : limite de

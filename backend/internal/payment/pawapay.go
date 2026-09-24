@@ -192,6 +192,96 @@ func (c *PawaPayClient) GetDepositStatus(ctx context.Context, depositId string) 
 	return &result, nil
 }
 
+// InitiateDirectDeposit — dépôt PawaPay direct de bout en bout (POST
+// /v2/deposits + polling authorizationUrl pour Wave) : l'acheteur a choisi
+// son opérateur et saisi son numéro sur DIARRA (checkout classique ou flux
+// YES Business), au lieu de la Payment Page hébergée dont le widget de
+// sélection d'opérateur échouait systématiquement en 400 (incident
+// 2026-09-24). Factorisé ici pour être appelé identiquement par
+// SaleHandler et YesHandler. returnURL sert de successfulUrl/failedUrl pour
+// Wave (REDIRECT_AUTH) uniquement — PROVIDER_AUTH (Orange/MTN/Moov/Free)
+// les REJETTE en MISSING_PARAMETER s'ils sont envoyés.
+func (c *PawaPayClient) InitiateDirectDeposit(ctx context.Context, depositId, country, phone, operator string, amountCFA int, returnURL string) (string, error) {
+	dialCode := ""
+	for _, op := range XOFOperators {
+		if op.Provider == operator {
+			dialCode = op.DialCode
+			break
+		}
+	}
+	if dialCode == "" {
+		return "", fmt.Errorf("opérateur inconnu: %s", operator)
+	}
+	msisdn, err := NormalizePhone(dialCode, phone)
+	if err != nil {
+		return "", err
+	}
+
+	currency := CountryCurrency[country]
+	if currency == "" {
+		currency = "XOF"
+	}
+	amount, err := ConvertFromXOF(amountCFA, currency)
+	if err != nil {
+		return "", err
+	}
+
+	req := DepositRequest{
+		DepositId: depositId,
+		Payer: Payer{
+			Type: "MMO",
+			AccountDetails: AccountDetails{
+				PhoneNumber: msisdn,
+				Provider:    operator,
+			},
+		},
+		Amount:          amount,
+		Currency:        currency,
+		CustomerMessage: "PAIEMENT DIARRA",
+		Metadata: []MetadataItem{
+			{"saleId": depositId},
+		},
+	}
+	if strings.HasPrefix(operator, "WAVE_") {
+		req.SuccessfulUrl = returnURL
+		req.FailedUrl = returnURL
+	}
+	resp, err := c.InitiateDeposit(ctx, req)
+	if err != nil {
+		return "", err
+	}
+	if resp.Status == "REJECTED" {
+		code := "rejected"
+		if resp.FailureReason != nil {
+			code = resp.FailureReason.FailureCode
+		}
+		return "", fmt.Errorf("%w: rejected: %s", ErrPaymentFailed, code)
+	}
+
+	if resp.NextStep == "GET_AUTH_URL" {
+		for i := 0; i < 10; i++ {
+			time.Sleep(500 * time.Millisecond)
+			status, err := c.GetDepositStatus(ctx, depositId)
+			if err != nil || status.Data == nil {
+				continue
+			}
+			if status.Data.AuthorizationUrl != "" {
+				return status.Data.AuthorizationUrl, nil
+			}
+			if status.Data.Status == "FAILED" {
+				code := "failed"
+				if status.Data.FailureReason != nil {
+					code = status.Data.FailureReason.FailureCode
+				}
+				return "", fmt.Errorf("%w: %s", ErrPaymentFailed, code)
+			}
+		}
+		return "", errors.New("authorization_url_timeout")
+	}
+
+	return returnURL, nil
+}
+
 func (c *PawaPayClient) setHeaders(req *http.Request) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)

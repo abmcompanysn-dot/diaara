@@ -18,6 +18,7 @@ interface Announcement {
   id: string;
   title: string;
   body: string;
+  image_key?: string;
   created_at: string;
 }
 
@@ -29,6 +30,9 @@ export default function AdminAnnouncementsPage() {
   const [loading, setLoading] = useState(true);
   const [title, setTitle] = useState('');
   const [body, setBody] = useState('');
+  const [imageKey, setImageKey] = useState('');
+  const [imagePreview, setImagePreview] = useState('');
+  const [uploadingImage, setUploadingImage] = useState(false);
   const [publishing, setPublishing] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<Announcement | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -52,15 +56,35 @@ export default function AdminAnnouncementsPage() {
     load();
   }, []);
 
+  const handleImageSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0] || null;
+    if (!f) return;
+    setImagePreview(URL.createObjectURL(f));
+    setUploadingImage(true);
+    setError('');
+    try {
+      const form = new FormData();
+      form.append('file', f);
+      const res = await api.adminUploadSponsorLogo(form);
+      setImageKey(res.file_key);
+    } catch (err: any) {
+      setError(friendlyError(err));
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
   const handlePublish = async () => {
     setError('');
     setMessage('');
     setPublishing(true);
     try {
-      await api.createAnnouncement({ title: title.trim(), body: body.trim() });
+      await api.createAnnouncement({ title: title.trim(), body: body.trim(), image_key: imageKey || undefined });
       setTitle('');
       setBody('');
-      setMessage('Publié — visible immédiatement sur le dashboard de tous les vendeurs.');
+      setImageKey('');
+      setImagePreview('');
+      setMessage('Publié — notification envoyée immédiatement à tous les vendeurs.');
       await load();
     } catch (err: any) {
       setError(friendlyError(err));
@@ -119,7 +143,18 @@ export default function AdminAnnouncementsPage() {
               <Label htmlFor="ann-body">Message</Label>
               <Textarea id="ann-body" value={body} onChange={(e) => setBody(e.target.value)} rows={4} placeholder="Détails du message…" />
             </div>
-            <Button onClick={handlePublish} disabled={!canPublish || publishing}>
+            <div className="space-y-2">
+              <Label htmlFor="ann-image">Image (optionnelle)</Label>
+              <p className="text-xs text-green-900/50">Affichée dans la notification push envoyée aux vendeurs.</p>
+              <div className="flex items-center gap-3">
+                {imagePreview && (
+                  <img src={imagePreview} alt="" className="w-14 h-14 rounded-lg object-cover border border-green-900/10" />
+                )}
+                <Input id="ann-image" type="file" accept="image/*" onChange={handleImageSelect} disabled={uploadingImage} />
+              </div>
+              {uploadingImage && <p className="text-xs text-green-900/50">Envoi de l&apos;image…</p>}
+            </div>
+            <Button onClick={handlePublish} disabled={!canPublish || publishing || uploadingImage}>
               {publishing ? 'Publication…' : 'Publier'}
             </Button>
           </CardContent>

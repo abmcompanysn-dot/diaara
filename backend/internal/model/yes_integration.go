@@ -86,6 +86,10 @@ type OpenConversationInput struct {
 	ProductID      string  `json:"product_id"`
 	ReferralLinkID *string `json:"referral_link_id,omitempty"`
 	Country        string  `json:"country"`
+	// Phone/Operator : dépôt PawaPay direct (POST /v2/deposits), voir
+	// SaleHandler.initiateDirectDeposit — mêmes conventions.
+	Phone    string `json:"phone"`
+	Operator string `json:"operator"`
 }
 
 // SendOfferInput — POST /api/vendor-chat/{session_id}/send-offer (vendeur ->

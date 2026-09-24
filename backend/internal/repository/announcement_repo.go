@@ -15,15 +15,15 @@ func NewAnnouncementRepo(pool *pgxpool.Pool) *AnnouncementRepo {
 	return &AnnouncementRepo{pool: pool}
 }
 
-const announcementColumns = `id, title, body, created_by, created_at`
+const announcementColumns = `id, title, body, image_key, created_by, created_at`
 
 // Create — posée par un admin (voir AdminHandler.CreateAnnouncement).
 func (r *AnnouncementRepo) Create(ctx context.Context, createdBy string, input model.CreateAnnouncementInput) (*model.Announcement, error) {
 	a := &model.Announcement{}
 	err := r.pool.QueryRow(ctx,
-		`INSERT INTO announcements (title, body, created_by) VALUES ($1, $2, $3) RETURNING `+announcementColumns,
-		input.Title, input.Body, createdBy,
-	).Scan(&a.ID, &a.Title, &a.Body, &a.CreatedBy, &a.CreatedAt)
+		`INSERT INTO announcements (title, body, image_key, created_by) VALUES ($1, $2, $3, $4) RETURNING `+announcementColumns,
+		input.Title, input.Body, input.ImageKey, createdBy,
+	).Scan(&a.ID, &a.Title, &a.Body, &a.ImageKey, &a.CreatedBy, &a.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -43,7 +43,7 @@ func (r *AnnouncementRepo) List(ctx context.Context) ([]*model.Announcement, err
 	out := []*model.Announcement{}
 	for rows.Next() {
 		a := &model.Announcement{}
-		if err := rows.Scan(&a.ID, &a.Title, &a.Body, &a.CreatedBy, &a.CreatedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.Title, &a.Body, &a.ImageKey, &a.CreatedBy, &a.CreatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, a)

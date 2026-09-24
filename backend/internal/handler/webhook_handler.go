@@ -56,6 +56,11 @@ type WebhookHandler struct {
 	// (voir notify ci-dessous) — nil-safe si les clés VAPID ne sont pas
 	// configurées.
 	pushSvc *service.PushService
+	// apiURL : domaine public du backend, pour construire l'URL de l'image
+	// produit jointe aux notifications push order_paid/sale (voir notifyWithImage,
+	// même construction que YesHandler.productImageURL). Vide = pas d'image
+	// (dégradation silencieuse, comportement inchangé).
+	apiURL string
 }
 
 // SetGatewayRepo branche le relais webhook agrégateur -> client externe
@@ -75,6 +80,11 @@ func (h *WebhookHandler) SetYesHandler(yh *YesHandler) {
 // SetPushService branche l'envoi de notifications push (voir notify).
 func (h *WebhookHandler) SetPushService(svc *service.PushService) {
 	h.pushSvc = svc
+}
+
+// SetAPIURL branche l'URL publique du backend (voir apiURL ci-dessus).
+func (h *WebhookHandler) SetAPIURL(apiURL string) {
+	h.apiURL = apiURL
 }
 
 func NewWebhookHandler(
@@ -136,6 +146,13 @@ func (h *WebhookHandler) verifyKPayRequest(w http.ResponseWriter, r *http.Reques
 // notify insère une notification in-app, en tâche de fond, sans jamais faire
 // échouer l'appelant (les notifications sont secondaires au flux principal).
 func (h *WebhookHandler) notify(ctx context.Context, userID, notifType, title, body, link string) {
+	h.notifyWithImage(ctx, userID, notifType, title, body, link, "")
+}
+
+// notifyWithImage — comme notify, avec une grande illustration (image,
+// photo du produit vendu/acheté) affichée dans le corps de la notification
+// push (voir public/sw.js).
+func (h *WebhookHandler) notifyWithImage(ctx context.Context, userID, notifType, title, body, link, image string) {
 	if h.notificationRepo == nil || userID == "" {
 		return
 	}
@@ -145,8 +162,18 @@ func (h *WebhookHandler) notify(ctx context.Context, userID, notifType, title, b
 	// ralentir/faire échouer le chemin appelant (confirmation de paiement,
 	// etc.), le push reste un canal "en plus", jamais critique.
 	if h.pushSvc != nil {
-		go h.pushSvc.NotifyUser(context.Background(), userID, title, body, link, notifType)
+		go h.pushSvc.NotifyUserWithImage(context.Background(), userID, title, body, link, notifType, image)
 	}
+}
+
+// productImageURL — URL publique de l'image produit (voir
+// ProductHandler.Cover), vide si aucune image ou apiURL non configuré.
+// Même construction que YesHandler.productImageURL.
+func (h *WebhookHandler) productImageURL(product *model.Product) string {
+	if product.CoverImageKey == nil || *product.CoverImageKey == "" || h.apiURL == "" {
+		return ""
+	}
+	return h.apiURL + "/api/products/" + product.ID + "/cover"
 }
 
 // verifyRequest applique les mêmes vérifications (digest + IP) que le webhook
@@ -452,12 +479,16 @@ func (h *WebhookHandler) KPayPaymentWebhook(w http.ResponseWriter, r *http.Reque
 		if h.donationSvc != nil {
 			go h.donationSvc.Accumulate(context.Background(), sale.PlatformFeeCFA)
 		}
-		h.notify(r.Context(), sale.BuyerID, "order_paid", "Commande confirmée",
-			fmt.Sprintf("Votre paiement de %d FCFA a été confirmé.", sale.AmountCFA), "/orders")
 		if product, err := h.productRepo.FindByID(r.Context(), sale.ProductID); err == nil {
-			h.notify(r.Context(), product.VendorID, "sale", "Nouvelle vente",
-				fmt.Sprintf("%s vient d'acheter « %s » pour %d FCFA.", sale.BuyerName, product.Title, sale.VendorAmountCFA), "/vendor/sales")
+			image := h.productImageURL(product)
+			h.notifyWithImage(r.Context(), sale.BuyerID, "order_paid", "Commande confirmée",
+				fmt.Sprintf("Votre paiement de %d FCFA a été confirmé.", sale.AmountCFA), "/orders", image)
+			h.notifyWithImage(r.Context(), product.VendorID, "sale", "Nouvelle vente",
+				fmt.Sprintf("%s vient d'acheter « %s » pour %d FCFA.", sale.BuyerName, product.Title, sale.VendorAmountCFA), "/vendor/sales", image)
 			h.cache.Del(r.Context(), vendorBalanceCacheKey(product.VendorID))
+		} else {
+			h.notify(r.Context(), sale.BuyerID, "order_paid", "Commande confirmée",
+				fmt.Sprintf("Votre paiement de %d FCFA a été confirmé.", sale.AmountCFA), "/orders")
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "paid"})
@@ -1207,15 +1238,19 @@ func (h *WebhookHandler) confirmPaidSaleUnguarded(ctx context.Context, sale *mod
 	if h.donationSvc != nil {
 		go h.donationSvc.Accumulate(context.Background(), sale.PlatformFeeCFA)
 	}
-	h.notify(ctx, sale.BuyerID, "order_paid", "Commande confirmée",
-		fmt.Sprintf("Votre paiement de %d FCFA a été confirmé.", sale.AmountCFA), "/orders")
 	if product, err := h.productRepo.FindByID(ctx, sale.ProductID); err == nil {
-		h.notify(ctx, product.VendorID, "sale", "Nouvelle vente",
-			fmt.Sprintf("%s vient d'acheter « %s » pour %d FCFA.", sale.BuyerName, product.Title, sale.VendorAmountCFA), "/vendor/sales")
+		image := h.productImageURL(product)
+		h.notifyWithImage(ctx, sale.BuyerID, "order_paid", "Commande confirmée",
+			fmt.Sprintf("Votre paiement de %d FCFA a été confirmé.", sale.AmountCFA), "/orders", image)
+		h.notifyWithImage(ctx, product.VendorID, "sale", "Nouvelle vente",
+			fmt.Sprintf("%s vient d'acheter « %s » pour %d FCFA.", sale.BuyerName, product.Title, sale.VendorAmountCFA), "/vendor/sales", image)
 		// La vente vient de créditer ce vendeur : le solde caché
 		// (PayoutHandler.Earnings) serait sinon obsolète jusqu'à
 		// expiration de son TTL (30s).
 		h.cache.Del(ctx, vendorBalanceCacheKey(product.VendorID))
+	} else {
+		h.notify(ctx, sale.BuyerID, "order_paid", "Commande confirmée",
+			fmt.Sprintf("Votre paiement de %d FCFA a été confirmé.", sale.AmountCFA), "/orders")
 	}
 	// Si cette vente provient du flux conversationnel YES (in-chat checkout),
 	// notifie YES pour qu'il affiche la carte de livraison dans le chat — no-op

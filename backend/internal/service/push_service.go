@@ -44,6 +44,10 @@ type pushPayload struct {
 	Body  string `json:"body"`
 	URL   string `json:"url,omitempty"`
 	Tag   string `json:"tag,omitempty"`
+	// Image : grande illustration affichée dans le corps de la notification
+	// (voir public/sw.js) — ex. photo du produit vendu/acheté. Vide = pas
+	// d'image, dégradation silencieuse.
+	Image string `json:"image,omitempty"`
 }
 
 // NotifyUser — envoie un push à TOUS les abonnements de cet utilisateur
@@ -54,6 +58,12 @@ type pushPayload struct {
 // canal fiable reste la notification in-app, déjà persistée en base par
 // l'appelant AVANT ce point).
 func (s *PushService) NotifyUser(ctx context.Context, userID, title, body, link, tag string) {
+	s.NotifyUserWithImage(ctx, userID, title, body, link, tag, "")
+}
+
+// NotifyUserWithImage — comme NotifyUser, avec une grande illustration
+// (image, ex. photo du produit) affichée dans le corps de la notification.
+func (s *PushService) NotifyUserWithImage(ctx context.Context, userID, title, body, link, tag, image string) {
 	if s == nil || s.pushRepo == nil {
 		return
 	}
@@ -62,7 +72,7 @@ func (s *PushService) NotifyUser(ctx context.Context, userID, title, body, link,
 		return
 	}
 
-	payload, err := json.Marshal(pushPayload{Title: title, Body: body, URL: link, Tag: tag})
+	payload, err := json.Marshal(pushPayload{Title: title, Body: body, URL: link, Tag: tag, Image: image})
 	if err != nil {
 		return
 	}
