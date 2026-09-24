@@ -47,6 +47,14 @@ type CreateOrderInput struct {
 	// Carte/PayPal forcent KPay (PawaPay n'a pas cette capacité) — voir
 	// SaleHandler.initiateCheckout.
 	PaymentMethod string `json:"payment_method,omitempty"`
+	// Phone/Operator : requis pour mobile_money — dépôt PawaPay direct
+	// (POST /v2/deposits) au lieu de la Payment Page hébergée, l'acheteur
+	// choisit son opérateur et saisit son numéro directement sur DIARRA.
+	// Phone : chiffres locaux uniquement, sans l'indicatif (voir
+	// payment.NormalizePhone qui l'ajoute à partir du pays).
+	// Operator : code PawaPay, ex "ORANGE_SEN" (voir payment.XOFOperators).
+	Phone    string `json:"phone,omitempty"`
+	Operator string `json:"operator,omitempty"`
 }
 
 type SaleStatus string

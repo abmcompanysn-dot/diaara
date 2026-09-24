@@ -356,6 +356,11 @@ export const api = {
     // supporte pas) ; mobile_money est routé PawaPay/KPay selon le réglage
     // admin par pays (voir CheckoutProviderSettingKey côté backend).
     payment_method?: 'mobile_money' | 'card' | 'paypal';
+    // phone/operator : requis si payment_method est "mobile_money" — dépôt
+    // PawaPay direct (l'opérateur/numéro sont choisis sur DIARRA plutôt que
+    // sur la page hébergée PawaPay, voir checkout-view.tsx).
+    phone?: string;
+    operator?: string;
   }) =>
     // Pas de skipAuth ici : la route accepte les invités (guest checkout)
     // mais doit recevoir le token si l'acheteur est connecté, sinon le

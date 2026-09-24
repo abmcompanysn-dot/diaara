@@ -16,9 +16,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { CHECKOUT_COUNTRIES, isLoggedIn } from '@/lib/operators';
+import { CHECKOUT_COUNTRIES, PAYOUT_COUNTRIES, isLoggedIn } from '@/lib/operators';
 import { friendlyError } from '@/lib/error-messages';
-import { ArrowLeftIcon, LockIcon } from '@/components/icons';
+import { ArrowLeftIcon, LockIcon, CheckIcon } from '@/components/icons';
+
+// Regroupe les chiffres par paires, le dernier groupe absorbant le reste
+// (2-3 chiffres) pour rester lisible quel que soit le nombre total de
+// chiffres — même logique que PayoutMethodForm.
+function formatPhoneDisplay(digits: string): string {
+  const groups: string[] = [];
+  let i = 0;
+  while (i < digits.length) {
+    const remaining = digits.length - i;
+    const take = remaining <= 3 ? remaining : 2;
+    groups.push(digits.slice(i, i + take));
+    i += take;
+  }
+  return groups.join(' ');
+}
 
 interface Product {
   id: string;
@@ -48,6 +63,17 @@ export default function CheckoutView() {
   const [paymentMethod, setPaymentMethod] = useState<'mobile_money' | 'card' | 'paypal'>('mobile_money');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  // Opérateur + numéro mobile money, saisis directement sur DIARRA (dépôt
+  // PawaPay direct, POST /v2/deposits) plutôt que choisis sur la page
+  // hébergée PawaPay — leur widget de sélection d'opérateur (endpoint
+  // /api/v1/phone/correspondent) échouait systématiquement en 400 quels que
+  // soient le pays/opérateur testés (incident 2026-09-24, jamais élucidé de
+  // leur côté). Country réutilisé pour les deux modes (mobile_money et
+  // card/paypal) mais la liste de pays proposée diffère : PAYOUT_COUNTRIES
+  // (avec opérateurs) pour mobile_money, CHECKOUT_COUNTRIES pour card/paypal.
+  const [operator, setOperator] = useState('');
+  const [phoneDigits, setPhoneDigits] = useState('');
+  const [phoneTouched, setPhoneTouched] = useState(false);
   // Paiement carte bancaire / compte PayPal (Orders API v2, flux hosted
   // redirect — voir resolveCheckoutProvider côté backend). Piloté par un
   // réglage admin (model.SettingCardPaymentEnabled, /admin/settings) plutôt
@@ -59,11 +85,44 @@ export default function CheckoutView() {
 
   const guest = !isLoggedIn();
   const selectedCountry = CHECKOUT_COUNTRIES.find((c) => c.code === country);
+  const payoutCountry = PAYOUT_COUNTRIES.find((c) => c.code === country) || PAYOUT_COUNTRIES[0];
+  const operators = payoutCountry.operators;
 
   const isFlexible = product?.price_mode === 'flexible';
   const minAmount = product?.min_price_cfa || 0;
   const amountToPay = isFlexible ? parseInt(customAmount, 10) || 0 : product?.price_cfa || 0;
   const amountValid = !isFlexible || amountToPay >= minAmount;
+
+  const phoneValid = phoneDigits.length === payoutCountry.phoneLength;
+  const phoneError =
+    phoneTouched && phoneDigits.length > 0 && !phoneValid
+      ? `Le numéro doit contenir ${payoutCountry.phoneLength} chiffres (actuellement ${phoneDigits.length}).`
+      : '';
+  const mobileMoneyValid = paymentMethod !== 'mobile_money' || (Boolean(operator) && phoneValid);
+
+  useEffect(() => {
+    if (!operators.find((o) => o.provider === operator)) {
+      setOperator(operators[0]?.provider || '');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [country]);
+
+  const handleCountryChange = (code: string | null) => {
+    setCountry(code || 'SEN');
+    setPhoneDigits('');
+    setPhoneTouched(false);
+  };
+
+  const handlePhoneChange = (raw: string) => {
+    // Bénin (229) : le "01" initial fait partie du numéro (réforme 2021),
+    // pas un préfixe à retirer — voir PayoutMethodForm pour le même cas.
+    let digits = raw.replace(/\D/g, '');
+    if (country !== 'BEN') {
+      digits = digits.replace(/^0+/, '');
+    }
+    digits = digits.slice(0, payoutCountry.phoneLength);
+    setPhoneDigits(digits);
+  };
 
   useEffect(() => {
     if (guest === false && user) {
@@ -122,6 +181,7 @@ export default function CheckoutView() {
         // côté UI, semblait déjà rempli (placeholder).
         ...(email ? { buyer_email: email } : {}),
         ...(isFlexible ? { amount_cfa: amountToPay } : {}),
+        ...(paymentMethod === 'mobile_money' ? { phone: phoneDigits, operator } : {}),
       });
       const redirectUrl = result.checkout?.redirect_url;
       if (!redirectUrl) throw new Error('redirect_url_missing');
@@ -246,39 +306,6 @@ export default function CheckoutView() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="cc-country">Pays de facturation</Label>
-              <Select value={country} onValueChange={(v) => setCountry(v || 'SEN')}>
-                <SelectTrigger id="cc-country" className="bg-white w-full">
-                  <SelectValue placeholder="Choisir le pays">
-                    {selectedCountry && (
-                      <span className="flex items-center gap-2">
-                        <span>{selectedCountry.flag}</span>
-                        <span>
-                          {selectedCountry.name} ({selectedCountry.currency})
-                        </span>
-                      </span>
-                    )}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {CHECKOUT_COUNTRIES.map((c) => (
-                    <SelectItem key={c.code} value={c.code}>
-                      <span className="flex items-center gap-2">
-                        <span>{c.flag}</span>
-                        <span>
-                          {c.name} ({c.currency})
-                        </span>
-                      </span>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-xs text-green-900/50">
-                Le montant est converti automatiquement dans la devise de votre pays.
-              </p>
-            </div>
-
-            <div className="space-y-2">
               <Label>Moyen de paiement</Label>
               <div className={`grid gap-2 ${cardPaymentEnabled ? 'grid-cols-2' : 'grid-cols-1'}`}>
                 <button
@@ -314,6 +341,125 @@ export default function CheckoutView() {
               </div>
             </div>
 
+            {paymentMethod === 'mobile_money' ? (
+              <>
+                <div className="space-y-2">
+                  <Label htmlFor="cc-country">Pays</Label>
+                  <Select value={country} onValueChange={handleCountryChange}>
+                    <SelectTrigger id="cc-country" className="bg-white w-full">
+                      <SelectValue placeholder="Choisir le pays" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {PAYOUT_COUNTRIES.map((c) => (
+                        <SelectItem key={c.code} value={c.code}>
+                          {c.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Opérateur mobile money</Label>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    {operators.map((op) => {
+                      const active = op.provider === operator;
+                      return (
+                        <button
+                          key={op.provider}
+                          type="button"
+                          onClick={() => setOperator(op.provider)}
+                          aria-pressed={active}
+                          className={`relative flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 p-3 h-20 transition-all ${
+                            active
+                              ? 'border-green-600 shadow-lift bg-green-50/60'
+                              : 'border-green-900/10 hover:border-green-900/25 bg-white'
+                          }`}
+                        >
+                          {active && (
+                            <span className="absolute top-1.5 right-1.5 w-4 h-4 rounded-full bg-green-600 text-white flex items-center justify-center">
+                              <CheckIcon size={11} />
+                            </span>
+                          )}
+                          {op.logo ? (
+                            <>
+                              <img src={`/payments/${op.logo}`} alt={op.label} className="max-h-7 max-w-[85%] object-contain" />
+                              <span className="text-[11px] text-green-900/60 truncate max-w-full">{op.label}</span>
+                            </>
+                          ) : (
+                            <span className={`px-2.5 py-1.5 rounded text-xs font-bold ${op.badgeColor || 'bg-green-100'} ${op.badgeText || 'text-green-950'}`}>
+                              {op.label}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="cc-phone">Numéro de téléphone</Label>
+                  <div className="flex items-center gap-2">
+                    <span className="shrink-0 h-10 px-3 rounded-md border border-green-900/15 bg-green-50/60 flex items-center font-mono text-sm text-green-900/70">
+                      +{payoutCountry.dialCode}
+                    </span>
+                    <Input
+                      id="cc-phone"
+                      type="tel"
+                      inputMode="numeric"
+                      placeholder={`${payoutCountry.phoneLength} chiffres`}
+                      value={formatPhoneDisplay(phoneDigits)}
+                      onChange={(e) => handlePhoneChange(e.target.value)}
+                      onBlur={() => setPhoneTouched(true)}
+                      className={phoneError ? 'bg-white border-red-400 focus-visible:ring-red-400' : 'bg-white'}
+                    />
+                  </div>
+                  {phoneError ? (
+                    <p className="text-xs text-red-600">{phoneError}</p>
+                  ) : (
+                    <p className="text-xs text-green-900/50">
+                      {country === 'BEN'
+                        ? `${payoutCountry.phoneLength} chiffres, avec le 01 initial (ex: +229 01 xx xx xx xx).`
+                        : `${payoutCountry.phoneLength} chiffres, sans le 0 initial.`}
+                    </p>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="space-y-2">
+                <Label htmlFor="cc-country">Pays de facturation</Label>
+                <Select value={country} onValueChange={(v) => setCountry(v || 'SEN')}>
+                  <SelectTrigger id="cc-country" className="bg-white w-full">
+                    <SelectValue placeholder="Choisir le pays">
+                      {selectedCountry && (
+                        <span className="flex items-center gap-2">
+                          <span>{selectedCountry.flag}</span>
+                          <span>
+                            {selectedCountry.name} ({selectedCountry.currency})
+                          </span>
+                        </span>
+                      )}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CHECKOUT_COUNTRIES.map((c) => (
+                      <SelectItem key={c.code} value={c.code}>
+                        <span className="flex items-center gap-2">
+                          <span>{c.flag}</span>
+                          <span>
+                            {c.name} ({c.currency})
+                          </span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-green-900/50">
+                  Le montant est converti automatiquement dans la devise de votre pays.
+                </p>
+              </div>
+            )}
+
             {error && (
               <div className="p-3 bg-red-50 text-red-700 rounded text-sm" role="alert">
                 {error}
@@ -322,7 +468,7 @@ export default function CheckoutView() {
 
             <Button
               onClick={handleSubmit}
-              disabled={submitting || !name || (guest && !email) || !amountValid}
+              disabled={submitting || !name || (guest && !email) || !amountValid || !mobileMoneyValid}
               className="w-full h-12 font-semibold bg-green-950 text-white hover:bg-green-900 text-base gap-2"
             >
               <LockIcon size={16} />

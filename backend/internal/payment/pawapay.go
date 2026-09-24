@@ -86,9 +86,15 @@ type FailureReason struct {
 }
 
 type DepositInitiationResponse struct {
-	DepositId     string         `json:"depositId"`
-	Status        string         `json:"status"` // ACCEPTED | REJECTED | DUPLICATE_IGNORED
-	Created       string         `json:"created"`
+	DepositId string `json:"depositId"`
+	Status    string `json:"status"` // ACCEPTED | REJECTED | DUPLICATE_IGNORED
+	Created   string `json:"created"`
+	// NextStep : "GET_AUTH_URL" pour un opérateur REDIRECT_AUTH (ex Wave) —
+	// il faut alors poller GetDepositStatus jusqu'à obtenir AuthorizationUrl
+	// (nextStep devient "REDIRECT_TO_AUTH_URL"). Vide/absent pour
+	// PROVIDER_AUTH (Orange/MTN/Moov/Free) : le client confirme directement
+	// sur son téléphone (USSD/PIN), rien à récupérer côté DIARRA.
+	NextStep      string         `json:"nextStep,omitempty"`
 	FailureReason *FailureReason `json:"failureReason,omitempty"`
 }
 
@@ -100,13 +106,16 @@ type DepositStatusResponse struct {
 }
 
 type DepositData struct {
-	DepositId             string         `json:"depositId"`
-	Status                string         `json:"status"` // ACCEPTED | PROCESSING | IN_RECONCILIATION | COMPLETED | FAILED
-	Amount                string         `json:"amount"`
-	Currency              string         `json:"currency"`
-	Country               string         `json:"country"`
-	ProviderTransactionId string         `json:"providerTransactionId"`
-	FailureReason         *FailureReason `json:"failureReason,omitempty"`
+	DepositId             string `json:"depositId"`
+	Status                string `json:"status"` // ACCEPTED | PROCESSING | IN_RECONCILIATION | COMPLETED | FAILED
+	Amount                string `json:"amount"`
+	Currency              string `json:"currency"`
+	Country               string `json:"country"`
+	ProviderTransactionId string `json:"providerTransactionId"`
+	// NextStep/AuthorizationUrl : cycle REDIRECT_AUTH (voir DepositInitiationResponse.NextStep).
+	NextStep         string         `json:"nextStep,omitempty"`
+	AuthorizationUrl string         `json:"authorizationUrl,omitempty"`
+	FailureReason    *FailureReason `json:"failureReason,omitempty"`
 }
 
 // InitiateDeposit — POST /v2/deposits

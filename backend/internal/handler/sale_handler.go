@@ -323,7 +323,7 @@ func (h *SaleHandler) Create(w http.ResponseWriter, r *http.Request) {
 	// Page de paiement hébergée (PawaPay ou KPay selon providerName) :
 	// l'acheteur y choisit lui-même son opérateur mobile money/carte/PayPal,
 	// le prestataire le redirige ensuite vers ReturnUrl.
-	redirectURL, err := h.initiateCheckout(r.Context(), created, product, input.Country, providerName)
+	redirectURL, err := h.initiateCheckout(r.Context(), created, product, input.Country, providerName, input.Phone, input.Operator)
 	if err != nil || redirectURL == "" {
 		log.Printf("payment_init_failed sale=%s provider=%s: %v", created.ID, providerName, err)
 		h.saleRepo.UpdateStatus(r.Context(), created.ID, string(model.SaleFailed))
@@ -616,19 +616,118 @@ func newUUID() string {
 
 // initiateCheckout distribue vers PawaPay ou KPay selon providerName (déjà
 // résolu par resolveCheckoutProvider et persisté sur sale.PaymentProvider),
-// et renvoie l'URL de redirection vers la page de paiement hébergée.
-func (h *SaleHandler) initiateCheckout(ctx context.Context, sale *model.Sale, product *model.Product, country, providerName string) (string, error) {
+// et renvoie l'URL de redirection vers la page de paiement hébergée — ou,
+// pour PawaPay avec phone/operator fournis, une URL DIARRA (dépôt direct,
+// voir initiateDirectDeposit).
+func (h *SaleHandler) initiateCheckout(ctx context.Context, sale *model.Sale, product *model.Product, country, providerName, phone, operator string) (string, error) {
 	switch providerName {
 	case "kpay":
 		return h.initiateKPayCheckout(ctx, sale, product)
 	case "paypal":
 		return h.initiatePayPalCheckout(ctx, sale, product)
 	}
+	if phone != "" && operator != "" {
+		return h.initiateDirectDeposit(ctx, sale, country, phone, operator)
+	}
 	page, err := h.initiatePaymentPage(ctx, sale, product, country)
 	if err != nil || page == nil {
 		return "", err
 	}
 	return page.RedirectUrl, nil
+}
+
+// initiateDirectDeposit — dépôt PawaPay direct (POST /v2/deposits) : l'acheteur
+// a déjà choisi son opérateur et saisi son numéro dans le formulaire DIARRA
+// (voir frontend checkout-view.tsx), on soumet directement la demande
+// d'autorisation à son téléphone. Remplace la Payment Page hébergée pour
+// mobile money (incident 2026-09-24 : leur widget de sélection d'opérateur
+// /api/v1/phone/correspondent échouait systématiquement en 400, quels que
+// soient le pays/opérateur testés — cause confirmée hors de notre requête de
+// création, jamais élucidée côté PawaPay). Pas d'URL externe à renvoyer :
+// l'acheteur reste sur /checkout/return, qui poll déjà CheckoutStatus.
+func (h *SaleHandler) initiateDirectDeposit(ctx context.Context, sale *model.Sale, country, phone, operator string) (string, error) {
+	if h.pawapay == nil {
+		return "", errors.New("payment non configuré")
+	}
+	dialCode := ""
+	for _, op := range payment.XOFOperators {
+		if op.Provider == operator {
+			dialCode = op.DialCode
+			break
+		}
+	}
+	if dialCode == "" {
+		return "", fmt.Errorf("opérateur inconnu: %s", operator)
+	}
+	msisdn, err := payment.NormalizePhone(dialCode, phone)
+	if err != nil {
+		return "", err
+	}
+
+	currency := payment.CountryCurrency[country]
+	if currency == "" {
+		currency = "XOF"
+	}
+	amount, err := payment.ConvertFromXOF(sale.AmountCFA, currency)
+	if err != nil {
+		return "", err
+	}
+
+	req := payment.DepositRequest{
+		DepositId: sale.PaymentReference,
+		Payer: payment.Payer{
+			Type: "MMO",
+			AccountDetails: payment.AccountDetails{
+				PhoneNumber: msisdn,
+				Provider:    operator,
+			},
+		},
+		Amount:          amount,
+		Currency:        currency,
+		CustomerMessage: "PAIEMENT DIARRA",
+		Metadata: []payment.MetadataItem{
+			{"saleId": sale.ID},
+		},
+	}
+	resp, err := h.pawapay.InitiateDeposit(ctx, req)
+	if err != nil {
+		return "", err
+	}
+	if resp.Status == "REJECTED" {
+		code := "rejected"
+		if resp.FailureReason != nil {
+			code = resp.FailureReason.FailureCode
+		}
+		return "", fmt.Errorf("%w: rejected: %s", payment.ErrPaymentFailed, code)
+	}
+
+	// Opérateur REDIRECT_AUTH (Wave) : pas de PIN/USSD, PawaPay doit nous
+	// fournir une authorizationUrl externe vers laquelle rediriger l'acheteur
+	// — jamais immédiate (le prestataire doit la générer), donc on la
+	// récupère par polling court plutôt qu'un seul appel (voir doc PawaPay :
+	// "usually very fast, but ... polling should be implemented").
+	if resp.NextStep == "GET_AUTH_URL" {
+		for i := 0; i < 10; i++ {
+			time.Sleep(500 * time.Millisecond)
+			status, err := h.pawapay.GetDepositStatus(ctx, sale.PaymentReference)
+			if err != nil || status.Data == nil {
+				continue
+			}
+			if status.Data.AuthorizationUrl != "" {
+				return status.Data.AuthorizationUrl, nil
+			}
+			if status.Data.Status == "FAILED" {
+				code := "failed"
+				if status.Data.FailureReason != nil {
+					code = status.Data.FailureReason.FailureCode
+				}
+				return "", fmt.Errorf("%w: %s", payment.ErrPaymentFailed, code)
+			}
+		}
+		return "", errors.New("authorization_url_timeout")
+	}
+
+	return h.frontendURL + "/checkout/return?token=" + *sale.CheckoutToken, nil
 }
 
 // initiatePayPalCheckout — mode "hosted redirect" (comme KPay/PawaPay) :
