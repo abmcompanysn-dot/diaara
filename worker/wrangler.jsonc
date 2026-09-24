@@ -33,7 +33,14 @@
     // origin.abmcy.com (Vercel DNS -> VPS) donnait un 526 : le fetch() du
     // Worker valide le certificat d'origine en strict, indépendamment du
     // mode SSL de la zone.
-    "BACKEND_URL": "https://api.diarra.app"
+    "BACKEND_URL": "https://api.diarra.app",
+    // Clé PUBLIQUE VAPID (Web Push) — publique par nature, embarquée dans le
+    // bundle client au build, jamais un secret. Doit rester identique à
+    // VAPID_PUBLIC_KEY côté backend (voir backend/.env.example) : les deux
+    // valeurs forment une paire cryptographique, une clé publique orpheline
+    // ferait échouer silencieusement l'abonnement push (voir frontend
+    // lib/push.ts, subscribeToPush).
+    "NEXT_PUBLIC_VAPID_PUBLIC_KEY": "BHqvyyDwvN_xwiseasNQEAugS_WMrmERmc9S0vEyVupDNu4F70jPq3HhumRz3boTYfCdcH96zCrgjMGfhQ-N3jI"
   },
 
   // Route de production — nouveau domaine dédié à l'application (distinct
