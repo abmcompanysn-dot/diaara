@@ -289,6 +289,16 @@ func (c *PayDunyaClient) InitiateDirectDeposit(ctx context.Context, req DirectDe
 	if err != nil {
 		return "", "", err
 	}
+	// Les endpoints SoftPay attendent le numéro LOCAL (sans indicatif pays,
+	// ex "777587999"), contrairement au champ Customer.Phone de la facture
+	// qui accepte le format international. Envoyer l'indicatif dans le
+	// payload softpay déclenche "numéro invalide"/"numéro non valide du
+	// pays X" côté PayDunya (constaté 2026-09-25 sur Orange Money SN et
+	// Wave SN en prod, avec un vrai numéro).
+	localPhone := msisdn
+	if len(msisdn) > len(req.Operator.DialCode) && msisdn[:len(req.Operator.DialCode)] == req.Operator.DialCode {
+		localPhone = msisdn[len(req.Operator.DialCode):]
+	}
 
 	amountStr := fmt.Sprintf("%d", req.AmountCFA)
 	invoice, err := c.CreateInvoice(ctx, CreateInvoiceRequest{
@@ -307,7 +317,7 @@ func (c *PayDunyaClient) InitiateDirectDeposit(ctx context.Context, req DirectDe
 		return "", "", err
 	}
 
-	payload := req.Operator.BuildPayload(req.BuyerName, req.BuyerEmail, msisdn, invoice.Token)
+	payload := req.Operator.BuildPayload(req.BuyerName, req.BuyerEmail, localPhone, invoice.Token)
 	if _, err := c.InitiateSoftpay(ctx, req.Operator.Endpoint, payload); err != nil {
 		return invoice.Token, "", err
 	}
