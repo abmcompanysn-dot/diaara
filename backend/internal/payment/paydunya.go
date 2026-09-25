@@ -129,12 +129,34 @@ func (c *PayDunyaClient) CreateInvoice(ctx context.Context, req CreateInvoiceReq
 // --- SoftPay (déclenchement du paiement par opérateur) -----------------------
 
 // SoftpayResponse — format commun à tous les opérateurs (voir doc : "success"
-// booléen + "message"). Les champs additionnels (redirect URLs pour Orange
-// Money) sont ignorés — DIARRA n'en a pas besoin, le statut final vient du
-// polling/callback sur la facture, pas de cette réponse.
+// booléen + "message"). Certains opérateurs (Orange Money SN, Wave SN/CI,
+// Djamo — tout opérateur dont le message dit "Rediriger vers cette URL pour
+// completer le paiement") renvoient en plus une URL vers laquelle
+// l'acheteur DOIT être redirigé pour finaliser (page QR code, app Wave...) —
+// sans cette redirection le paiement reste bloqué indéfiniment, l'acheteur
+// ne reçoit jamais de demande de validation sur son téléphone (constaté
+// 2026-09-25 en prod : commande restée "pending" sans jamais d'USSD/prompt
+// côté Orange Money SN). OMUrl (spécifique Orange Money SN, dans
+// other_url.om_url) ouvre directement l'app Orange Money sur mobile,
+// préférée à URL (page web QR code) quand disponible.
 type SoftpayResponse struct {
-	Success bool   `json:"success"`
-	Message string `json:"message"`
+	Success  bool   `json:"success"`
+	Message  string `json:"message"`
+	URL      string `json:"url"`
+	OtherURL struct {
+		OMUrl    string `json:"om_url"`
+		MaxitURL string `json:"maxit_url"`
+	} `json:"other_url"`
+}
+
+// RedirectURL — URL vers laquelle rediriger l'acheteur pour finaliser le
+// paiement, si l'opérateur en fournit une (voir SoftpayResponse). Préfère
+// l'app mobile (om_url) à la page web (url) quand les deux existent.
+func (r *SoftpayResponse) RedirectURL() string {
+	if r.OtherURL.OMUrl != "" {
+		return r.OtherURL.OMUrl
+	}
+	return r.URL
 }
 
 // InitiateSoftpay — POST vers l'endpoint SoftPay de l'opérateur donné (voir
@@ -334,8 +356,19 @@ func (c *PayDunyaClient) InitiateDirectDeposit(ctx context.Context, req DirectDe
 	}
 
 	payload := req.Operator.BuildPayload(req.BuyerName, req.BuyerEmail, localPhone, invoice.Token)
-	if _, err := c.InitiateSoftpay(ctx, req.Operator.Endpoint, payload); err != nil {
+	softpay, err := c.InitiateSoftpay(ctx, req.Operator.Endpoint, payload)
+	if err != nil {
 		return invoice.Token, "", err
+	}
+	// Certains opérateurs (voir SoftpayResponse.RedirectURL) exigent que
+	// l'acheteur soit redirigé vers une URL précise pour finaliser — sans
+	// ça le paiement reste bloqué en attente indéfiniment (aucun USSD/prompt
+	// n'est jamais envoyé). Les autres opérateurs (push USSD/SMS direct sur
+	// le téléphone, ex Free Money, Expresso, MTN, Moov...) n'en ont pas
+	// besoin : on retombe sur ReturnURL, l'acheteur valide directement sur
+	// son téléphone pendant que le frontend poll le statut de la commande.
+	if redirect := softpay.RedirectURL(); redirect != "" {
+		return invoice.Token, redirect, nil
 	}
 	return invoice.Token, req.ReturnURL, nil
 }
