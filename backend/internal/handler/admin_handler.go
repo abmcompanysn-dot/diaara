@@ -813,8 +813,22 @@ func (h *AdminHandler) GetSettings(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"settings_failed"}`, http.StatusInternalServerError)
 		return
 	}
+	// operator_providers — prestataire(s) réellement disponibles par
+	// opérateur logique (voir payment.LogicalOperator.AvailableProviders),
+	// même calcul que SaleHandler.CheckoutConfig : permet au tableau admin
+	// "Mobile Money" de ne proposer que des boutons PawaPay/PayDunya qui
+	// marchent vraiment (un opérateur documenté par PawaPay mais pas activé
+	// sur notre compte, voir payment.IsPawaPayOperatorActive, n'a pas de
+	// bouton PawaPay ici).
+	operatorProviders := map[string][]string{}
+	for _, op := range payment.LogicalOperators {
+		operatorProviders[op.Code] = op.AvailableProviders()
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"settings": settings})
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"settings":           settings,
+		"operator_providers": operatorProviders,
+	})
 }
 
 // UpdateSettings — PUT /api/admin/settings (scope "finance")

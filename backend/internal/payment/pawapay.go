@@ -731,9 +731,45 @@ type Operator struct {
 	DialCode string // indicatif téléphonique du pays
 }
 
+// activePawaPayOperators — opérateurs RÉELLEMENT activés sur le compte
+// PawaPay de DIARRA (vérifié via GET /v2/active-conf, relevé 2026-09-25) —
+// distinct de XOFOperators ci-dessous qui liste tout ce que PawaPay
+// documente comme possible, activé ou non chez nous spécifiquement.
+// L'écart est réel et déjà constaté en prod : WAVE_CIV, tout le Burkina
+// Faso, Orange Cameroun, le Ghana, le Nigeria, l'Éthiopie, le Lesotho, le
+// Malawi et la Tanzanie sont dans XOFOperators mais status != OPERATIONAL
+// chez nous — les proposer au checkout aurait fait échouer tout paiement
+// dessus. Si PawaPay active un nouvel opérateur sur notre compte,
+// l'ajouter ici (revérifier avec le même outil de diagnostic que celui
+// utilisé pour ce relevé, voir GetActiveConfig).
+var activePawaPayOperators = map[string]bool{
+	"ORANGE_SEN": true, "WAVE_SEN": true, "FREE_SEN": true,
+	"MTN_MOMO_CIV": true, "ORANGE_CIV": true,
+	"MTN_MOMO_BEN": true, "MOOV_BEN": true,
+	"MTN_MOMO_CMR": true,
+	"AIRTEL_GAB":   true,
+	"AIRTEL_COG":   true, "MTN_MOMO_COG": true,
+	"VODACOM_MPESA_COD": true, "AIRTEL_COD": true, "ORANGE_COD": true,
+	"MPESA_KEN": true,
+	"AIRTEL_RWA": true, "MTN_MOMO_RWA": true,
+	"AIRTEL_OAPI_UGA": true, "MTN_MOMO_UGA": true,
+	"AIRTEL_OAPI_ZMB": true, "MTN_MOMO_ZMB": true, "ZAMTEL_ZMB": true,
+	"ORANGE_SLE": true,
+}
+
+// IsPawaPayOperatorActive — vrai si cet opérateur est réellement activé sur
+// le compte PawaPay de DIARRA (voir activePawaPayOperators).
+func IsPawaPayOperatorActive(provider string) bool {
+	return activePawaPayOperators[provider]
+}
+
 // Couvre les 20 pays PawaPay (mêmes pays que CountryCurrency ci-dessous),
 // source : docs.pawapay.io/v2/docs/providers (relevé 2026-08-13). Miroir
 // exact de PAYOUT_COUNTRIES côté frontend (frontend/src/lib/operators.ts).
+// Tous ne sont pas forcément activés sur NOTRE compte — voir
+// activePawaPayOperators pour la réalité opérationnelle, utilisée par
+// LogicalOperators pour ne proposer au checkout que ce qui marche
+// vraiment.
 var XOFOperators = []Operator{
 	// Sénégal
 	{Label: "Orange Money", Provider: "ORANGE_SEN", Country: "SEN", DialCode: "221"},

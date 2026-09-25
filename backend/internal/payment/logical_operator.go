@@ -30,20 +30,32 @@ var LogicalOperators = buildLogicalOperators()
 func buildLogicalOperators() []LogicalOperator {
 	out := make([]LogicalOperator, 0, len(XOFOperators))
 	// PawaPay d'abord : donne le Code logique (déjà utilisé partout côté
-	// vendeur/versement) et la position dans la liste.
+	// vendeur/versement) et la position dans la liste. PawaPayCode n'est
+	// rempli que si l'opérateur est réellement activé sur notre compte
+	// (voir IsPawaPayOperatorActive) — sinon l'opérateur logique reste sans
+	// PawaPayCode et retombe sur PayDunya s'il le couvre, ou disparaît du
+	// checkout si aucun des deux ne le couvre réellement (constaté
+	// 2026-09-25 : XOFOperators documente plus d'opérateurs que ce que
+	// PawaPay a activé chez nous).
 	for _, op := range XOFOperators {
-		out = append(out, LogicalOperator{
+		logical := LogicalOperator{
 			Code: op.Provider, Label: op.Label, Country: op.Country, DialCode: op.DialCode,
-			PawaPayCode: op.Provider,
-		})
+		}
+		if IsPawaPayOperatorActive(op.Provider) {
+			logical.PawaPayCode = op.Provider
+		}
+		out = append(out, logical)
 	}
-	// PayDunya ensuite : complète un opérateur déjà présent (même
-	// PawaPayCode) ou en ajoute un nouveau, PayDunya-only (ex Expresso,
-	// Djamo, T-Money, Celtiis Cash, Mali/Togo entiers).
+	// PayDunya ensuite : complète un opérateur déjà présent (même Code
+	// logique — PayDunyaOperator.PawaPayCode reste le code PawaPay
+	// "canonique" même quand ce PawaPayCode n'est pas actif chez nous, donc
+	// PAS out[i].PawaPayCode qui peut être vide, voir ci-dessus) ou en
+	// ajoute un nouveau, PayDunya-only (ex Expresso, Djamo, T-Money,
+	// Celtiis Cash, Mali/Togo entiers).
 	for _, op := range PayDunyaOperators {
 		if op.PawaPayCode != "" {
 			for i := range out {
-				if out[i].PawaPayCode == op.PawaPayCode {
+				if out[i].Code == op.PawaPayCode {
 					out[i].PayDunyaCode = op.Provider
 					break
 				}

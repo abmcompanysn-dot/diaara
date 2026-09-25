@@ -95,20 +95,28 @@ export default function AdminSettingsPage() {
   const [yesMicroTicketAmount, setYesMicroTicketAmount] = useState('600');
   const [gatewayOps, setGatewayOps] = useState<Record<string, GatewayValue>>({});
   const [checkoutProviders, setCheckoutProviders] = useState<Record<string, CheckoutValue>>({});
+  // Prestataire(s) RÉELLEMENT disponibles par opérateur (voir
+  // AdminHandler.GetSettings côté backend) — source de vérité pour griser
+  // un bouton PawaPay/PayDunya que LOGICAL_OPERATORS croit disponible mais
+  // qui ne marche pas vraiment (ex un opérateur documenté par PawaPay mais
+  // pas activé sur notre compte, voir payment.IsPawaPayOperatorActive).
+  const [operatorProviders, setOperatorProviders] = useState<Record<string, string[]>>({});
   // Liens communauté WhatsApp : clé "general" + une clé par ISO3.
   const [whatsappLinks, setWhatsappLinks] = useState<Record<string, string>>({});
 
   useEffect(() => {
     api
       .getAdminSettings()
-      .then(({ settings }) => {
+      .then(({ settings, operator_providers }) => {
         setCommissionRate(settings.commission_rate_pct || '15');
         setCardPaymentEnabled(settings.card_payment_enabled !== 'false');
         setYesMicroTicketAmount(settings.yes_micro_ticket_amount_cfa || '600');
+        setOperatorProviders(operator_providers || {});
         const g: Record<string, GatewayValue> = {};
         for (const op of OPERATORS) {
           const v = settings[gatewayOpKey(op.provider)];
-          const fallback: GatewayValue = op.pawaPayProvider ? 'pawapay' : 'paydunya';
+          const available = (operator_providers || {})[op.provider] || [];
+          const fallback: GatewayValue = available[0] === 'paydunya' ? 'paydunya' : available[0] === 'pawapay' ? 'pawapay' : 'off';
           g[op.provider] = v === 'off' || v === 'pawapay' || v === 'paydunya' ? v : fallback;
         }
         setGatewayOps(g);
@@ -148,8 +156,11 @@ export default function AdminSettingsPage() {
         card_payment_enabled: String(cardPaymentEnabled),
         yes_micro_ticket_amount_cfa: String(microTicket),
       };
-      for (const op of OPERATORS)
-        values[gatewayOpKey(op.provider)] = gatewayOps[op.provider] || (op.pawaPayProvider ? 'pawapay' : 'paydunya');
+      for (const op of OPERATORS) {
+        const available = operatorProviders[op.provider] || [];
+        if (available.length === 0) continue; // opérateur indisponible, rien à sauvegarder
+        values[gatewayOpKey(op.provider)] = gatewayOps[op.provider] || (available.includes('pawapay') ? 'pawapay' : 'paydunya');
+      }
       for (const country of CHECKOUT_COUNTRIES)
         values[checkoutProviderKey(country.iso3)] =
           checkoutProviders[country.iso3] === 'paydunya' && PAYDUNYA_COUNTRIES.has(country.iso3)
@@ -296,8 +307,26 @@ export default function AdminSettingsPage() {
                 </h3>
                 <div className="space-y-2">
                   {group.items.map((op) => {
-                    const pawaPayAvailable = Boolean(op.pawaPayProvider);
-                    const paydunyaAvailable = Boolean(op.payDunyaProvider);
+                    // Réalité (voir AdminHandler.GetSettings) plutôt que
+                    // op.pawaPayProvider/payDunyaProvider (ce que le code
+                    // documente comme possible, pas forcément activé sur
+                    // notre compte — voir payment.IsPawaPayOperatorActive).
+                    const available = operatorProviders[op.provider] || [];
+                    const pawaPayAvailable = available.includes('pawapay');
+                    const paydunyaAvailable = available.includes('paydunya');
+                    if (available.length === 0) {
+                      return (
+                        <div
+                          key={op.provider}
+                          className="flex items-center justify-between gap-3 p-3 rounded-lg border border-dashed border-border opacity-60"
+                        >
+                          <span className="text-sm font-medium">{op.label}</span>
+                          <span className="text-xs text-muted-foreground">
+                            Indisponible (aucun prestataire actif chez nous)
+                          </span>
+                        </div>
+                      );
+                    }
                     const value = gatewayOps[op.provider] || (pawaPayAvailable ? 'pawapay' : 'paydunya');
                     const options: { opt: GatewayValue; label: string }[] = [
                       { opt: 'off', label: 'Désactivé' },

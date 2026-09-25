@@ -829,7 +829,10 @@ export const api = {
       top_closers: any[];
     }>(`/api/admin/analytics${days ? `?days=${days}` : ''}`),
 
-  getAdminSettings: () => fetchApi<{ settings: Record<string, string> }>('/api/admin/settings'),
+  getAdminSettings: () =>
+    fetchApi<{ settings: Record<string, string>; operator_providers: Record<string, string[]> }>(
+      '/api/admin/settings'
+    ),
 
   updateAdminSettings: (values: Record<string, string>) =>
     fetchApi<{ settings: Record<string, string> }>('/api/admin/settings', {
