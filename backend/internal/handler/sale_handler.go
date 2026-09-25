@@ -177,9 +177,18 @@ func (h *SaleHandler) Create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"country_required"}`, http.StatusBadRequest)
 		return
 	}
+	// UnavailableCountries liste les pays désactivés côté PawaPay
+	// uniquement — un pays qui y figure reste achetable s'il est routé vers
+	// PayDunya (voir model.CheckoutProviderSettingKey), qui a sa propre
+	// couverture (ex. Burkina Faso : bloqué chez PawaPay, disponible chez
+	// PayDunya).
 	if payment.UnavailableCountries[input.Country] {
-		http.Error(w, `{"error":"country_not_available"}`, http.StatusBadRequest)
-		return
+		_, coveredByPayDunya := payment.PayDunyaCountryCurrency[input.Country]
+		routedToPayDunya := h.settingsRepo.Get(r.Context(), model.CheckoutProviderSettingKey(input.Country), "pawapay") == "paydunya"
+		if !coveredByPayDunya || !routedToPayDunya {
+			http.Error(w, `{"error":"country_not_available"}`, http.StatusBadRequest)
+			return
+		}
 	}
 
 	// Guest Checkout : si non connecté, on exige l'email

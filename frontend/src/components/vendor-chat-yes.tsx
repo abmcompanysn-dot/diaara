@@ -14,7 +14,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { CheckIcon } from '@/components/icons';
-import { PAYOUT_COUNTRIES, PAYDUNYA_COUNTRIES } from '@/lib/operators';
+import { PAYOUT_COUNTRIES, PAYDUNYA_COUNTRIES, CHECKOUT_COUNTRIES } from '@/lib/operators';
 import { friendlyError } from '@/lib/error-messages';
 
 interface VendorChatYesProps {
@@ -72,6 +72,12 @@ export function VendorChatYes({ productId, priceCfa, country: initialCountry, re
   const operatorCountries = mobileMoneyProvider === 'paydunya' ? PAYDUNYA_COUNTRIES : PAYOUT_COUNTRIES;
   const payoutCountry = operatorCountries.find((c) => c.code === country) || operatorCountries[0];
   const operators = payoutCountry.operators;
+  // Sélecteur de pays : union des pays PawaPay réellement actifs
+  // (CHECKOUT_COUNTRIES) + PayDunya — voir checkout-view.tsx.
+  const mobileMoneyCountries = [
+    ...CHECKOUT_COUNTRIES.map((c) => ({ code: c.code, name: c.name })),
+    ...PAYDUNYA_COUNTRIES.filter((c) => !CHECKOUT_COUNTRIES.some((p) => p.code === c.code)).map((c) => ({ code: c.code, name: c.name })),
+  ];
 
   useEffect(() => {
     if (!operators.find((o) => o.provider === operator)) {
@@ -144,7 +150,7 @@ export function VendorChatYes({ productId, priceCfa, country: initialCountry, re
                 <SelectValue placeholder="Choisir le pays" />
               </SelectTrigger>
               <SelectContent>
-                {PAYOUT_COUNTRIES.map((c) => (
+                {mobileMoneyCountries.map((c) => (
                   <SelectItem key={c.code} value={c.code}>
                     {c.name}
                   </SelectItem>

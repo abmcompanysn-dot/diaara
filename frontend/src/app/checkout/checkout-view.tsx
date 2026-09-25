@@ -94,6 +94,15 @@ export default function CheckoutView() {
   const operatorCountries = mobileMoneyProvider === 'paydunya' ? PAYDUNYA_COUNTRIES : PAYOUT_COUNTRIES;
   const payoutCountry = operatorCountries.find((c) => c.code === country) || operatorCountries[0];
   const operators = payoutCountry.operators;
+  // Sélecteur de pays checkout : union des pays PawaPay RÉELLEMENT actifs au
+  // dépôt (CHECKOUT_COUNTRIES, pas PAYOUT_COUNTRIES qui liste aussi des pays
+  // désactivés — voir son commentaire) et des pays PayDunya. Certains pays,
+  // ex Mali/Togo, ne sont couverts QUE par PayDunya — les exclure les
+  // rendrait inaccessibles à l'achat.
+  const mobileMoneyCountries = [
+    ...CHECKOUT_COUNTRIES.map((c) => ({ code: c.code, name: c.name })),
+    ...PAYDUNYA_COUNTRIES.filter((c) => !CHECKOUT_COUNTRIES.some((p) => p.code === c.code)).map((c) => ({ code: c.code, name: c.name })),
+  ];
 
   const isFlexible = product?.price_mode === 'flexible';
   const minAmount = product?.min_price_cfa || 0;
@@ -360,7 +369,7 @@ export default function CheckoutView() {
                       <SelectValue placeholder="Choisir le pays" />
                     </SelectTrigger>
                     <SelectContent>
-                      {PAYOUT_COUNTRIES.map((c) => (
+                      {mobileMoneyCountries.map((c) => (
                         <SelectItem key={c.code} value={c.code}>
                           {c.name}
                         </SelectItem>
