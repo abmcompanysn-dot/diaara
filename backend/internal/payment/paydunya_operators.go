@@ -141,7 +141,10 @@ var PayDunyaOperators = []PayDunyaOperator{
 		Label: "Moov Money", Provider: "MOOV_TG", Country: "TGO", DialCode: "228",
 		Endpoint: "moov-togo", TokenField: "payment_token", WithdrawMode: "moov-togo",
 		BuildPayload: func(name, email, phone, token string) map[string]interface{} {
-			return map[string]interface{}{"moov_togo_customer_fullname": name, "moov_togo_email": email, "moov_togo_customer_address": "", "moov_togo_phone_number": phone, "payment_token": token}
+			// moov_togo_customer_address requis par PayDunya (constaté
+			// 2026-09-25 : "Ce champ doit être renseigné" en vide) — pas de
+			// vraie adresse acheteur côté DIARRA, valeur générique.
+			return map[string]interface{}{"moov_togo_customer_fullname": name, "moov_togo_email": email, "moov_togo_customer_address": "Lomé", "moov_togo_phone_number": phone, "payment_token": token}
 		},
 	},
 	// Mali — Orange Money seul activé sur notre compte marchand (relevé
@@ -165,7 +168,16 @@ var PayDunyaOperators = []PayDunyaOperator{
 			return map[string]interface{}{"moov_burkina_faso_fullName": name, "moov_burkina_faso_email": email, "moov_burkina_faso_phone_number": phone, "moov_burkina_faso_payment_token": token}
 		},
 	},
-	// Cameroun
+	// Cameroun — ⚠️ constaté 2026-09-25 (test technique SoftPay) : PayDunya
+	// renvoie "Accès restreint pour effectuer des opérations dans cette
+	// région" pour MTN_CM sur notre compte, malgré que l'opérateur soit
+	// listé "activé" côté dashboard PayDunya. Pas un bug de format/code —
+	// probablement une restriction géographique/réglementaire du compte
+	// marchand DIARRA chez PayDunya, à lever directement auprès de leur
+	// support avant que ce pays soit réellement utilisable. Laissé dans le
+	// catalogue (le routage retombe sur PawaPay pour MTN_MOMO_CMR, actif
+	// chez nous — voir activePawaPayOperators) plutôt que retiré, pour ne
+	// pas perdre la config si PayDunya lève la restriction plus tard.
 	{
 		Label: "MTN MoMo", Provider: "MTN_CM", Country: "CMR", DialCode: "237", PawaPayCode: "MTN_MOMO_CMR",
 		Endpoint: "mtn-cameroun", TokenField: "payment_token", WithdrawMode: "mtn-cameroun",
