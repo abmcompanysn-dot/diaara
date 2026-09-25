@@ -199,11 +199,24 @@ func (h *SaleHandler) CheckoutConfig(w http.ResponseWriter, r *http.Request) {
 		}
 		operatorProviders[op.Code] = v
 	}
+	// requires_otp — opérateurs logiques dont le prestataire RÉSOLU (voir
+	// operatorProviders ci-dessus) exige un code OTP obtenu par l'acheteur
+	// avant de payer (Orange Money CI/BFA via PayDunya) — le frontend
+	// affiche un champ dédié uniquement pour ceux-là (voir
+	// checkout-view.tsx). N'inclut PAS un opérateur dont le routage résolu
+	// est finalement "pawapay" (pas de contrainte OTP côté PawaPay).
+	requiresOTP := map[string]bool{}
+	for _, op := range payment.LogicalOperators {
+		if op.RequiresOTP && operatorProviders[op.Code] == "paydunya" {
+			requiresOTP[op.Code] = true
+		}
+	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"card_payment_enabled": enabled,
 		"country_providers":    countryProviders,
 		"operator_providers":   operatorProviders,
+		"requires_otp":         requiresOTP,
 	})
 }
 
@@ -385,7 +398,7 @@ func (h *SaleHandler) Create(w http.ResponseWriter, r *http.Request) {
 	// Page de paiement hébergée (PawaPay ou PayDunya selon providerName) :
 	// l'acheteur y choisit lui-même son opérateur mobile money/carte/PayPal,
 	// le prestataire le redirige ensuite vers ReturnUrl.
-	redirectURL, err := h.initiateCheckout(r.Context(), created, product, input.Country, providerName, input.Phone, input.Operator)
+	redirectURL, err := h.initiateCheckout(r.Context(), created, product, input.Country, providerName, input.Phone, input.Operator, input.OTP)
 	if err != nil || redirectURL == "" {
 		log.Printf("payment_init_failed sale=%s provider=%s: %v", created.ID, providerName, err)
 		h.saleRepo.UpdateStatus(r.Context(), created.ID, string(model.SaleFailed))
@@ -687,7 +700,7 @@ func newUUID() string {
 // spécifique au prestataire réellement résolu (PawaPayCode ou PayDunyaCode)
 // avant l'appel, puisque providerName peut différer du prestataire "par
 // défaut" de cet opérateur (routage niveau 2, voir resolveCheckoutProvider).
-func (h *SaleHandler) initiateCheckout(ctx context.Context, sale *model.Sale, product *model.Product, country, providerName, phone, operator string) (string, error) {
+func (h *SaleHandler) initiateCheckout(ctx context.Context, sale *model.Sale, product *model.Product, country, providerName, phone, operator, otp string) (string, error) {
 	logicalOp, hasLogicalOp := payment.FindLogicalOperator(operator)
 	switch providerName {
 	case "paypal":
@@ -700,7 +713,7 @@ func (h *SaleHandler) initiateCheckout(ctx context.Context, sale *model.Sale, pr
 		if payDunyaCode == "" {
 			return "", fmt.Errorf("opérateur %s non disponible chez PayDunya", operator)
 		}
-		return h.initiatePayDunyaDeposit(ctx, sale, product, country, phone, payDunyaCode)
+		return h.initiatePayDunyaDeposit(ctx, sale, product, country, phone, payDunyaCode, otp)
 	}
 	pawaPayCode := operator
 	if hasLogicalOp {
@@ -768,7 +781,7 @@ func (h *SaleHandler) initiatePayPalCheckout(ctx context.Context, sale *model.Sa
 // sale.PaymentReference (utilisé ensuite par CheckoutStatus/
 // resolveDepositProvider pour interroger checkout-invoice/confirm) — voir
 // payment.PayDunyaClient.InitiateDirectDeposit pour le détail du flux.
-func (h *SaleHandler) initiatePayDunyaDeposit(ctx context.Context, sale *model.Sale, product *model.Product, country, phone, operator string) (string, error) {
+func (h *SaleHandler) initiatePayDunyaDeposit(ctx context.Context, sale *model.Sale, product *model.Product, country, phone, operator, otp string) (string, error) {
 	if h.paydunya == nil {
 		return "", errors.New("payment non configuré")
 	}
@@ -791,6 +804,7 @@ func (h *SaleHandler) initiatePayDunyaDeposit(ctx context.Context, sale *model.S
 		Operator:     op,
 		Phone:        phone,
 		ReturnURL:    returnURL,
+		OTP:          otp,
 	})
 	if token != "" {
 		// Persisté même en cas d'échec du softpay : le token de facture

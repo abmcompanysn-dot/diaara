@@ -88,6 +88,10 @@ export default function CheckoutView() {
   // /admin/settings) — un opérateur absent de cette map est masqué
   // (désactivé par l'admin, voir CheckoutConfig operator_providers).
   const [operatorProviders, setOperatorProviders] = useState<Record<string, 'pawapay' | 'paydunya'>>({});
+  // Opérateurs exigeant un code OTP obtenu par l'acheteur AVANT de payer
+  // (Orange Money CI/BFA via PayDunya) — voir CheckoutConfig.requires_otp.
+  const [requiresOTP, setRequiresOTP] = useState<Record<string, boolean>>({});
+  const [otp, setOtp] = useState('');
 
   const guest = !isLoggedIn();
   const selectedCountry = CHECKOUT_COUNTRIES.find((c) => c.code === country);
@@ -124,7 +128,9 @@ export default function CheckoutView() {
     phoneTouched && phoneDigits.length > 0 && !phoneValid
       ? `Le numéro doit contenir ${payoutCountry.phoneLength} chiffres (actuellement ${phoneDigits.length}).`
       : '';
-  const mobileMoneyValid = paymentMethod !== 'mobile_money' || (Boolean(operator) && phoneValid);
+  const mobileMoneyValid =
+    paymentMethod !== 'mobile_money' ||
+    (Boolean(operator) && phoneValid && (!requiresOTP[operator] || otp.length >= 4));
 
   useEffect(() => {
     if (!operators.find((o) => o.provider === operator)) {
@@ -167,6 +173,7 @@ export default function CheckoutView() {
       .then((res) => {
         setCardPaymentEnabled(!!res.card_payment_enabled);
         setOperatorProviders(res.operator_providers || {});
+        setRequiresOTP(res.requires_otp || {});
       })
       .catch(() => setCardPaymentEnabled(false));
   }, []);
@@ -211,6 +218,7 @@ export default function CheckoutView() {
         ...(email ? { buyer_email: email } : {}),
         ...(isFlexible ? { amount_cfa: amountToPay } : {}),
         ...(paymentMethod === 'mobile_money' ? { phone: phoneDigits, operator } : {}),
+        ...(paymentMethod === 'mobile_money' && requiresOTP[operator] ? { otp } : {}),
       });
       const redirectUrl = result.checkout?.redirect_url;
       if (!redirectUrl) throw new Error('redirect_url_missing');
@@ -453,6 +461,26 @@ export default function CheckoutView() {
                     </p>
                   )}
                 </div>
+
+                {requiresOTP[operator] && (
+                  <div className="space-y-2">
+                    <Label htmlFor="cc-otp">Code de confirmation Orange Money</Label>
+                    <Input
+                      id="cc-otp"
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="Code reçu"
+                      value={otp}
+                      onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                      className="bg-white"
+                    />
+                    <p className="text-xs text-green-900/50">
+                      {country === 'CIV'
+                        ? 'Composez #144*82# sur votre téléphone, choisissez l\'option 2, puis saisissez le code reçu ici.'
+                        : 'Un code vous a été envoyé par SMS par Orange Money — saisissez-le ici.'}
+                    </p>
+                  </div>
+                )}
               </>
             ) : (
               <div className="space-y-2">

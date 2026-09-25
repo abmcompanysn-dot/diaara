@@ -201,6 +201,10 @@ export const api = {
       // général par pays et le réglage par opérateur admin. Un opérateur
       // absent de cette map est désactivé (voir /admin/settings).
       operator_providers: Record<string, 'pawapay' | 'paydunya'>;
+      // Opérateurs (code logique) exigeant un code OTP obtenu par
+      // l'acheteur AVANT de payer (Orange Money CI/BFA via PayDunya) —
+      // absent ou false pour tout le reste. Voir checkout-view.tsx.
+      requires_otp?: Record<string, boolean>;
     }>('/api/checkout/config', { skipAuth: true }),
 
   // Products
@@ -224,13 +228,14 @@ export const api = {
     country: string;
     phone: string;
     operator: string;
+    otp?: string;
   }) =>
     fetchApi<{ micro_ticket_sale_id: string; payment_redirect_url: string }>('/api/vendor-chat/open', {
       method: 'POST',
       body: JSON.stringify(data),
     }),
 
-  payVendorChatBalance: (sessionId: string, data: { country: string; phone: string; operator: string }) =>
+  payVendorChatBalance: (sessionId: string, data: { country: string; phone: string; operator: string; otp?: string }) =>
     fetchApi<{ sale_id: string; payment_redirect_url: string }>(`/api/vendor-chat/${sessionId}/checkout`, {
       method: 'POST',
       body: JSON.stringify(data),

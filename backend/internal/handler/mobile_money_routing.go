@@ -80,7 +80,7 @@ func initiateMobileMoneyDeposit(
 	saleRepo *repository.SaleRepo,
 	saleID, paymentReference, productTitle, buyerName, buyerEmail string,
 	amountCFA int,
-	providerName, operatorCode, phone, returnURL string,
+	providerName, operatorCode, phone, returnURL, otp string,
 ) (string, error) {
 	logicalOp, hasLogicalOp := payment.FindLogicalOperator(operatorCode)
 
@@ -104,6 +104,7 @@ func initiateMobileMoneyDeposit(
 			Operator:     op,
 			Phone:        phone,
 			ReturnURL:    returnURL,
+			OTP:          otp,
 		})
 		if token != "" {
 			saleRepo.SetPaymentReference(ctx, saleID, token)

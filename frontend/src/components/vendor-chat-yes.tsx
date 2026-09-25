@@ -57,11 +57,18 @@ export function VendorChatYes({ productId, priceCfa, country: initialCountry, re
   const [phoneTouched, setPhoneTouched] = useState(false);
   // Prestataire résolu par opérateur logique exact (voir checkout-view.tsx).
   const [operatorProviders, setOperatorProviders] = useState<Record<string, 'pawapay' | 'paydunya'>>({});
+  // Opérateurs exigeant un code OTP obtenu par l'acheteur AVANT de payer
+  // (Orange Money CI/BFA via PayDunya) — voir checkout-view.tsx.
+  const [requiresOTP, setRequiresOTP] = useState<Record<string, boolean>>({});
+  const [otp, setOtp] = useState('');
 
   useEffect(() => {
     api
       .getCheckoutConfig()
-      .then((res) => setOperatorProviders(res.operator_providers || {}))
+      .then((res) => {
+        setOperatorProviders(res.operator_providers || {});
+        setRequiresOTP(res.requires_otp || {});
+      })
       .catch(() => {});
   }, []);
 
@@ -93,7 +100,7 @@ export function VendorChatYes({ productId, priceCfa, country: initialCountry, re
     phoneTouched && phoneDigits.length > 0 && !phoneValid
       ? `Le numéro doit contenir ${payoutCountry.phoneLength} chiffres (actuellement ${phoneDigits.length}).`
       : '';
-  const canPay = Boolean(operator) && phoneValid;
+  const canPay = Boolean(operator) && phoneValid && (!requiresOTP[operator] || otp.length >= 4);
 
   const handlePhoneChange = (raw: string) => {
     let digits = raw.replace(/\D/g, '');
@@ -120,6 +127,7 @@ export function VendorChatYes({ productId, priceCfa, country: initialCountry, re
         country,
         phone: phoneDigits,
         operator,
+        ...(requiresOTP[operator] ? { otp } : {}),
       });
       window.location.href = result.payment_redirect_url;
     } catch (err: any) {
@@ -215,6 +223,26 @@ export function VendorChatYes({ productId, priceCfa, country: initialCountry, re
             </div>
             {phoneError && <p className="text-xs text-red-600">{phoneError}</p>}
           </div>
+
+          {requiresOTP[operator] && (
+            <div className="space-y-1.5">
+              <Label htmlFor="vc-otp" className="text-xs">Code de confirmation Orange Money</Label>
+              <Input
+                id="vc-otp"
+                type="text"
+                inputMode="numeric"
+                placeholder="Code reçu"
+                value={otp}
+                onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                className="h-9 bg-white"
+              />
+              <p className="text-xs text-green-900/50">
+                {country === 'CIV'
+                  ? "Composez #144*82# puis l'option 2, saisissez le code reçu ici."
+                  : 'Un code vous a été envoyé par SMS par Orange Money — saisissez-le ici.'}
+              </p>
+            </div>
+          )}
         </div>
       )}
 

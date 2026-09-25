@@ -316,6 +316,9 @@ type DirectDepositRequest struct {
 	Operator     PayDunyaOperator // voir FindPayDunyaOperator
 	Phone        string           // numéro local, sans indicatif (ajouté via Operator.DialCode)
 	ReturnURL    string
+	// OTP — code obtenu par l'acheteur AVANT l'appel, requis uniquement si
+	// Operator.RequiresOTP (voir ce champ). Ignoré sinon.
+	OTP string
 }
 
 // InitiateDirectDeposit enchaîne CreateInvoice + InitiateSoftpay pour
@@ -323,6 +326,9 @@ type DirectDepositRequest struct {
 // payment_reference, pour le polling/webhook ultérieur) et l'URL vers
 // laquelle rediriger l'acheteur.
 func (c *PayDunyaClient) InitiateDirectDeposit(ctx context.Context, req DirectDepositRequest) (token string, redirectURL string, err error) {
+	if req.Operator.RequiresOTP && req.OTP == "" {
+		return "", "", fmt.Errorf("%w: code OTP requis pour %s", ErrPaymentFailed, req.Operator.Label)
+	}
 	msisdn, err := NormalizePhone(req.Operator.DialCode, req.Phone)
 	if err != nil {
 		return "", "", err
@@ -355,7 +361,7 @@ func (c *PayDunyaClient) InitiateDirectDeposit(ctx context.Context, req DirectDe
 		return "", "", err
 	}
 
-	payload := req.Operator.BuildPayload(req.BuyerName, req.BuyerEmail, localPhone, invoice.Token)
+	payload := req.Operator.BuildPayload(req.BuyerName, req.BuyerEmail, localPhone, invoice.Token, req.OTP)
 	softpay, err := c.InitiateSoftpay(ctx, req.Operator.Endpoint, payload)
 	if err != nil {
 		return invoice.Token, "", err

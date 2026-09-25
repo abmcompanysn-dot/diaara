@@ -90,6 +90,9 @@ type OpenConversationInput struct {
 	// SaleHandler.initiateDirectDeposit — mêmes conventions.
 	Phone    string `json:"phone"`
 	Operator string `json:"operator"`
+	// OTP : voir model.CreateOrderInput.OTP — même convention, requis
+	// uniquement pour un opérateur PayDunya avec RequiresOTP.
+	OTP string `json:"otp,omitempty"`
 }
 
 // SendOfferInput — POST /api/vendor-chat/{session_id}/send-offer (vendeur ->

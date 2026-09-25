@@ -18,6 +18,13 @@ type LogicalOperator struct {
 	DialCode     string
 	PawaPayCode  string // code XOFOperators, vide si PawaPay ne couvre pas cet opérateur
 	PayDunyaCode string // code PayDunyaOperators, vide si PayDunya ne couvre pas cet opérateur
+	// RequiresOTP — vrai si le prestataire PayDunya résolu pour cet
+	// opérateur exige un code obtenu par l'acheteur AVANT de payer (ex
+	// Orange Money CI/BFA — voir PayDunyaOperator.RequiresOTP). Un
+	// opérateur avec PawaPayCode ET PayDunyaCode n'a cette contrainte que
+	// si le routage résolu est effectivement "paydunya" — le frontend
+	// n'affiche le champ OTP que dans ce cas (voir CheckoutConfig).
+	RequiresOTP bool
 }
 
 // LogicalOperators fusionne XOFOperators (PawaPay) et PayDunyaOperators
@@ -57,6 +64,7 @@ func buildLogicalOperators() []LogicalOperator {
 			for i := range out {
 				if out[i].Code == op.PawaPayCode {
 					out[i].PayDunyaCode = op.Provider
+					out[i].RequiresOTP = op.RequiresOTP
 					break
 				}
 			}
@@ -64,7 +72,7 @@ func buildLogicalOperators() []LogicalOperator {
 		}
 		out = append(out, LogicalOperator{
 			Code: op.Provider, Label: op.Label, Country: op.Country, DialCode: op.DialCode,
-			PayDunyaCode: op.Provider,
+			PayDunyaCode: op.Provider, RequiresOTP: op.RequiresOTP,
 		})
 	}
 	return out

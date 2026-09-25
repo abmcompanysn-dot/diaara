@@ -197,7 +197,7 @@ func (h *YesHandler) OpenConversation(w http.ResponseWriter, r *http.Request) {
 	returnURL := h.frontendURL + "/checkout/return?token=" + *created.CheckoutToken
 	redirectURL, err := initiateMobileMoneyDeposit(r.Context(), h.pawapay, h.paydunya, h.saleRepo,
 		created.ID, created.PaymentReference, product.Title, created.BuyerName, buyerEmail, created.AmountCFA,
-		providerName, input.Operator, input.Phone, returnURL)
+		providerName, input.Operator, input.Phone, returnURL, input.OTP)
 	if err != nil {
 		log.Printf("yes micro-ticket payment_init_failed sale=%s: %v", created.ID, err)
 		h.saleRepo.UpdateStatus(r.Context(), created.ID, string(model.SaleFailed))
@@ -415,6 +415,7 @@ func (h *YesHandler) InitiateBalanceCheckout(w http.ResponseWriter, r *http.Requ
 		Country  string `json:"country"`
 		Phone    string `json:"phone"`
 		Operator string `json:"operator"`
+		OTP      string `json:"otp,omitempty"`
 	}
 	_ = json.NewDecoder(r.Body).Decode(&input)
 	if input.Country == "" {
@@ -484,7 +485,7 @@ func (h *YesHandler) InitiateBalanceCheckout(w http.ResponseWriter, r *http.Requ
 	returnURL := h.frontendURL + "/checkout/return?token=" + *created.CheckoutToken
 	redirectURL, err := initiateMobileMoneyDeposit(r.Context(), h.pawapay, h.paydunya, h.saleRepo,
 		created.ID, created.PaymentReference, product.Title, created.BuyerName, buyerEmail, created.AmountCFA,
-		providerName, input.Operator, input.Phone, returnURL)
+		providerName, input.Operator, input.Phone, returnURL, input.OTP)
 	if err != nil {
 		log.Printf("yes balance payment_init_failed sale=%s: %v", created.ID, err)
 		h.saleRepo.UpdateStatus(r.Context(), created.ID, string(model.SaleFailed))

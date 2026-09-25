@@ -56,6 +56,11 @@ type CreateOrderInput struct {
 	// Operator : code PawaPay, ex "ORANGE_SEN" (voir payment.XOFOperators).
 	Phone    string `json:"phone,omitempty"`
 	Operator string `json:"operator,omitempty"`
+	// OTP : code obtenu par l'acheteur AVANT de payer, requis uniquement
+	// pour un opérateur PayDunya avec RequiresOTP (ex Orange Money Côte
+	// d'Ivoire/Burkina Faso — voir payment.PayDunyaOperator.RequiresOTP).
+	// Ignoré pour tout autre opérateur.
+	OTP string `json:"otp,omitempty"`
 }
 
 type SaleStatus string

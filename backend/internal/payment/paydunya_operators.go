@@ -16,8 +16,15 @@ type PayDunyaOperator struct {
 	// doc — aucune règle fixe par pays).
 	TokenField string
 	// BuildPayload construit le corps JSON exact attendu par cet endpoint
-	// (noms de champs spécifiques à l'opérateur) à partir des infos communes.
-	BuildPayload func(name, email, phone, token string) map[string]interface{}
+	// (noms de champs spécifiques à l'opérateur) à partir des infos
+	// communes. otp est vide pour tout opérateur avec RequiresOTP=false.
+	BuildPayload func(name, email, phone, token, otp string) map[string]interface{}
+	// RequiresOTP — l'acheteur doit obtenir un code AVANT l'appel SoftPay
+	// (ex Orange Money : #144*82#+option 2 en Côte d'Ivoire, SMS reçu au
+	// Burkina Faso) et le saisir sur DIARRA — voir DirectDepositRequest.OTP.
+	// Sans OTP valide, InitiateDirectDeposit refuse avant même d'appeler
+	// PayDunya (voir InitiateDirectDeposit).
+	RequiresOTP bool
 	// WithdrawMode — code PayDunya pour l'API de déboursement (versement
 	// vendeur), voir developers.paydunya.com/doc/FR/api_deboursement —
 	// distinct de Endpoint (dépôt) : par exemple Endpoint="new-orange-money-senegal"
@@ -33,44 +40,44 @@ type PayDunyaOperator struct {
 }
 
 // PayDunyaOperators couvre les pays/opérateurs mobile money PayDunya (hors
-// carte bancaire, hors OTP/preauth spécifiques comme Orange CI/BFA qui
-// exigent un code reçu par SMS avant l'appel — non supportés ici, flux en
-// une étape uniquement). Miroir prévu côté frontend
+// carte bancaire). Orange CI et Orange BFA exigent un code OTP obtenu par
+// l'acheteur AVANT l'appel (voir RequiresOTP) — supporté via un champ
+// dédié sur le formulaire DIARRA. Miroir prévu côté frontend
 // (frontend/src/lib/operators.ts, PAYDUNYA_COUNTRIES).
 var PayDunyaOperators = []PayDunyaOperator{
 	// Sénégal
 	{
 		Label: "Orange Money", Provider: "ORANGE_SN", Country: "SEN", DialCode: "221", PawaPayCode: "ORANGE_SEN",
 		Endpoint: "new-orange-money-senegal", TokenField: "invoice_token", WithdrawMode: "orange-money-senegal",
-		BuildPayload: func(name, email, phone, token string) map[string]interface{} {
+		BuildPayload: func(name, email, phone, token, _ string) map[string]interface{} {
 			return map[string]interface{}{"customer_name": name, "customer_email": email, "phone_number": phone, "invoice_token": token}
 		},
 	},
 	{
 		Label: "Wave", Provider: "WAVE_SN", Country: "SEN", DialCode: "221", PawaPayCode: "WAVE_SEN",
 		Endpoint: "wave-senegal", TokenField: "wave_senegal_payment_token", WithdrawMode: "wave-senegal",
-		BuildPayload: func(name, email, phone, token string) map[string]interface{} {
+		BuildPayload: func(name, email, phone, token, _ string) map[string]interface{} {
 			return map[string]interface{}{"wave_senegal_fullName": name, "wave_senegal_email": email, "wave_senegal_phone": phone, "wave_senegal_payment_token": token}
 		},
 	},
 	{
 		Label: "Free Money", Provider: "FREE_SN", Country: "SEN", DialCode: "221", PawaPayCode: "FREE_SEN",
 		Endpoint: "free-money-senegal", TokenField: "payment_token", WithdrawMode: "free-money-senegal",
-		BuildPayload: func(name, email, phone, token string) map[string]interface{} {
+		BuildPayload: func(name, email, phone, token, _ string) map[string]interface{} {
 			return map[string]interface{}{"customer_name": name, "customer_email": email, "phone_number": phone, "payment_token": token}
 		},
 	},
 	{
 		Label: "Expresso", Provider: "EXPRESSO_SN", Country: "SEN", DialCode: "221",
 		Endpoint: "expresso-senegal", TokenField: "payment_token", WithdrawMode: "expresso-senegal",
-		BuildPayload: func(name, email, phone, token string) map[string]interface{} {
+		BuildPayload: func(name, email, phone, token, _ string) map[string]interface{} {
 			return map[string]interface{}{"expresso_sn_fullName": name, "expresso_sn_email": email, "expresso_sn_phone": phone, "payment_token": token}
 		},
 	},
 	{
 		Label: "Djamo", Provider: "DJAMO_SN", Country: "SEN", DialCode: "221",
 		Endpoint: "djamo", TokenField: "djamo_payment_token", WithdrawMode: "djamo-sn",
-		BuildPayload: func(name, email, phone, token string) map[string]interface{} {
+		BuildPayload: func(name, email, phone, token, _ string) map[string]interface{} {
 			return map[string]interface{}{"djamo_fullName": name, "djamo_email": email, "djamo_phone": phone, "code_country": "sn", "djamo_payment_token": token}
 		},
 	},
@@ -78,54 +85,61 @@ var PayDunyaOperators = []PayDunyaOperator{
 	{
 		Label: "MTN MoMo", Provider: "MTN_BJ", Country: "BEN", DialCode: "229", PawaPayCode: "MTN_MOMO_BEN",
 		Endpoint: "mtn-benin", TokenField: "payment_token", WithdrawMode: "mtn-benin",
-		BuildPayload: func(name, email, phone, token string) map[string]interface{} {
+		BuildPayload: func(name, email, phone, token, _ string) map[string]interface{} {
 			return map[string]interface{}{"mtn_benin_customer_fullname": name, "mtn_benin_email": email, "mtn_benin_phone_number": phone, "mtn_benin_wallet_provider": "MTNBENIN", "payment_token": token}
 		},
 	},
 	{
 		Label: "Moov Money", Provider: "MOOV_BJ", Country: "BEN", DialCode: "229", PawaPayCode: "MOOV_BEN",
 		Endpoint: "moov-benin", TokenField: "payment_token", WithdrawMode: "moov-benin",
-		BuildPayload: func(name, email, phone, token string) map[string]interface{} {
+		BuildPayload: func(name, email, phone, token, _ string) map[string]interface{} {
 			return map[string]interface{}{"moov_benin_customer_fullname": name, "moov_benin_email": email, "moov_benin_phone_number": phone, "payment_token": token}
 		},
 	},
 	{
 		Label: "Celtiis Cash", Provider: "CELTIIS_BJ", Country: "BEN", DialCode: "229",
 		Endpoint: "celtiis-cash", TokenField: "payment_token", WithdrawMode: "celtiis-cash",
-		BuildPayload: func(name, email, phone, token string) map[string]interface{} {
+		BuildPayload: func(name, email, phone, token, _ string) map[string]interface{} {
 			return map[string]interface{}{"celtiis_cash_customer_fullname": name, "celtiis_cash_customer_email": email, "celtiis_cash_phone_number": phone, "payment_token": token}
 		},
 	},
-	// Côte d'Ivoire — Orange CI exclu du DÉPÔT : exige un OTP SMS obtenu
-	// AVANT l'appel SoftPay (orange_money_ci_otp), flux en une étape non
-	// supporté par DIARRA aujourd'hui. Reste disponible en WithdrawMode pour
-	// le versement vendeur (pas cette contrainte côté déboursement) — voir
-	// PayDunyaWithdrawOnlyOperators plus bas si besoin un jour.
+	// Côte d'Ivoire
+	{
+		// Orange CI exige un code OTP obtenu par l'acheteur AVANT l'appel
+		// (composer #144*82# puis choisir l'option 2 sur son téléphone,
+		// voir doc PayDunya) — RequiresOTP fait apparaître un champ dédié
+		// sur le formulaire DIARRA (voir checkout-view.tsx).
+		Label: "Orange Money", Provider: "ORANGE_CI", Country: "CIV", DialCode: "225", RequiresOTP: true,
+		Endpoint: "orange-money-ci", TokenField: "payment_token", WithdrawMode: "orange-money-ci",
+		BuildPayload: func(name, email, phone, token, otp string) map[string]interface{} {
+			return map[string]interface{}{"orange_money_ci_customer_fullname": name, "orange_money_ci_email": email, "orange_money_ci_phone_number": phone, "orange_money_ci_otp": otp, "payment_token": token}
+		},
+	},
 	{
 		Label: "MTN MoMo", Provider: "MTN_CI", Country: "CIV", DialCode: "225", PawaPayCode: "MTN_MOMO_CIV",
 		Endpoint: "mtn-ci", TokenField: "payment_token", WithdrawMode: "mtn-ci",
-		BuildPayload: func(name, email, phone, token string) map[string]interface{} {
+		BuildPayload: func(name, email, phone, token, _ string) map[string]interface{} {
 			return map[string]interface{}{"mtn_ci_customer_fullname": name, "mtn_ci_email": email, "mtn_ci_phone_number": phone, "mtn_ci_wallet_provider": "MTNCI", "payment_token": token}
 		},
 	},
 	{
 		Label: "Moov Money", Provider: "MOOV_CI", Country: "CIV", DialCode: "225",
 		Endpoint: "moov-ci", TokenField: "payment_token", WithdrawMode: "moov-ci",
-		BuildPayload: func(name, email, phone, token string) map[string]interface{} {
+		BuildPayload: func(name, email, phone, token, _ string) map[string]interface{} {
 			return map[string]interface{}{"moov_ci_customer_fullname": name, "moov_ci_email": email, "moov_ci_phone_number": phone, "payment_token": token}
 		},
 	},
 	{
 		Label: "Wave", Provider: "WAVE_CI", Country: "CIV", DialCode: "225", PawaPayCode: "WAVE_CIV",
 		Endpoint: "wave-ci", TokenField: "wave_ci_payment_token", WithdrawMode: "wave-ci",
-		BuildPayload: func(name, email, phone, token string) map[string]interface{} {
+		BuildPayload: func(name, email, phone, token, _ string) map[string]interface{} {
 			return map[string]interface{}{"wave_ci_fullName": name, "wave_ci_email": email, "wave_ci_phone": phone, "wave_ci_payment_token": token}
 		},
 	},
 	{
 		Label: "Djamo", Provider: "DJAMO_CI", Country: "CIV", DialCode: "225",
 		Endpoint: "djamo", TokenField: "djamo_payment_token", WithdrawMode: "djamo-ci",
-		BuildPayload: func(name, email, phone, token string) map[string]interface{} {
+		BuildPayload: func(name, email, phone, token, _ string) map[string]interface{} {
 			return map[string]interface{}{"djamo_fullName": name, "djamo_email": email, "djamo_phone": phone, "code_country": "ci", "djamo_payment_token": token}
 		},
 	},
@@ -133,14 +147,14 @@ var PayDunyaOperators = []PayDunyaOperator{
 	{
 		Label: "T-Money", Provider: "TMONEY_TG", Country: "TGO", DialCode: "228",
 		Endpoint: "t-money-togo", TokenField: "payment_token", WithdrawMode: "t-money-togo",
-		BuildPayload: func(name, email, phone, token string) map[string]interface{} {
+		BuildPayload: func(name, email, phone, token, _ string) map[string]interface{} {
 			return map[string]interface{}{"name_t_money": name, "email_t_money": email, "phone_t_money": phone, "payment_token": token}
 		},
 	},
 	{
 		Label: "Moov Money", Provider: "MOOV_TG", Country: "TGO", DialCode: "228",
 		Endpoint: "moov-togo", TokenField: "payment_token", WithdrawMode: "moov-togo",
-		BuildPayload: func(name, email, phone, token string) map[string]interface{} {
+		BuildPayload: func(name, email, phone, token, _ string) map[string]interface{} {
 			// moov_togo_customer_address requis par PayDunya (constaté
 			// 2026-09-25 : "Ce champ doit être renseigné" en vide) — pas de
 			// vraie adresse acheteur côté DIARRA, valeur générique.
@@ -155,16 +169,24 @@ var PayDunyaOperators = []PayDunyaOperator{
 	{
 		Label: "Orange Money", Provider: "ORANGE_ML", Country: "MLI", DialCode: "223",
 		Endpoint: "orange-money-mali", TokenField: "payment_token", WithdrawMode: "orange-money-mali",
-		BuildPayload: func(name, email, phone, token string) map[string]interface{} {
+		BuildPayload: func(name, email, phone, token, _ string) map[string]interface{} {
 			return map[string]interface{}{"orange_money_mali_customer_fullname": name, "orange_money_mali_email": email, "orange_money_mali_phone_number": phone, "payment_token": token}
 		},
 	},
-	// Burkina Faso — Orange BFA exclu du DÉPÔT : même contrainte OTP
-	// qu'Orange CI (voir orange-money-burkina).
+	// Burkina Faso
+	{
+		// Orange BFA — même contrainte OTP qu'Orange CI (code reçu par SMS
+		// avant l'appel, otp_code dans le payload, voir doc PayDunya).
+		Label: "Orange Money", Provider: "ORANGE_BF", Country: "BFA", DialCode: "226", RequiresOTP: true,
+		Endpoint: "orange-money-burkina", TokenField: "payment_token", WithdrawMode: "orange-money-burkina",
+		BuildPayload: func(name, email, phone, token, otp string) map[string]interface{} {
+			return map[string]interface{}{"name_bf": name, "email_bf": email, "phone_bf": phone, "otp_code": otp, "payment_token": token}
+		},
+	},
 	{
 		Label: "Moov Money", Provider: "MOOV_BF", Country: "BFA", DialCode: "226", PawaPayCode: "MOOV_BFA",
 		Endpoint: "moov-burkina", TokenField: "moov_burkina_faso_payment_token", WithdrawMode: "moov-burkina-faso",
-		BuildPayload: func(name, email, phone, token string) map[string]interface{} {
+		BuildPayload: func(name, email, phone, token, _ string) map[string]interface{} {
 			return map[string]interface{}{"moov_burkina_faso_fullName": name, "moov_burkina_faso_email": email, "moov_burkina_faso_phone_number": phone, "moov_burkina_faso_payment_token": token}
 		},
 	},
@@ -181,7 +203,7 @@ var PayDunyaOperators = []PayDunyaOperator{
 	{
 		Label: "MTN MoMo", Provider: "MTN_CM", Country: "CMR", DialCode: "237", PawaPayCode: "MTN_MOMO_CMR",
 		Endpoint: "mtn-cameroun", TokenField: "payment_token", WithdrawMode: "mtn-cameroun",
-		BuildPayload: func(name, email, phone, token string) map[string]interface{} {
+		BuildPayload: func(name, email, phone, token, _ string) map[string]interface{} {
 			return map[string]interface{}{"mtn_cameroun_customer_fullname": name, "mtn_cameroun_email": email, "mtn_cameroun_phone_number": phone, "mtn_cameroun_wallet_provider": "MTNCAMEROUN", "payment_token": token}
 		},
 	},
