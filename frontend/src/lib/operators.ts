@@ -277,6 +277,8 @@ export const PAYDUNYA_COUNTRIES: PayoutCountry[] = [
       { label: 'Orange Money', provider: 'ORANGE_SN', logo: 'orange-money.png' },
       { label: 'Wave', provider: 'WAVE_SN', logo: 'wave.png' },
       { label: 'Free Money', provider: 'FREE_SN', badgeColor: 'bg-white border border-green-900/15', badgeText: 'text-green-950' },
+      { label: 'Expresso', provider: 'EXPRESSO_SN', badgeColor: 'bg-red-100', badgeText: 'text-red-900' },
+      { label: 'Djamo', provider: 'DJAMO_SN', badgeColor: 'bg-purple-100', badgeText: 'text-purple-900' },
     ],
   },
   {
@@ -287,6 +289,7 @@ export const PAYDUNYA_COUNTRIES: PayoutCountry[] = [
     operators: [
       { label: 'MTN MoMo', provider: 'MTN_BJ', logo: 'mtn-momo.png' },
       { label: 'Moov Money', provider: 'MOOV_BJ', logo: 'moov-money.png' },
+      { label: 'Celtiis Cash', provider: 'CELTIIS_BJ', badgeColor: 'bg-blue-100', badgeText: 'text-blue-900' },
     ],
   },
   {
@@ -298,6 +301,7 @@ export const PAYDUNYA_COUNTRIES: PayoutCountry[] = [
       { label: 'MTN MoMo', provider: 'MTN_CI', logo: 'mtn-momo.png' },
       { label: 'Moov Money', provider: 'MOOV_CI', logo: 'moov-money.png' },
       { label: 'Wave', provider: 'WAVE_CI', logo: 'wave.png' },
+      { label: 'Djamo', provider: 'DJAMO_CI', badgeColor: 'bg-purple-100', badgeText: 'text-purple-900' },
     ],
   },
   {

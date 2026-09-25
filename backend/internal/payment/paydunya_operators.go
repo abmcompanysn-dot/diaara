@@ -60,6 +60,20 @@ var PayDunyaOperators = []PayDunyaOperator{
 			return map[string]interface{}{"customer_name": name, "customer_email": email, "phone_number": phone, "payment_token": token}
 		},
 	},
+	{
+		Label: "Expresso", Provider: "EXPRESSO_SN", Country: "SEN", DialCode: "221",
+		Endpoint: "expresso-senegal", TokenField: "payment_token", WithdrawMode: "expresso-senegal",
+		BuildPayload: func(name, email, phone, token string) map[string]interface{} {
+			return map[string]interface{}{"expresso_sn_fullName": name, "expresso_sn_email": email, "expresso_sn_phone": phone, "payment_token": token}
+		},
+	},
+	{
+		Label: "Djamo", Provider: "DJAMO_SN", Country: "SEN", DialCode: "221",
+		Endpoint: "djamo", TokenField: "djamo_payment_token", WithdrawMode: "djamo-sn",
+		BuildPayload: func(name, email, phone, token string) map[string]interface{} {
+			return map[string]interface{}{"djamo_fullName": name, "djamo_email": email, "djamo_phone": phone, "code_country": "sn", "djamo_payment_token": token}
+		},
+	},
 	// Bénin
 	{
 		Label: "MTN MoMo", Provider: "MTN_BJ", Country: "BEN", DialCode: "229", PawaPayCode: "MTN_MOMO_BEN",
@@ -73,6 +87,13 @@ var PayDunyaOperators = []PayDunyaOperator{
 		Endpoint: "moov-benin", TokenField: "payment_token", WithdrawMode: "moov-benin",
 		BuildPayload: func(name, email, phone, token string) map[string]interface{} {
 			return map[string]interface{}{"moov_benin_customer_fullname": name, "moov_benin_email": email, "moov_benin_phone_number": phone, "payment_token": token}
+		},
+	},
+	{
+		Label: "Celtiis Cash", Provider: "CELTIIS_BJ", Country: "BEN", DialCode: "229",
+		Endpoint: "celtiis-cash", TokenField: "payment_token", WithdrawMode: "celtiis-cash",
+		BuildPayload: func(name, email, phone, token string) map[string]interface{} {
+			return map[string]interface{}{"celtiis_cash_customer_fullname": name, "celtiis_cash_customer_email": email, "celtiis_cash_phone_number": phone, "payment_token": token}
 		},
 	},
 	// Côte d'Ivoire — Orange CI exclu du DÉPÔT : exige un OTP SMS obtenu
@@ -99,6 +120,13 @@ var PayDunyaOperators = []PayDunyaOperator{
 		Endpoint: "wave-ci", TokenField: "wave_ci_payment_token", WithdrawMode: "wave-ci",
 		BuildPayload: func(name, email, phone, token string) map[string]interface{} {
 			return map[string]interface{}{"wave_ci_fullName": name, "wave_ci_email": email, "wave_ci_phone": phone, "wave_ci_payment_token": token}
+		},
+	},
+	{
+		Label: "Djamo", Provider: "DJAMO_CI", Country: "CIV", DialCode: "225",
+		Endpoint: "djamo", TokenField: "djamo_payment_token", WithdrawMode: "djamo-ci",
+		BuildPayload: func(name, email, phone, token string) map[string]interface{} {
+			return map[string]interface{}{"djamo_fullName": name, "djamo_email": email, "djamo_phone": phone, "code_country": "ci", "djamo_payment_token": token}
 		},
 	},
 	// Togo
