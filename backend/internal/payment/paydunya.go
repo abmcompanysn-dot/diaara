@@ -110,12 +110,18 @@ func (c *PayDunyaClient) CreateInvoice(ctx context.Context, req CreateInvoiceReq
 	if req.Actions.CallbackURL == "" {
 		req.Actions.CallbackURL = c.cfg.CallbackURL
 	}
-	var out CreateInvoiceResponse
-	if err := c.do(ctx, http.MethodPost, "/checkout-invoice/create", req, &out); err != nil {
+	var raw json.RawMessage
+	if err := c.do(ctx, http.MethodPost, "/checkout-invoice/create", req, &raw); err != nil {
 		return nil, err
 	}
+	var out CreateInvoiceResponse
+	_ = json.Unmarshal(raw, &out)
 	if out.ResponseCode != "00" {
-		return nil, fmt.Errorf("%w: %s", ErrPaymentFailed, out.Description)
+		msg := out.Description
+		if msg == "" {
+			msg = string(raw)
+		}
+		return nil, fmt.Errorf("%w: %s", ErrPaymentFailed, msg)
 	}
 	return &out, nil
 }
@@ -136,12 +142,22 @@ type SoftpayResponse struct {
 // (les noms de champs diffèrent par opérateur, impossible à unifier dans un
 // struct Go commun).
 func (c *PayDunyaClient) InitiateSoftpay(ctx context.Context, endpoint string, payload map[string]interface{}) (*SoftpayResponse, error) {
-	var out SoftpayResponse
-	if err := c.do(ctx, http.MethodPost, "/softpay/"+endpoint, payload, &out); err != nil {
+	var raw json.RawMessage
+	if err := c.do(ctx, http.MethodPost, "/softpay/"+endpoint, payload, &raw); err != nil {
 		return nil, err
 	}
+	var out SoftpayResponse
+	_ = json.Unmarshal(raw, &out)
 	if !out.Success {
-		return nil, fmt.Errorf("%w: %s", ErrPaymentFailed, out.Message)
+		msg := out.Message
+		if msg == "" {
+			// Le format de réponse SoftPay diffère par opérateur (pas de
+			// "message" standard partout, ex un champ imbriqué ou un code
+			// numérique) — le corps brut permet de diagnostiquer plutôt que
+			// de renvoyer une erreur vide (constaté 2026-09-25 en prod).
+			msg = string(raw)
+		}
+		return nil, fmt.Errorf("%w: %s", ErrPaymentFailed, msg)
 	}
 	return &out, nil
 }
