@@ -266,6 +266,54 @@ func (c *PayDunyaClient) GetDisbursementStatus(ctx context.Context, disburseToke
 	return &out, nil
 }
 
+// DirectDepositRequest — infos nécessaires pour un dépôt PayDunya de bout en
+// bout (création de facture + softpay), niveau d'abstraction équivalent à
+// PawaPayClient.InitiateDirectDeposit — appelable sans dépendre de
+// *model.Sale/*model.Product (réutilisable par SaleHandler et YesHandler).
+type DirectDepositRequest struct {
+	ProductTitle string
+	BuyerName    string
+	BuyerEmail   string
+	AmountCFA    int
+	Operator     PayDunyaOperator // voir FindPayDunyaOperator
+	Phone        string           // numéro local, sans indicatif (ajouté via Operator.DialCode)
+	ReturnURL    string
+}
+
+// InitiateDirectDeposit enchaîne CreateInvoice + InitiateSoftpay pour
+// l'opérateur donné. Retourne le token de facture (à persister comme
+// payment_reference, pour le polling/webhook ultérieur) et l'URL vers
+// laquelle rediriger l'acheteur.
+func (c *PayDunyaClient) InitiateDirectDeposit(ctx context.Context, req DirectDepositRequest) (token string, redirectURL string, err error) {
+	msisdn, err := NormalizePhone(req.Operator.DialCode, req.Phone)
+	if err != nil {
+		return "", "", err
+	}
+
+	amountStr := fmt.Sprintf("%d", req.AmountCFA)
+	invoice, err := c.CreateInvoice(ctx, CreateInvoiceRequest{
+		Invoice: Invoice{
+			Items: map[string]InvoiceItem{
+				"item_0": {Name: req.ProductTitle, Quantity: 1, UnitPrice: amountStr, TotalPrice: amountStr},
+			},
+			Customer:    InvoiceCustomer{Name: req.BuyerName, Email: req.BuyerEmail, Phone: msisdn},
+			TotalAmount: req.AmountCFA,
+			Description: req.ProductTitle,
+		},
+		Store:   InvoiceStore{Name: "DIARRA"},
+		Actions: InvoiceActions{ReturnURL: req.ReturnURL, CancelURL: req.ReturnURL},
+	})
+	if err != nil {
+		return "", "", err
+	}
+
+	payload := req.Operator.BuildPayload(req.BuyerName, req.BuyerEmail, msisdn, invoice.Token)
+	if _, err := c.InitiateSoftpay(ctx, req.Operator.Endpoint, payload); err != nil {
+		return invoice.Token, "", err
+	}
+	return invoice.Token, req.ReturnURL, nil
+}
+
 // --- HTTP interne -------------------------------------------------------------
 
 func (c *PayDunyaClient) do(ctx context.Context, method, path string, body interface{}, out interface{}) error {

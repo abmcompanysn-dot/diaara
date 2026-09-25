@@ -38,6 +38,7 @@ type YesHandler struct {
 	referralRepo  *repository.ReferralRepo
 	settingsRepo  *repository.SettingsRepo
 	pawapay       *payment.PawaPayClient
+	paydunya      *payment.PayDunyaClient
 	yesBusiness   *payment.YesBusinessClient
 	storage       *storage.S3Storage
 	notifications *email.NotificationService
@@ -58,6 +59,7 @@ func NewYesHandler(
 	referralRepo *repository.ReferralRepo,
 	settingsRepo *repository.SettingsRepo,
 	pawapay *payment.PawaPayClient,
+	paydunya *payment.PayDunyaClient,
 	yesBusiness *payment.YesBusinessClient,
 	storageSvc *storage.S3Storage,
 	notifications *email.NotificationService,
@@ -67,7 +69,7 @@ func NewYesHandler(
 	return &YesHandler{
 		yesRepo: yesRepo, saleRepo: saleRepo, productRepo: productRepo, userRepo: userRepo,
 		referralRepo: referralRepo, settingsRepo: settingsRepo,
-		pawapay: pawapay, yesBusiness: yesBusiness, storage: storageSvc, notifications: notifications,
+		pawapay: pawapay, paydunya: paydunya, yesBusiness: yesBusiness, storage: storageSvc, notifications: notifications,
 		frontendURL: frontendURL, apiURL: strings.TrimSuffix(apiURL, "/"),
 	}
 }
@@ -114,12 +116,12 @@ func (h *YesHandler) OpenConversation(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"missing_required_fields"}`, http.StatusBadRequest)
 		return
 	}
-	if h.pawapay == nil {
-		http.Error(w, `{"error":"payment_not_configured"}`, http.StatusServiceUnavailable)
-		return
-	}
 	if h.yesBusiness == nil {
 		http.Error(w, `{"error":"yes_not_configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+	if isOperatorBlocked(r.Context(), h.settingsRepo, input.Operator) {
+		http.Error(w, `{"error":"operator_unavailable"}`, http.StatusBadRequest)
 		return
 	}
 
@@ -155,6 +157,7 @@ func (h *YesHandler) OpenConversation(w http.ResponseWriter, r *http.Request) {
 	rate := h.settingsRepo.GetFloat(r.Context(), model.SettingCommissionRatePct, service.DefaultPlatformFeePct)
 	rate = service.EffectivePlatformFeePct(microTicketAmount, rate)
 	platformFee := int(float64(microTicketAmount) * rate / 100.0)
+	providerName := resolveMobileMoneyProvider(r.Context(), h.settingsRepo, input.Country, input.Operator)
 	checkoutToken := newUUID()
 	microSale := &model.Sale{
 		ProductID:        product.ID,
@@ -164,7 +167,7 @@ func (h *YesHandler) OpenConversation(w http.ResponseWriter, r *http.Request) {
 		AmountCFA:        microTicketAmount,
 		PlatformFeeCFA:   platformFee,
 		VendorAmountCFA:  microTicketAmount - platformFee,
-		PaymentProvider:  "pawapay",
+		PaymentProvider:  providerName,
 		PaymentReference: newUUID(),
 		CheckoutToken:    &checkoutToken,
 		ReferralLinkID:   referralLinkID,
@@ -187,8 +190,14 @@ func (h *YesHandler) OpenConversation(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	buyerEmail := ""
+	if buyer, err := h.userRepo.FindByID(r.Context(), userID); err == nil {
+		buyerEmail = buyer.Email
+	}
 	returnURL := h.frontendURL + "/checkout/return?token=" + *created.CheckoutToken
-	redirectURL, err := h.pawapay.InitiateDirectDeposit(r.Context(), created.PaymentReference, input.Country, input.Phone, input.Operator, created.AmountCFA, returnURL)
+	redirectURL, err := initiateMobileMoneyDeposit(r.Context(), h.pawapay, h.paydunya, h.saleRepo,
+		created.ID, created.PaymentReference, product.Title, created.BuyerName, buyerEmail, created.AmountCFA,
+		providerName, input.Operator, input.Phone, returnURL)
 	if err != nil {
 		log.Printf("yes micro-ticket payment_init_failed sale=%s: %v", created.ID, err)
 		h.saleRepo.UpdateStatus(r.Context(), created.ID, string(model.SaleFailed))
@@ -415,6 +424,10 @@ func (h *YesHandler) InitiateBalanceCheckout(w http.ResponseWriter, r *http.Requ
 		http.Error(w, `{"error":"missing_required_fields"}`, http.StatusBadRequest)
 		return
 	}
+	if isOperatorBlocked(r.Context(), h.settingsRepo, input.Operator) {
+		http.Error(w, `{"error":"operator_unavailable"}`, http.StatusBadRequest)
+		return
+	}
 
 	product, err := h.productRepo.FindByID(r.Context(), session.ProductID)
 	if err != nil {
@@ -430,6 +443,7 @@ func (h *YesHandler) InitiateBalanceCheckout(w http.ResponseWriter, r *http.Requ
 	rate := h.settingsRepo.GetFloat(r.Context(), model.SettingCommissionRatePct, service.DefaultPlatformFeePct)
 	rate = service.EffectivePlatformFeePct(balance, rate)
 	platformFee := int(float64(balance) * rate / 100.0)
+	providerName := resolveMobileMoneyProvider(r.Context(), h.settingsRepo, input.Country, input.Operator)
 	checkoutToken := newUUID()
 	sale := &model.Sale{
 		ProductID:        product.ID,
@@ -439,7 +453,7 @@ func (h *YesHandler) InitiateBalanceCheckout(w http.ResponseWriter, r *http.Requ
 		AmountCFA:        balance,
 		PlatformFeeCFA:   platformFee,
 		VendorAmountCFA:  balance - platformFee,
-		PaymentProvider:  "pawapay",
+		PaymentProvider:  providerName,
 		PaymentReference: newUUID(),
 		CheckoutToken:    &checkoutToken,
 		Status:           string(model.SalePending),
@@ -463,8 +477,14 @@ func (h *YesHandler) InitiateBalanceCheckout(w http.ResponseWriter, r *http.Requ
 		http.Error(w, `{"error":"sale_creation_failed"}`, http.StatusInternalServerError)
 		return
 	}
+	buyerEmail := ""
+	if buyer, err := h.userRepo.FindByID(r.Context(), session.BuyerID); err == nil {
+		buyerEmail = buyer.Email
+	}
 	returnURL := h.frontendURL + "/checkout/return?token=" + *created.CheckoutToken
-	redirectURL, err := h.pawapay.InitiateDirectDeposit(r.Context(), created.PaymentReference, input.Country, input.Phone, input.Operator, created.AmountCFA, returnURL)
+	redirectURL, err := initiateMobileMoneyDeposit(r.Context(), h.pawapay, h.paydunya, h.saleRepo,
+		created.ID, created.PaymentReference, product.Title, created.BuyerName, buyerEmail, created.AmountCFA,
+		providerName, input.Operator, input.Phone, returnURL)
 	if err != nil {
 		log.Printf("yes balance payment_init_failed sale=%s: %v", created.ID, err)
 		h.saleRepo.UpdateStatus(r.Context(), created.ID, string(model.SaleFailed))

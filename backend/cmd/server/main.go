@@ -299,7 +299,7 @@ func main() {
 	} else {
 		log.Println("WARNING: YES Business non configuré, achat conversationnel désactivé")
 	}
-	yesHandler := handler.NewYesHandler(yesRepo, saleRepo, productRepo, userRepo, referralRepo, settingsRepo, pawapay, yesBusiness, s3, notifications, os.Getenv("FRONTEND_URL"), os.Getenv("API_URL"))
+	yesHandler := handler.NewYesHandler(yesRepo, saleRepo, productRepo, userRepo, referralRepo, settingsRepo, pawapay, paydunya, yesBusiness, s3, notifications, os.Getenv("FRONTEND_URL"), os.Getenv("API_URL"))
 	webhookHandler.SetYesHandler(yesHandler)
 	webhookHandler.SetAPIURL(os.Getenv("API_URL"))
 	// Notifications push navigateur — reste nil-safe (pushSvc.NotifyUser

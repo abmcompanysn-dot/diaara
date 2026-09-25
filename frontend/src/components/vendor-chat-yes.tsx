@@ -14,7 +14,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { CheckIcon } from '@/components/icons';
-import { PAYOUT_COUNTRIES, PAYDUNYA_COUNTRIES, CHECKOUT_COUNTRIES } from '@/lib/operators';
+import { PAYOUT_COUNTRIES, PAYDUNYA_COUNTRIES, CHECKOUT_COUNTRIES, LOGICAL_OPERATORS } from '@/lib/operators';
 import { friendlyError } from '@/lib/error-messages';
 
 interface VendorChatYesProps {
@@ -55,23 +55,25 @@ export function VendorChatYes({ productId, priceCfa, country: initialCountry, re
   const [operator, setOperator] = useState('');
   const [phoneDigits, setPhoneDigits] = useState('');
   const [phoneTouched, setPhoneTouched] = useState(false);
-  // Prestataire mobile money par pays (réglage admin) — même logique que
-  // checkout-view.tsx.
-  const [countryProviders, setCountryProviders] = useState<Record<string, 'pawapay' | 'paydunya'>>({});
+  // Prestataire résolu par opérateur logique exact (voir checkout-view.tsx).
+  const [operatorProviders, setOperatorProviders] = useState<Record<string, 'pawapay' | 'paydunya'>>({});
 
   useEffect(() => {
     api
       .getCheckoutConfig()
-      .then((res) => setCountryProviders(res.country_providers || {}))
+      .then((res) => setOperatorProviders(res.operator_providers || {}))
       .catch(() => {});
   }, []);
 
   const microTicketLabel = '600 FCFA'; // valeur par défaut affichée ; le montant réel exact vient du backend au moment du paiement
 
-  const mobileMoneyProvider = countryProviders[country] || 'pawapay';
-  const operatorCountries = mobileMoneyProvider === 'paydunya' ? PAYDUNYA_COUNTRIES : PAYOUT_COUNTRIES;
-  const payoutCountry = operatorCountries.find((c) => c.code === country) || operatorCountries[0];
-  const operators = payoutCountry.operators;
+  const payoutCountry =
+    PAYOUT_COUNTRIES.find((c) => c.code === country) ||
+    PAYDUNYA_COUNTRIES.find((c) => c.code === country) ||
+    PAYOUT_COUNTRIES[0];
+  const operators = LOGICAL_OPERATORS.filter(
+    (o) => o.country === country && Object.prototype.hasOwnProperty.call(operatorProviders, o.provider)
+  );
   // Sélecteur de pays : union des pays PawaPay réellement actifs
   // (CHECKOUT_COUNTRIES) + PayDunya — voir checkout-view.tsx.
   const mobileMoneyCountries = [

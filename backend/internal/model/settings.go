@@ -53,21 +53,24 @@ func WhatsAppCommunitySettingKey(countryISO3 string) string {
 	return "whatsapp_community_url_" + strings.ToLower(countryISO3)
 }
 
-// GatewayOperatorSettingKey — réglage par code opérateur EXACT (ex.
-// "MTN_MOMO_BEN"), valeur à 3 états : "off" | "pawapay" | "paydunya". Pilote
-// à la fois l'activation d'un opérateur ET le prestataire qui le traite —
-// un seul champ pour éviter les états contradictoires (ex. désactivé mais
-// assigné à un prestataire). Voir payment.GatewaySettingKey pour l'ancien
-// regroupement par marque (déprécié).
-func GatewayOperatorSettingKey(providerCode string) string {
-	return "gateway_op_" + strings.ToLower(providerCode)
+// GatewayOperatorSettingKey — réglage par OPÉRATEUR LOGIQUE exact (voir
+// payment.LogicalOperator.Code, ex. "WAVE_SEN"), valeur à 3 états : "off" |
+// "pawapay" | "paydunya". Pilote À LA FOIS le versement vendeur ET l'achat
+// pour cet opérateur (un seul tableau admin "Mobile Money" pour les deux) —
+// utilisé en priorité sur CheckoutProviderSettingKey (niveau 2, prioritaire
+// sur le niveau 1). "off" bloque l'opérateur (versement refusé, et il
+// n'apparaît plus au checkout). Une ligne sans réglage retombe sur
+// l'interrupteur général (voir CheckoutProviderSettingKey) — voir
+// payment.ResolveOperatorProvider.
+func GatewayOperatorSettingKey(operatorCode string) string {
+	return "gateway_op_" + strings.ToLower(operatorCode)
 }
 
-// CheckoutProviderSettingKey — réglage par PAYS (ISO 3166-1 alpha-3), valeur
-// à 2 états : "pawapay" | "paydunya". Le checkout (mode GATEWAY, page hébergée) ne connaît
-// que le pays de l'acheteur au moment de la redirection, jamais l'opérateur
-// exact — contrairement aux versements vendeur, routés par
-// GatewayOperatorSettingKey.
+// CheckoutProviderSettingKey — interrupteur général PAR PAYS (ISO 3166-1
+// alpha-3, "niveau 1"), valeur à 2 états : "pawapay" | "paydunya". S'applique
+// à tout opérateur de ce pays qui n'a pas de réglage propre via
+// GatewayOperatorSettingKey ("niveau 2", prioritaire) — voir
+// payment.ResolveOperatorProvider.
 func CheckoutProviderSettingKey(countryISO3 string) string {
 	return "checkout_provider_" + strings.ToLower(countryISO3)
 }

@@ -11,53 +11,26 @@ import { PageHeader } from '@/components/page-header';
 import { PageLoader } from '@/components/page-loader';
 import { ArrowLeftIcon, CheckIcon } from '@/components/icons';
 import { friendlyError } from '@/lib/error-messages';
+import { LOGICAL_OPERATORS, type LogicalOperator } from '@/lib/operators';
 
-// Miroir de backend/internal/payment/pawapay.go XOFOperators (code, pays,
-// libellé) — pas d'endpoint public pour la lister dynamiquement.
-const OPERATORS: { code: string; country: string; countryLabel: string; label: string }[] = [
-  { code: 'ORANGE_SEN', country: 'SEN', countryLabel: 'Sénégal', label: 'Orange Money' },
-  { code: 'WAVE_SEN', country: 'SEN', countryLabel: 'Sénégal', label: 'Wave' },
-  { code: 'FREE_SEN', country: 'SEN', countryLabel: 'Sénégal', label: 'Free Money' },
-  { code: 'MTN_MOMO_CIV', country: 'CIV', countryLabel: "Côte d'Ivoire", label: 'MTN MoMo' },
-  { code: 'ORANGE_CIV', country: 'CIV', countryLabel: "Côte d'Ivoire", label: 'Orange Money' },
-  { code: 'WAVE_CIV', country: 'CIV', countryLabel: "Côte d'Ivoire", label: 'Wave' },
-  { code: 'MTN_MOMO_BEN', country: 'BEN', countryLabel: 'Bénin', label: 'MTN MoMo' },
-  { code: 'MOOV_BEN', country: 'BEN', countryLabel: 'Bénin', label: 'Moov Money' },
-  { code: 'MOOV_BFA', country: 'BFA', countryLabel: 'Burkina Faso', label: 'Moov Money' },
-  { code: 'ORANGE_BFA', country: 'BFA', countryLabel: 'Burkina Faso', label: 'Orange Money' },
-  { code: 'MTN_MOMO_CMR', country: 'CMR', countryLabel: 'Cameroun', label: 'MTN MoMo' },
-  { code: 'ORANGE_CMR', country: 'CMR', countryLabel: 'Cameroun', label: 'Orange Money' },
-  { code: 'AIRTEL_GAB', country: 'GAB', countryLabel: 'Gabon', label: 'Airtel Money' },
-  { code: 'AIRTEL_COG', country: 'COG', countryLabel: 'Congo-Brazzaville', label: 'Airtel Money' },
-  { code: 'MTN_MOMO_COG', country: 'COG', countryLabel: 'Congo-Brazzaville', label: 'MTN MoMo' },
-  { code: 'VODACOM_MPESA_COD', country: 'COD', countryLabel: 'RD Congo', label: 'Vodacom M-Pesa' },
-  { code: 'AIRTEL_COD', country: 'COD', countryLabel: 'RD Congo', label: 'Airtel Money' },
-  { code: 'ORANGE_COD', country: 'COD', countryLabel: 'RD Congo', label: 'Orange Money' },
-  { code: 'MTN_MOMO_GHA', country: 'GHA', countryLabel: 'Ghana', label: 'MTN MoMo' },
-  { code: 'AIRTELTIGO_GHA', country: 'GHA', countryLabel: 'Ghana', label: 'AirtelTigo Money' },
-  { code: 'VODAFONE_GHA', country: 'GHA', countryLabel: 'Ghana', label: 'Vodafone Cash' },
-  { code: 'AIRTEL_NGA', country: 'NGA', countryLabel: 'Nigeria', label: 'Airtel Money' },
-  { code: 'MTN_MOMO_NGA', country: 'NGA', countryLabel: 'Nigeria', label: 'MTN MoMo' },
-  { code: 'MPESA_KEN', country: 'KEN', countryLabel: 'Kenya', label: 'M-Pesa' },
-  { code: 'AIRTEL_RWA', country: 'RWA', countryLabel: 'Rwanda', label: 'Airtel Money' },
-  { code: 'MTN_MOMO_RWA', country: 'RWA', countryLabel: 'Rwanda', label: 'MTN MoMo' },
-  { code: 'AIRTEL_OAPI_UGA', country: 'UGA', countryLabel: 'Ouganda', label: 'Airtel Money' },
-  { code: 'MTN_MOMO_UGA', country: 'UGA', countryLabel: 'Ouganda', label: 'MTN MoMo' },
-  { code: 'AIRTEL_TZA', country: 'TZA', countryLabel: 'Tanzanie', label: 'Airtel Money' },
-  { code: 'VODACOM_TZA', country: 'TZA', countryLabel: 'Tanzanie', label: 'Vodacom M-Pesa' },
-  { code: 'TIGO_TZA', country: 'TZA', countryLabel: 'Tanzanie', label: 'Tigo Pesa' },
-  { code: 'HALOTEL_TZA', country: 'TZA', countryLabel: 'Tanzanie', label: 'HaloPesa' },
-  { code: 'AIRTEL_OAPI_ZMB', country: 'ZMB', countryLabel: 'Zambie', label: 'Airtel Money' },
-  { code: 'MTN_MOMO_ZMB', country: 'ZMB', countryLabel: 'Zambie', label: 'MTN MoMo' },
-  { code: 'ZAMTEL_ZMB', country: 'ZMB', countryLabel: 'Zambie', label: 'Zamtel Money' },
-  { code: 'AIRTEL_MWI', country: 'MWI', countryLabel: 'Malawi', label: 'Airtel Money' },
-  { code: 'TNM_MWI', country: 'MWI', countryLabel: 'Malawi', label: 'TNM Mpamba' },
-  { code: 'MOVITEL_MOZ', country: 'MOZ', countryLabel: 'Mozambique', label: 'Movitel' },
-  { code: 'VODACOM_MOZ', country: 'MOZ', countryLabel: 'Mozambique', label: 'Vodacom M-Pesa' },
-  { code: 'MPESA_LSO', country: 'LSO', countryLabel: 'Lesotho', label: 'M-Pesa' },
-  { code: 'ORANGE_SLE', country: 'SLE', countryLabel: 'Sierra Leone', label: 'Orange Money' },
-  { code: 'MPESA_ETH', country: 'ETH', countryLabel: 'Éthiopie', label: 'Safaricom M-Pesa' },
-];
+// Libellés de pays pour le groupement du tableau — LOGICAL_OPERATORS
+// (lib/operators.ts) porte déjà les codes ISO3, ce mapping ne sert qu'à
+// l'affichage.
+const COUNTRY_LABELS: Record<string, string> = {
+  SEN: 'Sénégal', CIV: "Côte d'Ivoire", BEN: 'Bénin', BFA: 'Burkina Faso',
+  CMR: 'Cameroun', GAB: 'Gabon', COG: 'Congo-Brazzaville', COD: 'RD Congo',
+  GHA: 'Ghana', NGA: 'Nigeria', KEN: 'Kenya', RWA: 'Rwanda', UGA: 'Ouganda',
+  TZA: 'Tanzanie', ZMB: 'Zambie', MWI: 'Malawi', MOZ: 'Mozambique',
+  LSO: 'Lesotho', SLE: 'Sierra Leone', ETH: 'Éthiopie', MLI: 'Mali', TGO: 'Togo',
+};
+
+// OPERATORS — tableau unique "Mobile Money" (achat ET versement, même
+// réglage admin — voir model.GatewayOperatorSettingKey côté backend).
+// Fusion PawaPay/PayDunya par opérateur physique (voir LOGICAL_OPERATORS).
+const OPERATORS: (LogicalOperator & { countryLabel: string })[] = LOGICAL_OPERATORS.map((op) => ({
+  ...op,
+  countryLabel: COUNTRY_LABELS[op.country] || op.country,
+}));
 
 
 // Miroir de backend/internal/payment/pawapay.go CountryCurrency (pays du
@@ -90,20 +63,8 @@ type CheckoutValue = 'pawapay' | 'paydunya';
 
 // Pays couverts par PayDunya (voir backend/internal/payment/paydunya_operators.go
 // PayDunyaOperators) — ailleurs, seul "pawapay" reste sélectionnable pour le
-// checkout par pays.
+// checkout par pays (interrupteur général, niveau 1).
 const PAYDUNYA_COUNTRIES = new Set(['SEN', 'BEN', 'CIV', 'TGO', 'MLI', 'BFA', 'CMR']);
-
-// Codes opérateur PawaPay ayant un équivalent PayDunya pour le versement
-// vendeur (miroir de PayDunyaOperator.PawaPayCode, voir
-// FindPayDunyaOperatorByPawaPayCode côté backend) — ailleurs, seul "pawapay"
-// reste sélectionnable pour cet opérateur.
-const PAYDUNYA_PAYOUT_OPERATORS = new Set([
-  'ORANGE_SEN', 'WAVE_SEN', 'FREE_SEN',
-  'MTN_MOMO_BEN', 'MOOV_BEN',
-  'MTN_MOMO_CIV', 'WAVE_CIV',
-  'MOOV_BFA',
-  'MTN_MOMO_CMR',
-]);
 
 const gatewayOpKey = (code: string) => `gateway_op_${code.toLowerCase()}`;
 const checkoutProviderKey = (iso3: string) => `checkout_provider_${iso3.toLowerCase()}`;
@@ -146,8 +107,9 @@ export default function AdminSettingsPage() {
         setYesMicroTicketAmount(settings.yes_micro_ticket_amount_cfa || '600');
         const g: Record<string, GatewayValue> = {};
         for (const op of OPERATORS) {
-          const v = settings[gatewayOpKey(op.code)];
-          g[op.code] = v === 'off' || v === 'paydunya' ? v : 'pawapay';
+          const v = settings[gatewayOpKey(op.provider)];
+          const fallback: GatewayValue = op.pawaPayProvider ? 'pawapay' : 'paydunya';
+          g[op.provider] = v === 'off' || v === 'pawapay' || v === 'paydunya' ? v : fallback;
         }
         setGatewayOps(g);
         const c: Record<string, CheckoutValue> = {};
@@ -186,7 +148,8 @@ export default function AdminSettingsPage() {
         card_payment_enabled: String(cardPaymentEnabled),
         yes_micro_ticket_amount_cfa: String(microTicket),
       };
-      for (const op of OPERATORS) values[gatewayOpKey(op.code)] = gatewayOps[op.code] || 'pawapay';
+      for (const op of OPERATORS)
+        values[gatewayOpKey(op.provider)] = gatewayOps[op.provider] || (op.pawaPayProvider ? 'pawapay' : 'paydunya');
       for (const country of CHECKOUT_COUNTRIES)
         values[checkoutProviderKey(country.iso3)] =
           checkoutProviders[country.iso3] === 'paydunya' && PAYDUNYA_COUNTRIES.has(country.iso3)
@@ -316,12 +279,13 @@ export default function AdminSettingsPage() {
 
         <Card className="shadow-card border-green-900/5">
           <CardHeader>
-            <CardTitle>Versements vendeur — par opérateur</CardTitle>
+            <CardTitle>Mobile Money — par opérateur</CardTitle>
             <CardDescription>
-              Pour chaque opérateur mobile money, active ou désactive les versements vendeur, ou
-              choisis le prestataire. « Désactivé » bloque les nouvelles demandes de versement
-              (les versements déjà enregistrés ne sont pas affectés). PayDunya n&apos;est proposé
-              que pour les opérateurs qu&apos;il couvre.
+              Pour chaque opérateur, choisis le prestataire (PawaPay ou PayDunya) ou désactive-le.
+              Ce réglage pilote À LA FOIS l&apos;achat (l&apos;opérateur n&apos;apparaît plus au
+              checkout si désactivé) et les versements vendeur. Une ligne sans réglage particulier
+              suit l&apos;interrupteur général du pays (voir « Paiement à l&apos;achat — par pays »
+              ci-dessous). PayDunya n&apos;est proposé que pour les opérateurs qu&apos;il couvre.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
@@ -332,16 +296,17 @@ export default function AdminSettingsPage() {
                 </h3>
                 <div className="space-y-2">
                   {group.items.map((op) => {
-                    const value = gatewayOps[op.code] || 'pawapay';
-                    const paydunyaAvailable = PAYDUNYA_PAYOUT_OPERATORS.has(op.code);
+                    const pawaPayAvailable = Boolean(op.pawaPayProvider);
+                    const paydunyaAvailable = Boolean(op.payDunyaProvider);
+                    const value = gatewayOps[op.provider] || (pawaPayAvailable ? 'pawapay' : 'paydunya');
                     const options: { opt: GatewayValue; label: string }[] = [
                       { opt: 'off', label: 'Désactivé' },
-                      { opt: 'pawapay', label: 'PawaPay' },
+                      ...(pawaPayAvailable ? [{ opt: 'pawapay' as GatewayValue, label: 'PawaPay' }] : []),
                       ...(paydunyaAvailable ? [{ opt: 'paydunya' as GatewayValue, label: 'PayDunya' }] : []),
                     ];
                     return (
                       <div
-                        key={op.code}
+                        key={op.provider}
                         className="flex items-center justify-between gap-3 p-3 rounded-lg border border-border"
                       >
                         <span className="text-sm font-medium">{op.label}</span>
@@ -353,7 +318,7 @@ export default function AdminSettingsPage() {
                               size="sm"
                               variant={value === opt ? 'default' : 'outline'}
                               onClick={() =>
-                                setGatewayOps((prev) => ({ ...prev, [op.code]: opt }))
+                                setGatewayOps((prev) => ({ ...prev, [op.provider]: opt }))
                               }
                             >
                               {optLabel}

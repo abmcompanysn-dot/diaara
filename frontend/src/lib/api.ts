@@ -193,10 +193,15 @@ export const api = {
   // affiché (interrupteur admin, voir /admin/settings et
   // model.SettingCardPaymentEnabled côté backend).
   getCheckoutConfig: () =>
-    fetchApi<{ card_payment_enabled: boolean; country_providers: Record<string, 'pawapay' | 'paydunya'> }>(
-      '/api/checkout/config',
-      { skipAuth: true }
-    ),
+    fetchApi<{
+      card_payment_enabled: boolean;
+      country_providers: Record<string, 'pawapay' | 'paydunya'>;
+      // Prestataire résolu par opérateur logique exact (code PawaPay, ex
+      // "WAVE_SEN" — voir LOGICAL_OPERATORS) — combine l'interrupteur
+      // général par pays et le réglage par opérateur admin. Un opérateur
+      // absent de cette map est désactivé (voir /admin/settings).
+      operator_providers: Record<string, 'pawapay' | 'paydunya'>;
+    }>('/api/checkout/config', { skipAuth: true }),
 
   // Products
   getProducts: (params?: { category?: string; search?: string }) => {

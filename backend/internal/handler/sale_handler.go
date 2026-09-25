@@ -116,14 +116,10 @@ func (h *SaleHandler) resolveDepositProvider(providerName string) payment.Paymen
 
 // resolveCheckoutProvider détermine le prestataire à utiliser pour un NOUVEAU
 // paiement. Carte/PayPal forcent PayPal (route de capacité : ni PawaPay ni
-// PayDunya ne couvrent la carte bancaire) ; sinon (mobile money) on lit le
-// réglage admin par pays (model.CheckoutProviderSettingKey) —valeur a 3 etats : "off" | "pawapay" | "paydunya". Le checkout| "paydunya"ou
-// "paydunya" — le checkout en mode GATEWAY ne connaît que le pays de
-// l'acheteur, jamais l'opérateur exact (choisi ensuite sur DIARRA, voir
-// initiateDirectDeposit/initiatePayDunyaDeposit), contrairement aux
-// versements vendeur qui, eux, routent par opérateur exact (voir
-// PayoutHandler).
-func (h *SaleHandler) resolveCheckoutProvider(ctx context.Context, country, paymentMethod string) string {
+// PayDunya ne couvrent la carte bancaire). Pour le mobile money, délègue à
+// resolveMobileMoneyProvider (routage à deux niveaux, voir sa doc — partagée
+// avec YesHandler).
+func (h *SaleHandler) resolveCheckoutProvider(ctx context.Context, country, paymentMethod, operatorCode string) string {
 	if paymentMethod == "card" || paymentMethod == "paypal" {
 		// Coupe-circuit admin (model.SettingCardPaymentEnabled) : si désactivé,
 		// on replie silencieusement sur le mobile money du pays plutôt que
@@ -135,7 +131,7 @@ func (h *SaleHandler) resolveCheckoutProvider(ctx context.Context, country, paym
 		}
 		return h.settingsRepo.Get(ctx, model.CheckoutProviderSettingKey(country), "pawapay")
 	}
-	return h.settingsRepo.Get(ctx, model.CheckoutProviderSettingKey(country), "pawapay")
+	return resolveMobileMoneyProvider(ctx, h.settingsRepo, country, operatorCode)
 }
 
 // CheckoutConfig — GET /api/checkout/config (public, pas d'auth) : indique au
@@ -144,18 +140,50 @@ func (h *SaleHandler) resolveCheckoutProvider(ctx context.Context, country, paym
 // permet à un admin de couper ce flux à la volée (voir
 // model.SettingCardPaymentEnabled) sans redéployer.
 func (h *SaleHandler) CheckoutConfig(w http.ResponseWriter, r *http.Request) {
-	enabled := h.paypal != nil && h.settingsRepo.GetBool(r.Context(), model.SettingCardPaymentEnabled, true)
-	// Prestataire mobile money par pays (voir model.CheckoutProviderSettingKey) :
-	// le frontend en a besoin pour savoir quels opérateurs proposer (PawaPay
-	// ou PayDunya, formulaires distincts — voir checkout-view.tsx).
+	// Un seul aller-retour DB (settings est une petite table, quelques
+	// dizaines de lignes) plutôt qu'un SELECT par clé — cet endpoint est
+	// public et potentiellement appelé souvent.
+	all, err := h.settingsRepo.All(r.Context())
+	if err != nil {
+		all = map[string]string{}
+	}
+	enabled := h.paypal != nil && all[model.SettingCardPaymentEnabled] != "false"
+	// Prestataire mobile money par pays (niveau 1, voir
+	// model.CheckoutProviderSettingKey) — conservé pour compatibilité (pays
+	// non PayDunya), même si operator_providers (ci-dessous) est la source
+	// la plus précise pour un pays où PayDunya est présent.
 	countryProviders := map[string]string{}
 	for _, iso3 := range payment.PayDunyaCountries() {
-		countryProviders[iso3] = h.settingsRepo.Get(r.Context(), model.CheckoutProviderSettingKey(iso3), "pawapay")
+		v := all[model.CheckoutProviderSettingKey(iso3)]
+		if v == "" {
+			v = "pawapay"
+		}
+		countryProviders[iso3] = v
+	}
+	// Prestataire résolu par OPÉRATEUR LOGIQUE exact (niveau 1 + niveau 2
+	// combinés) — permet au frontend d'afficher directement le bon
+	// prestataire par opérateur sans dupliquer la logique de résolution.
+	// "off" exclu : un opérateur désactivé n'apparaît simplement pas ici, le
+	// frontend ne doit pas le proposer.
+	operatorProviders := map[string]string{}
+	for _, op := range payment.LogicalOperators {
+		v := all[model.GatewayOperatorSettingKey(op.Code)]
+		if v == "off" {
+			continue
+		}
+		if v == "" {
+			v = countryProviders[op.Country]
+			if v == "" {
+				v = "pawapay"
+			}
+		}
+		operatorProviders[op.Code] = v
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"card_payment_enabled": enabled,
 		"country_providers":    countryProviders,
+		"operator_providers":   operatorProviders,
 	})
 }
 
@@ -270,10 +298,14 @@ func (h *SaleHandler) Create(w http.ResponseWriter, r *http.Request) {
 	// au taux fixe pour ses autres usages) pour ne dépendre que de ce réglage.
 	// Palier réduit : à partir de 1 000 000 FCFA, la commission passe à 10%
 	// quel que soit le taux configuré (voir service.HighValueThresholdCFA).
+	if isOperatorBlocked(r.Context(), h.settingsRepo, input.Operator) {
+		http.Error(w, `{"error":"operator_unavailable"}`, http.StatusBadRequest)
+		return
+	}
 	rate := h.settingsRepo.GetFloat(r.Context(), model.SettingCommissionRatePct, service.DefaultPlatformFeePct)
 	rate = service.EffectivePlatformFeePct(amount, rate)
 	platformFee := int(float64(amount) * rate / 100.0)
-	providerName := h.resolveCheckoutProvider(r.Context(), input.Country, input.PaymentMethod)
+	providerName := h.resolveCheckoutProvider(r.Context(), input.Country, input.PaymentMethod, input.Operator)
 	sale := &model.Sale{
 		ProductID:       product.ID,
 		BuyerID:         userID,
@@ -629,15 +661,33 @@ func newUUID() string {
 // et renvoie l'URL de redirection vers la page de paiement hébergée — ou,
 // pour PawaPay avec phone/operator fournis, une URL DIARRA (dépôt direct,
 // voir initiateDirectDeposit).
+//
+// operator est le CODE LOGIQUE choisi par l'acheteur (voir
+// payment.LogicalOperator.Code, ex "WAVE_SEN") — traduit ici vers le code
+// spécifique au prestataire réellement résolu (PawaPayCode ou PayDunyaCode)
+// avant l'appel, puisque providerName peut différer du prestataire "par
+// défaut" de cet opérateur (routage niveau 2, voir resolveCheckoutProvider).
 func (h *SaleHandler) initiateCheckout(ctx context.Context, sale *model.Sale, product *model.Product, country, providerName, phone, operator string) (string, error) {
+	logicalOp, hasLogicalOp := payment.FindLogicalOperator(operator)
 	switch providerName {
 	case "paypal":
 		return h.initiatePayPalCheckout(ctx, sale, product)
 	case "paydunya":
-		return h.initiatePayDunyaDeposit(ctx, sale, product, country, phone, operator)
+		payDunyaCode := operator
+		if hasLogicalOp {
+			payDunyaCode = logicalOp.PayDunyaCode
+		}
+		if payDunyaCode == "" {
+			return "", fmt.Errorf("opérateur %s non disponible chez PayDunya", operator)
+		}
+		return h.initiatePayDunyaDeposit(ctx, sale, product, country, phone, payDunyaCode)
 	}
-	if phone != "" && operator != "" {
-		return h.initiateDirectDeposit(ctx, sale, country, phone, operator)
+	pawaPayCode := operator
+	if hasLogicalOp {
+		pawaPayCode = logicalOp.PawaPayCode
+	}
+	if phone != "" && pawaPayCode != "" {
+		return h.initiateDirectDeposit(ctx, sale, country, phone, pawaPayCode)
 	}
 	page, err := h.initiatePaymentPage(ctx, sale, product, country)
 	if err != nil || page == nil {
@@ -694,11 +744,10 @@ func (h *SaleHandler) initiatePayPalCheckout(ctx context.Context, sale *model.Sa
 
 // initiatePayDunyaDeposit — dépôt PayDunya direct : l'acheteur a choisi son
 // opérateur et saisi son numéro sur DIARRA (même formulaire que
-// initiateDirectDeposit pour PawaPay). Flux en 2 étapes propre à PayDunya :
-// création d'une facture (checkout-invoice/create) puis appel SoftPay pour
-// l'opérateur précis — voir payment.PayDunyaOperators. Le token de facture
-// devient sale.PaymentReference (utilisé ensuite par CheckoutStatus/
-// resolveDepositProvider pour interroger checkout-invoice/confirm).
+// initiateDirectDeposit pour PawaPay). Le token de facture devient
+// sale.PaymentReference (utilisé ensuite par CheckoutStatus/
+// resolveDepositProvider pour interroger checkout-invoice/confirm) — voir
+// payment.PayDunyaClient.InitiateDirectDeposit pour le détail du flux.
 func (h *SaleHandler) initiatePayDunyaDeposit(ctx context.Context, sale *model.Sale, product *model.Product, country, phone, operator string) (string, error) {
 	if h.paydunya == nil {
 		return "", errors.New("payment non configuré")
@@ -707,44 +756,33 @@ func (h *SaleHandler) initiatePayDunyaDeposit(ctx context.Context, sale *model.S
 	if !ok {
 		return "", fmt.Errorf("opérateur PayDunya inconnu: %s", operator)
 	}
-	msisdn, err := payment.NormalizePhone(op.DialCode, phone)
-	if err != nil {
-		return "", err
-	}
-
 	buyer, err := h.userRepo.FindByID(ctx, sale.BuyerID)
 	buyerEmail := ""
 	if err == nil {
 		buyerEmail = buyer.Email
 	}
-
 	returnURL := h.frontendURL + "/checkout/return?token=" + *sale.CheckoutToken
-	amountStr := fmt.Sprintf("%d", sale.AmountCFA)
-	invoice, err := h.paydunya.CreateInvoice(ctx, payment.CreateInvoiceRequest{
-		Invoice: payment.Invoice{
-			Items: map[string]payment.InvoiceItem{
-				"item_0": {Name: product.Title, Quantity: 1, UnitPrice: amountStr, TotalPrice: amountStr},
-			},
-			Customer:    payment.InvoiceCustomer{Name: sale.BuyerName, Email: buyerEmail, Phone: msisdn},
-			TotalAmount: sale.AmountCFA,
-			Description: product.Title,
-		},
-		Store:   payment.InvoiceStore{Name: "DIARRA"},
-		Actions: payment.InvoiceActions{ReturnURL: returnURL, CancelURL: returnURL},
+
+	token, redirectURL, err := h.paydunya.InitiateDirectDeposit(ctx, payment.DirectDepositRequest{
+		ProductTitle: product.Title,
+		BuyerName:    sale.BuyerName,
+		BuyerEmail:   buyerEmail,
+		AmountCFA:    sale.AmountCFA,
+		Operator:     op,
+		Phone:        phone,
+		ReturnURL:    returnURL,
 	})
+	if token != "" {
+		// Persisté même en cas d'échec du softpay : le token de facture
+		// existe déjà chez PayDunya, sans cette persistance CheckoutStatus
+		// ne pourrait jamais retrouver la vente pour revérifier son statut.
+		h.saleRepo.SetPaymentReference(ctx, sale.ID, token)
+		sale.PaymentReference = token
+	}
 	if err != nil {
 		return "", err
 	}
-	if err := h.saleRepo.SetPaymentReference(ctx, sale.ID, invoice.Token); err != nil {
-		return "", err
-	}
-	sale.PaymentReference = invoice.Token
-
-	payload := op.BuildPayload(sale.BuyerName, buyerEmail, msisdn, invoice.Token)
-	if _, err := h.paydunya.InitiateSoftpay(ctx, op.Endpoint, payload); err != nil {
-		return "", err
-	}
-	return returnURL, nil
+	return redirectURL, nil
 }
 
 // initiatePaymentPage crée une page de paiement PawaPay hébergée pour une vente :

@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { CHECKOUT_COUNTRIES, PAYOUT_COUNTRIES, PAYDUNYA_COUNTRIES, isLoggedIn } from '@/lib/operators';
+import { CHECKOUT_COUNTRIES, PAYOUT_COUNTRIES, PAYDUNYA_COUNTRIES, LOGICAL_OPERATORS, isLoggedIn } from '@/lib/operators';
 import { friendlyError } from '@/lib/error-messages';
 import { ArrowLeftIcon, LockIcon, CheckIcon } from '@/components/icons';
 
@@ -63,14 +63,15 @@ export default function CheckoutView() {
   const [paymentMethod, setPaymentMethod] = useState<'mobile_money' | 'card' | 'paypal'>('mobile_money');
   const [error, setError] = useState('');
   const [submitting, setSubmitting] = useState(false);
-  // Opérateur + numéro mobile money, saisis directement sur DIARRA (dépôt
-  // PawaPay direct, POST /v2/deposits) plutôt que choisis sur la page
-  // hébergée PawaPay — leur widget de sélection d'opérateur (endpoint
+  // Opérateur (code logique, ex "WAVE_SEN") + numéro mobile money, saisis
+  // directement sur DIARRA (dépôt direct) plutôt que choisis sur une page
+  // hébergée — leur widget de sélection d'opérateur (endpoint
   // /api/v1/phone/correspondent) échouait systématiquement en 400 quels que
   // soient le pays/opérateur testés (incident 2026-09-24, jamais élucidé de
-  // leur côté). Country réutilisé pour les deux modes (mobile_money et
-  // card/paypal) mais la liste de pays proposée diffère : PAYOUT_COUNTRIES
-  // (avec opérateurs) pour mobile_money, CHECKOUT_COUNTRIES pour card/paypal.
+  // leur côté). Le prestataire réel (PawaPay ou PayDunya) est résolu côté
+  // backend par opérateur exact (voir operatorProviders ci-dessous) — le
+  // formulaire n'affiche qu'UN SEUL bouton par opérateur physique, quel que
+  // soit le prestataire qui le traitera.
   const [operator, setOperator] = useState('');
   const [phoneDigits, setPhoneDigits] = useState('');
   const [phoneTouched, setPhoneTouched] = useState(false);
@@ -82,18 +83,27 @@ export default function CheckoutView() {
   // défaut false le temps du chargement pour ne pas afficher puis
   // faire disparaître le bouton.
   const [cardPaymentEnabled, setCardPaymentEnabled] = useState(false);
-  // Prestataire mobile money par pays (réglage admin, voir /admin/settings) :
-  // détermine quelle liste d'opérateurs proposer (codes PawaPay vs PayDunya,
-  // formulaires incompatibles entre eux). Vide tant que non chargé — on
-  // suppose "pawapay" par défaut (comportement historique).
-  const [countryProviders, setCountryProviders] = useState<Record<string, 'pawapay' | 'paydunya'>>({});
+  // Prestataire résolu PAR OPÉRATEUR LOGIQUE exact (interrupteur général par
+  // pays + réglage par opérateur combinés côté backend, voir
+  // /admin/settings) — un opérateur absent de cette map est masqué
+  // (désactivé par l'admin, voir CheckoutConfig operator_providers).
+  const [operatorProviders, setOperatorProviders] = useState<Record<string, 'pawapay' | 'paydunya'>>({});
 
   const guest = !isLoggedIn();
   const selectedCountry = CHECKOUT_COUNTRIES.find((c) => c.code === country);
-  const mobileMoneyProvider = countryProviders[country] || 'pawapay';
-  const operatorCountries = mobileMoneyProvider === 'paydunya' ? PAYDUNYA_COUNTRIES : PAYOUT_COUNTRIES;
-  const payoutCountry = operatorCountries.find((c) => c.code === country) || operatorCountries[0];
-  const operators = payoutCountry.operators;
+  // dialCode/phoneLength sont une propriété du PAYS, identique dans
+  // PAYOUT_COUNTRIES et PAYDUNYA_COUNTRIES — l'une ou l'autre convient, avec
+  // repli sur l'autre pour les pays PayDunya-only (Mali, Togo).
+  const payoutCountry =
+    PAYOUT_COUNTRIES.find((c) => c.code === country) ||
+    PAYDUNYA_COUNTRIES.find((c) => c.code === country) ||
+    PAYOUT_COUNTRIES[0];
+  // Opérateurs logiques du pays choisi, RÉELLEMENT disponibles (présents
+  // dans operatorProviders — un opérateur sans réglage chargé n'est montré
+  // qu'après le premier chargement de getCheckoutConfig, voir plus bas).
+  const operators = LOGICAL_OPERATORS.filter(
+    (o) => o.country === country && Object.prototype.hasOwnProperty.call(operatorProviders, o.provider)
+  );
   // Sélecteur de pays checkout : union des pays PawaPay RÉELLEMENT actifs au
   // dépôt (CHECKOUT_COUNTRIES, pas PAYOUT_COUNTRIES qui liste aussi des pays
   // désactivés — voir son commentaire) et des pays PayDunya. Certains pays,
@@ -156,7 +166,7 @@ export default function CheckoutView() {
       .getCheckoutConfig()
       .then((res) => {
         setCardPaymentEnabled(!!res.card_payment_enabled);
-        setCountryProviders(res.country_providers || {});
+        setOperatorProviders(res.operator_providers || {});
       })
       .catch(() => setCardPaymentEnabled(false));
   }, []);

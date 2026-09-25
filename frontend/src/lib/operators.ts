@@ -44,6 +44,10 @@ export interface PayoutOperator {
   logo?: string;
   badgeColor?: string;
   badgeText?: string;
+  // pawaPayCode — PAYDUNYA_COUNTRIES uniquement : code PawaPay équivalent
+  // (voir backend payment.PayDunyaOperator.PawaPayCode), pour fusionner les
+  // deux listes en opérateurs logiques (voir LOGICAL_OPERATORS).
+  pawaPayCode?: string;
 }
 
 export interface PayoutCountry {
@@ -274,9 +278,9 @@ export const PAYDUNYA_COUNTRIES: PayoutCountry[] = [
     dialCode: '221',
     phoneLength: 9,
     operators: [
-      { label: 'Orange Money', provider: 'ORANGE_SN', logo: 'orange-money.png' },
-      { label: 'Wave', provider: 'WAVE_SN', logo: 'wave.png' },
-      { label: 'Free Money', provider: 'FREE_SN', badgeColor: 'bg-white border border-green-900/15', badgeText: 'text-green-950' },
+      { label: 'Orange Money', provider: 'ORANGE_SN', logo: 'orange-money.png', pawaPayCode: 'ORANGE_SEN' },
+      { label: 'Wave', provider: 'WAVE_SN', logo: 'wave.png', pawaPayCode: 'WAVE_SEN' },
+      { label: 'Free Money', provider: 'FREE_SN', badgeColor: 'bg-white border border-green-900/15', badgeText: 'text-green-950', pawaPayCode: 'FREE_SEN' },
       { label: 'Expresso', provider: 'EXPRESSO_SN', badgeColor: 'bg-red-100', badgeText: 'text-red-900' },
       { label: 'Djamo', provider: 'DJAMO_SN', badgeColor: 'bg-purple-100', badgeText: 'text-purple-900' },
     ],
@@ -287,8 +291,8 @@ export const PAYDUNYA_COUNTRIES: PayoutCountry[] = [
     dialCode: '229',
     phoneLength: 10,
     operators: [
-      { label: 'MTN MoMo', provider: 'MTN_BJ', logo: 'mtn-momo.png' },
-      { label: 'Moov Money', provider: 'MOOV_BJ', logo: 'moov-money.png' },
+      { label: 'MTN MoMo', provider: 'MTN_BJ', logo: 'mtn-momo.png', pawaPayCode: 'MTN_MOMO_BEN' },
+      { label: 'Moov Money', provider: 'MOOV_BJ', logo: 'moov-money.png', pawaPayCode: 'MOOV_BEN' },
       { label: 'Celtiis Cash', provider: 'CELTIIS_BJ', badgeColor: 'bg-blue-100', badgeText: 'text-blue-900' },
     ],
   },
@@ -298,9 +302,9 @@ export const PAYDUNYA_COUNTRIES: PayoutCountry[] = [
     dialCode: '225',
     phoneLength: 10,
     operators: [
-      { label: 'MTN MoMo', provider: 'MTN_CI', logo: 'mtn-momo.png' },
+      { label: 'MTN MoMo', provider: 'MTN_CI', logo: 'mtn-momo.png', pawaPayCode: 'MTN_MOMO_CIV' },
       { label: 'Moov Money', provider: 'MOOV_CI', logo: 'moov-money.png' },
-      { label: 'Wave', provider: 'WAVE_CI', logo: 'wave.png' },
+      { label: 'Wave', provider: 'WAVE_CI', logo: 'wave.png', pawaPayCode: 'WAVE_CIV' },
       { label: 'Djamo', provider: 'DJAMO_CI', badgeColor: 'bg-purple-100', badgeText: 'text-purple-900' },
     ],
   },
@@ -329,7 +333,7 @@ export const PAYDUNYA_COUNTRIES: PayoutCountry[] = [
     dialCode: '226',
     phoneLength: 8,
     operators: [
-      { label: 'Moov Money', provider: 'MOOV_BF', logo: 'moov-money.png' },
+      { label: 'Moov Money', provider: 'MOOV_BF', logo: 'moov-money.png', pawaPayCode: 'MOOV_BFA' },
     ],
   },
   {
@@ -338,10 +342,58 @@ export const PAYDUNYA_COUNTRIES: PayoutCountry[] = [
     dialCode: '237',
     phoneLength: 9,
     operators: [
-      { label: 'MTN MoMo', provider: 'MTN_CM', logo: 'mtn-momo.png' },
+      { label: 'MTN MoMo', provider: 'MTN_CM', logo: 'mtn-momo.png', pawaPayCode: 'MTN_MOMO_CMR' },
     ],
   },
 ];
+
+// LogicalOperator — opérateur mobile money PHYSIQUE, indépendant du
+// prestataire qui le traite (fusion de PAYOUT_COUNTRIES et
+// PAYDUNYA_COUNTRIES) — miroir de backend payment.LogicalOperator. Le code
+// est stable (code PawaPay quand il existe, sinon code PayDunya) et sert de
+// clé pour operator_providers (voir api.getCheckoutConfig) et pour l'envoi
+// au backend (CreateOrderInput.operator).
+export interface LogicalOperator extends PayoutOperator {
+  country: string;
+  dialCode: string;
+  pawaPayProvider?: string; // code à envoyer si le prestataire résolu est pawapay
+  payDunyaProvider?: string; // code à envoyer si le prestataire résolu est paydunya
+}
+
+function buildLogicalOperators(): LogicalOperator[] {
+  const out: LogicalOperator[] = [];
+  for (const country of PAYOUT_COUNTRIES) {
+    for (const op of country.operators) {
+      out.push({
+        ...op,
+        provider: op.provider,
+        country: country.code,
+        dialCode: country.dialCode,
+        pawaPayProvider: op.provider,
+      });
+    }
+  }
+  for (const country of PAYDUNYA_COUNTRIES) {
+    for (const op of country.operators) {
+      if (op.pawaPayCode) {
+        const existing = out.find((o) => o.pawaPayProvider === op.pawaPayCode);
+        if (existing) {
+          existing.payDunyaProvider = op.provider;
+          continue;
+        }
+      }
+      out.push({
+        ...op,
+        country: country.code,
+        dialCode: country.dialCode,
+        payDunyaProvider: op.provider,
+      });
+    }
+  }
+  return out;
+}
+
+export const LOGICAL_OPERATORS: LogicalOperator[] = buildLogicalOperators();
 
 // Retrouve un opérateur de versement à partir de son provider (ex: "WAVE_SEN"),
 // tous pays confondus — utile pour afficher l'historique des versements où
