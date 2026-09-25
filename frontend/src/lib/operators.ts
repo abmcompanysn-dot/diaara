@@ -315,6 +315,7 @@ export const PAYDUNYA_COUNTRIES: PayoutCountry[] = [
     phoneLength: 8,
     operators: [
       { label: 'T-Money', provider: 'TMONEY_TG', badgeColor: 'bg-yellow-100', badgeText: 'text-yellow-900' },
+      { label: 'Moov Money', provider: 'MOOV_TG', logo: 'moov-money.png' },
     ],
   },
   {
@@ -323,8 +324,9 @@ export const PAYDUNYA_COUNTRIES: PayoutCountry[] = [
     dialCode: '223',
     phoneLength: 8,
     operators: [
+      // Moov Mali retiré : pas activé sur notre compte marchand PayDunya
+      // (relevé 2026-09-25), voir backend/internal/payment/paydunya_operators.go.
       { label: 'Orange Money', provider: 'ORANGE_ML', logo: 'orange-money.png' },
-      { label: 'Moov Money', provider: 'MOOV_ML', logo: 'moov-money.png' },
     ],
   },
   {

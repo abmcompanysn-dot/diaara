@@ -737,9 +737,10 @@ type Operator struct {
 // documente comme possible, activé ou non chez nous spécifiquement.
 // L'écart est réel et déjà constaté en prod : WAVE_CIV, tout le Burkina
 // Faso, Orange Cameroun, le Ghana, le Nigeria, l'Éthiopie, le Lesotho, le
-// Malawi et la Tanzanie sont dans XOFOperators mais status != OPERATIONAL
-// chez nous — les proposer au checkout aurait fait échouer tout paiement
-// dessus. Si PawaPay active un nouvel opérateur sur notre compte,
+// Malawi, Movitel Mozambique et la Tanzanie sont dans XOFOperators mais
+// status != OPERATIONAL chez nous — les proposer au checkout aurait fait
+// échouer tout paiement dessus. Si PawaPay active un nouvel opérateur sur
+// notre compte,
 // l'ajouter ici (revérifier avec le même outil de diagnostic que celui
 // utilisé pour ce relevé, voir GetActiveConfig).
 var activePawaPayOperators = map[string]bool{
@@ -755,6 +756,7 @@ var activePawaPayOperators = map[string]bool{
 	"AIRTEL_OAPI_UGA": true, "MTN_MOMO_UGA": true,
 	"AIRTEL_OAPI_ZMB": true, "MTN_MOMO_ZMB": true, "ZAMTEL_ZMB": true,
 	"ORANGE_SLE": true,
+	"VODACOM_MOZ": true,
 }
 
 // IsPawaPayOperatorActive — vrai si cet opérateur est réellement activé sur

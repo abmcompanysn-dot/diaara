@@ -137,19 +137,23 @@ var PayDunyaOperators = []PayDunyaOperator{
 			return map[string]interface{}{"name_t_money": name, "email_t_money": email, "phone_t_money": phone, "payment_token": token}
 		},
 	},
-	// Mali
+	{
+		Label: "Moov Money", Provider: "MOOV_TG", Country: "TGO", DialCode: "228",
+		Endpoint: "moov-togo", TokenField: "payment_token", WithdrawMode: "moov-togo",
+		BuildPayload: func(name, email, phone, token string) map[string]interface{} {
+			return map[string]interface{}{"moov_togo_customer_fullname": name, "moov_togo_email": email, "moov_togo_customer_address": "", "moov_togo_phone_number": phone, "payment_token": token}
+		},
+	},
+	// Mali — Orange Money seul activé sur notre compte marchand (relevé
+	// 2026-09-25) ; Moov Mali retiré : documenté par PayDunya mais pas
+	// activé chez nous, l'avoir proposé aurait fait échouer tout paiement
+	// dessus (même défaut que constaté côté PawaPay, voir
+	// payment.IsPawaPayOperatorActive).
 	{
 		Label: "Orange Money", Provider: "ORANGE_ML", Country: "MLI", DialCode: "223",
 		Endpoint: "orange-money-mali", TokenField: "payment_token", WithdrawMode: "orange-money-mali",
 		BuildPayload: func(name, email, phone, token string) map[string]interface{} {
 			return map[string]interface{}{"orange_money_mali_customer_fullname": name, "orange_money_mali_email": email, "orange_money_mali_phone_number": phone, "payment_token": token}
-		},
-	},
-	{
-		Label: "Moov Money", Provider: "MOOV_ML", Country: "MLI", DialCode: "223",
-		Endpoint: "moov-mali", TokenField: "payment_token", WithdrawMode: "moov-mali",
-		BuildPayload: func(name, email, phone, token string) map[string]interface{} {
-			return map[string]interface{}{"moov_ml_customer_fullname": name, "moov_ml_email": email, "moov_ml_phone_number": phone, "payment_token": token}
 		},
 	},
 	// Burkina Faso — Orange BFA exclu du DÉPÔT : même contrainte OTP
