@@ -210,24 +210,29 @@ func main() {
 		allowedIPs = strings.Split(ips, ",")
 	}
 
-	// KPay — SUSPENDU le 2026-09-03. L'intégration n'a jamais été finalisée
-	// (webhooks/statuts incertains) ; le flux carte/PayPal est repris par
-	// PayPal (voir ci-dessous) et le mobile money reste sur PawaPay. Le client
-	// n'est plus instancié : `kpay` vaut toujours nil, tout le code KPay
-	// (kpay.go, adaptateur, handlers) reste en place mais dormant, prêt à être
-	// réactivé en réintroduisant cette construction. Les réglages admin
-	// pointant vers "kpay" (checkout par pays, passerelles par opérateur) sont
-	// ignorés et refusés à l'écriture — voir SaleHandler.resolveCheckoutProvider
-	// et AdminHandler.UpdateSettings.
-	var kpay *payment.KPayClient
-	log.Println("INFO: KPay suspendu (2026-09-03) — checkout carte via PayPal, mobile money via PawaPay")
+	// Paiement PayDunya (mobile money direct, alternative à PawaPay routable
+	// par pays — voir model.CheckoutProviderSettingKey). Optionnel : sans
+	// PAYDUNYA_MASTER_KEY/PRIVATE_KEY/TOKEN, paydunya reste nil et tout pays
+	// configuré sur "paydunya" retombe silencieusement sur pawapay (voir
+	// SaleHandler.resolveDepositProvider).
+	var paydunya *payment.PayDunyaClient
+	if os.Getenv("PAYDUNYA_MASTER_KEY") != "" && os.Getenv("PAYDUNYA_PRIVATE_KEY") != "" && os.Getenv("PAYDUNYA_TOKEN") != "" {
+		paydunya = payment.NewPayDunyaClient(payment.PayDunyaConfig{
+			MasterKey:   os.Getenv("PAYDUNYA_MASTER_KEY"),
+			PrivateKey:  os.Getenv("PAYDUNYA_PRIVATE_KEY"),
+			Token:       os.Getenv("PAYDUNYA_TOKEN"),
+			BaseURL:     os.Getenv("PAYDUNYA_BASE_URL"), // défaut: sandbox
+			CallbackURL: os.Getenv("PAYDUNYA_CALLBACK_URL"),
+		})
+	} else {
+		log.Println("WARNING: PayDunya non configuré, ce prestataire reste indisponible (repli pawapay)")
+	}
 
 	// Paiement PayPal (carte bancaire + compte PayPal au checkout ; versements
-	// vendeur vers un compte PayPal). Remplace KPay pour le flux carte/PayPal
-	// (KPay désactivé du checkout le 2026-09-03). Optionnel : sans
+	// vendeur vers un compte PayPal). Optionnel : sans
 	// PAYPAL_CLIENT_ID/PAYPAL_CLIENT_SECRET, paypal reste nil et le checkout
 	// carte ainsi que les versements PayPal sont désactivés — tout continue via
-	// PawaPay (mobile money) + versement manuel.
+	// PawaPay/PayDunya (mobile money) + versement manuel.
 	var paypal *payment.PayPalClient
 	if os.Getenv("PAYPAL_CLIENT_ID") != "" && os.Getenv("PAYPAL_CLIENT_SECRET") != "" {
 		paypal = payment.NewPayPalClient(payment.PayPalConfig{
@@ -255,10 +260,10 @@ func main() {
 	healthHandler := handler.NewHealthHandler(pool)
 	authHandler := handler.NewAuthHandler(authService, firebaseVerifier)
 	productHandler := handler.NewProductHandler(productRepo, userRepo, saleRepo, storageService, os.Getenv("FRONTEND_URL"), redisCache, notificationRepo)
-	saleHandler := handler.NewSaleHandler(saleRepo, productRepo, referralRepo, userRepo, settingsRepo, pawapay, kpay, paypal, notifications, os.Getenv("FRONTEND_URL"))
+	saleHandler := handler.NewSaleHandler(saleRepo, productRepo, referralRepo, userRepo, settingsRepo, pawapay, paydunya, paypal, notifications, os.Getenv("FRONTEND_URL"))
 	closerHandler := handler.NewCloserHandler(referralRepo, productRepo, os.Getenv("FRONTEND_URL"))
 	bundleHandler := handler.NewBundleHandler(bundleRepo, productRepo)
-	webhookHandler := handler.NewWebhookHandler(saleRepo, userRepo, productRepo, payoutRepo, pawapay, kpay, os.Getenv("KPAY_WEBHOOK_SECRET"), paypal, donationService, notifications, notificationRepo, s3, allowedIPs, redisCache)
+	webhookHandler := handler.NewWebhookHandler(saleRepo, userRepo, productRepo, payoutRepo, pawapay, paydunya, paypal, donationService, notifications, notificationRepo, s3, allowedIPs, redisCache)
 	// Référence circulaire évitée par un setter (voir SaleHandler.SetWebhookHandler) :
 	// CheckoutStatus doit pouvoir persister un paiement confirmé par polling
 	// exactement comme le ferait le webhook (statut + emails + notifs + cagnotte +
@@ -277,7 +282,7 @@ func main() {
 	// 5 endpoints YES Business (session/initiate, session/{id}/status,
 	// send-offer, review, delivery/fulfill), voir payment/yes_business.go et
 	// la doc d'intégration du 2026-09-22. yesBusiness reste nil tant que
-	// YES_BUSINESS_API_KEY/SECRET ne sont pas configurés (comme paypal/kpay) —
+	// YES_BUSINESS_API_KEY/SECRET ne sont pas configurés (comme paypal/paydunya) —
 	// YesHandler le gère nil-safe (payment_init_failed sur les routes
 	// concernées, rien de cassé pour le reste de DIARRA).
 	var yesBusiness *payment.YesBusinessClient
@@ -327,7 +332,7 @@ func main() {
 	}
 
 	// Versements & revenus vendeur
-	payoutHandler := handler.NewPayoutHandler(payoutRepo, saleRepo, productRepo, userRepo, settingsRepo, pawapay, kpay, redisCache)
+	payoutHandler := handler.NewPayoutHandler(payoutRepo, saleRepo, productRepo, userRepo, settingsRepo, pawapay, paydunya, redisCache)
 
 	// Support tickets
 	ticketRepo := repository.NewTicketRepo(pool)
@@ -359,7 +364,7 @@ func main() {
 	summitSponsorHandler := handler.NewSummitSponsorHandler(summitSponsorRepo, storageService)
 
 	// Administration
-	adminHandler := handler.NewAdminHandler(productRepo, saleRepo, userRepo, referralRepo, adminPermRepo, payoutRepo, settingsRepo, ticketRepo, pool, storageHealthPinger, storageService, startTime, pawapay, kpay, paypal, notifications, redisCache, webhookHandler)
+	adminHandler := handler.NewAdminHandler(productRepo, saleRepo, userRepo, referralRepo, adminPermRepo, payoutRepo, settingsRepo, ticketRepo, pool, storageHealthPinger, storageService, startTime, pawapay, paydunya, paypal, notifications, redisCache, webhookHandler)
 	// Journal d'activité admin (backoffice 360°) — voir migration 028.
 	adminHandler.SetActivityRepo(repository.NewAdminActivityRepo(pool))
 	// Gestion des clients de la passerelle de paiement (ex. ABMCY Core).
@@ -584,11 +589,11 @@ func main() {
 		r.Post("/pawapay", webhookHandler.PawaPayWebhook)
 		r.Post("/pawapay/payout", webhookHandler.PawaPayPayoutWebhook)
 		r.Post("/pawapay/refund", webhookHandler.PawaPayRefundWebhook)
-		// KPay suspendu (2026-09-03) : routes retirées. Les handlers
-		// KPay*Webhook restent définis (code dormant) mais ne sont plus exposés.
 		// PayPal : un seul endpoint pour tous les événements (paiement capturé,
 		// remboursement…) — le type est lu dans le corps (voir PayPalWebhook).
 		r.Post("/paypal", webhookHandler.PayPalWebhook)
+		r.Post("/paydunya", webhookHandler.PayDunyaCallback)
+		r.Post("/paydunya/payout", webhookHandler.PayDunyaDisburseCallback)
 	})
 
 	// WebSocket temps réel
@@ -784,7 +789,7 @@ func main() {
 	// Passerelle de paiement pour des applications externes (ex. ABMCY Core) —
 	// auth par clé API dédiée (X-Gateway-Key, une par client, voir
 	// gateway_clients), distincte de la clé d'automatisation produit ci-dessous.
-	// Réutilise l'intégration PawaPay/KPay/PayPal déjà en place dans DIARRA
+	// Réutilise l'intégration PawaPay/PayDunya/PayPal déjà en place dans DIARRA
 	// (voir internal/payment/provider.go) au lieu qu'un client externe refasse
 	// sa propre connexion à chaque agrégateur.
 	r.Route("/api/gateway/v1", func(r chi.Router) {
@@ -863,7 +868,7 @@ func main() {
 	go webhookHandler.RunDepositReconcileLoop(context.Background())
 
 	// Même filet pour les versements restés "processing" (webhook prestataire
-	// perdu) : revérifie via l'API PawaPay/KPay et applique paid/failed.
+	// perdu) : revérifie via l'API PawaPay/PayDunya et applique paid/failed.
 	go webhookHandler.RunPayoutReconcileLoop(context.Background())
 
 	port := os.Getenv("PORT")

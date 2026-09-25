@@ -25,21 +25,20 @@ import (
 )
 
 type WebhookHandler struct {
-	saleRepo          *repository.SaleRepo
-	userRepo          *repository.UserRepo
-	productRepo       *repository.ProductRepo
-	payoutRepo        *repository.PayoutRepo
-	pawapay           *payment.PawaPayClient
-	kpay              *payment.KPayClient
-	kpayWebhookSecret string
-	paypal            *payment.PayPalClient
-	commissionSvc     *service.CommissionService
-	donationSvc       *service.DonationService
-	notifications     *email.NotificationService
-	notificationRepo  *repository.NotificationRepo
-	storage           *storage.S3Storage
-	allowedIPs        map[string]bool
-	cache             *cache.Client
+	saleRepo         *repository.SaleRepo
+	userRepo         *repository.UserRepo
+	productRepo      *repository.ProductRepo
+	payoutRepo       *repository.PayoutRepo
+	pawapay          *payment.PawaPayClient
+	paydunya         *payment.PayDunyaClient
+	paypal           *payment.PayPalClient
+	commissionSvc    *service.CommissionService
+	donationSvc      *service.DonationService
+	notifications    *email.NotificationService
+	notificationRepo *repository.NotificationRepo
+	storage          *storage.S3Storage
+	allowedIPs       map[string]bool
+	cache            *cache.Client
 	// gatewayRepo : injecté après coup via SetGatewayRepo (même pattern que
 	// SaleHandler.SetWebhookHandler, référence circulaire sinon — GatewayHandler
 	// a lui aussi besoin d'être construit dans main.go avant/après ce
@@ -93,8 +92,7 @@ func NewWebhookHandler(
 	productRepo *repository.ProductRepo,
 	payoutRepo *repository.PayoutRepo,
 	pawapay *payment.PawaPayClient,
-	kpay *payment.KPayClient,
-	kpayWebhookSecret string,
+	paydunya *payment.PayDunyaClient,
 	paypal *payment.PayPalClient,
 	donationSvc *service.DonationService,
 	notifications *email.NotificationService,
@@ -108,40 +106,29 @@ func NewWebhookHandler(
 		ips[strings.TrimSpace(ip)] = true
 	}
 	return &WebhookHandler{
-		saleRepo:          saleRepo,
-		userRepo:          userRepo,
-		productRepo:       productRepo,
-		payoutRepo:        payoutRepo,
-		pawapay:           pawapay,
-		kpay:              kpay,
-		kpayWebhookSecret: kpayWebhookSecret,
-		paypal:            paypal,
-		commissionSvc:     service.NewCommissionService(),
-		donationSvc:       donationSvc,
-		notifications:     notifications,
-		notificationRepo:  notificationRepo,
-		storage:           storage,
-		allowedIPs:        ips,
-		cache:             cacheClient,
+		saleRepo:         saleRepo,
+		userRepo:         userRepo,
+		productRepo:      productRepo,
+		payoutRepo:       payoutRepo,
+		pawapay:          pawapay,
+		paydunya:         paydunya,
+		paypal:           paypal,
+		commissionSvc:    service.NewCommissionService(),
+		donationSvc:      donationSvc,
+		notifications:    notifications,
+		notificationRepo: notificationRepo,
+		storage:          storage,
+		allowedIPs:       ips,
+		cache:            cacheClient,
 	}
 }
 
-// verifyKPayRequest — HMAC-SHA256 (X-KPAY-Signature) sur le corps brut, avec
-// le secret webhook DÉDIÉ (distinct de la clé secrète API) — schéma différent
-// de verifyRequest (Content-Digest + liste blanche IP, PawaPay).
-func (h *WebhookHandler) verifyKPayRequest(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
-	body, err := io.ReadAll(r.Body)
-	if err != nil {
-		http.Error(w, `{"error":"read_failed"}`, http.StatusBadRequest)
-		return nil, false
-	}
-	sig := r.Header.Get("X-KPAY-Signature")
-	if !payment.VerifyKPaySignature(h.kpayWebhookSecret, body, sig) {
-		http.Error(w, `{"error":"invalid_signature"}`, http.StatusUnauthorized)
-		return nil, false
-	}
-	return body, true
-}
+// PayDunya n'expose pas de mécanisme de signature documenté pour ses
+// callbacks IPN (ni HMAC, ni liste blanche IP — vérifié auprès de leur doc
+// le 2026-09-25). Le callback n'est donc JAMAIS traité comme source de
+// vérité : PayDunyaCallback re-vérifie systématiquement le statut auprès de
+// PayDunya (GetInvoiceStatus, serveur-à-serveur) avant de confirmer quoi que
+// ce soit — voir PayDunyaCallback ci-dessous.
 
 // notify insère une notification in-app, en tâche de fond, sans jamais faire
 // échouer l'appelant (les notifications sont secondaires au flux principal).
@@ -422,32 +409,52 @@ func (h *WebhookHandler) PawaPayWebhook(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(map[string]string{"status": status.Data.Status})
 }
 
-// --- Webhooks KPay -----------------------------------------------------------
+// --- Webhook PayDunya --------------------------------------------------------
 //
-// Même principe défensif que PawaPay ci-dessus (ne jamais faire confiance au
-// statut du corps du webhook, toujours revérifier via l'API), mais
-// vérification par HMAC réel (verifyKPayRequest) au lieu de Content-Digest+IP.
+// Pas de vérification de signature possible (voir note plus haut) : le
+// corps du callback ne sert qu'à retrouver le token de facture concerné,
+// jamais comme source de vérité sur le statut — PayDunyaCallback revérifie
+// systématiquement via GetInvoiceStatus (serveur-à-serveur) avant de
+// confirmer quoi que ce soit, même principe défensif que PawaPay.
 
-// KPayPaymentWebhook reçoit la confirmation de paiement depuis KPay.
-func (h *WebhookHandler) KPayPaymentWebhook(w http.ResponseWriter, r *http.Request) {
-	if h.kpay == nil {
-		http.Error(w, `{"error":"kpay_not_configured"}`, http.StatusServiceUnavailable)
+// PayDunyaCallback reçoit la notification IPN de PayDunya (paiement de
+// facture). Le format exact du payload n'étant pas garanti par leur doc, on
+// tente plusieurs clés plausibles pour le token — la vérification réelle se
+// fait de toute façon via GetInvoiceStatus, pas sur ce corps.
+func (h *WebhookHandler) PayDunyaCallback(w http.ResponseWriter, r *http.Request) {
+	if h.paydunya == nil {
+		http.Error(w, `{"error":"paydunya_not_configured"}`, http.StatusServiceUnavailable)
 		return
 	}
-	body, ok := h.verifyKPayRequest(w, r)
-	if !ok {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, `{"error":"read_failed"}`, http.StatusBadRequest)
 		return
 	}
 
 	var payload struct {
-		ExternalId string `json:"externalId"`
+		Token   string `json:"token"`
+		Invoice struct {
+			Token string `json:"token"`
+		} `json:"invoice"`
+		Data struct {
+			Token string `json:"token"`
+		} `json:"data"`
 	}
-	if err := json.Unmarshal(body, &payload); err != nil || payload.ExternalId == "" {
+	_ = json.Unmarshal(body, &payload)
+	token := payload.Token
+	if token == "" {
+		token = payload.Invoice.Token
+	}
+	if token == "" {
+		token = payload.Data.Token
+	}
+	if token == "" {
 		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
 		return
 	}
 
-	sale, err := h.saleRepo.FindByPaymentReference(r.Context(), payload.ExternalId)
+	sale, err := h.saleRepo.FindByPaymentReference(r.Context(), token)
 	if err != nil {
 		http.Error(w, `{"error":"sale_not_found"}`, http.StatusNotFound)
 		return
@@ -457,18 +464,14 @@ func (h *WebhookHandler) KPayPaymentWebhook(w http.ResponseWriter, r *http.Reque
 		json.NewEncoder(w).Encode(map[string]string{"status": sale.Status})
 		return
 	}
-	if sale.ProviderTransactionID == nil {
-		http.Error(w, `{"error":"missing_provider_transaction_id"}`, http.StatusInternalServerError)
-		return
-	}
 
-	status, err := h.kpay.GetPaymentStatus(r.Context(), *sale.ProviderTransactionID)
+	status, err := h.paydunya.GetInvoiceStatus(r.Context(), token)
 	if err != nil {
 		http.Error(w, `{"error":"status_check_failed"}`, http.StatusBadGateway)
 		return
 	}
 
-	if status.Status == "COMPLETED" {
+	if status.Status == "completed" {
 		if err := h.saleRepo.UpdateStatus(r.Context(), sale.ID, string(model.SalePaid)); err != nil {
 			http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
 			return
@@ -495,7 +498,7 @@ func (h *WebhookHandler) KPayPaymentWebhook(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if status.Status == "FAILED" || status.Status == "CANCELLED" {
+	if status.Status == "failed" || status.Status == "cancelled" {
 		if err := h.saleRepo.UpdateStatus(r.Context(), sale.ID, string(model.SaleFailed)); err != nil {
 			http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
 			return
@@ -510,26 +513,33 @@ func (h *WebhookHandler) KPayPaymentWebhook(w http.ResponseWriter, r *http.Reque
 	json.NewEncoder(w).Encode(map[string]string{"status": status.Status})
 }
 
-// KPayPayoutWebhook reçoit la confirmation d'un versement vendeur via KPay.
-func (h *WebhookHandler) KPayPayoutWebhook(w http.ResponseWriter, r *http.Request) {
-	if h.kpay == nil {
-		http.Error(w, `{"error":"kpay_not_configured"}`, http.StatusServiceUnavailable)
+// PayDunyaDisburseCallback reçoit la notification IPN d'un versement vendeur
+// PayDunya (voir api_deboursement — callback_url posé à get-invoice).
+func (h *WebhookHandler) PayDunyaDisburseCallback(w http.ResponseWriter, r *http.Request) {
+	if h.paydunya == nil {
+		http.Error(w, `{"error":"paydunya_not_configured"}`, http.StatusServiceUnavailable)
 		return
 	}
-	body, ok := h.verifyKPayRequest(w, r)
-	if !ok {
+	body, err := io.ReadAll(r.Body)
+	if err != nil {
+		http.Error(w, `{"error":"read_failed"}`, http.StatusBadRequest)
 		return
 	}
-
 	var payload struct {
-		ID string `json:"id"`
+		DisburseInvoice string `json:"disburse_invoice"`
+		DisburseToken   string `json:"disburse_token"`
 	}
-	if err := json.Unmarshal(body, &payload); err != nil || payload.ID == "" {
+	_ = json.Unmarshal(body, &payload)
+	token := payload.DisburseInvoice
+	if token == "" {
+		token = payload.DisburseToken
+	}
+	if token == "" {
 		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
 		return
 	}
 
-	payout, err := h.payoutRepo.FindByProviderReference(r.Context(), "kpay", payload.ID)
+	payout, err := h.payoutRepo.FindByProviderReference(r.Context(), "paydunya", token)
 	if err != nil {
 		http.Error(w, `{"error":"payout_not_found"}`, http.StatusNotFound)
 		return
@@ -540,97 +550,27 @@ func (h *WebhookHandler) KPayPayoutWebhook(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	status, err := h.kpay.GetPayoutStatus(r.Context(), payload.ID)
+	status, err := h.paydunya.GetDisbursementStatus(r.Context(), token)
 	if err != nil {
 		http.Error(w, `{"error":"status_check_failed"}`, http.StatusBadGateway)
 		return
 	}
 
 	switch status.Status {
-	case "COMPLETED":
+	case "success":
 		h.payoutRepo.UpdateStatus(r.Context(), payout.ID, "paid", nil)
 		h.cache.Del(r.Context(), vendorBalanceCacheKey(payout.UserID))
 		h.notify(r.Context(), payout.UserID, "payout_paid", "Versement effectué",
 			fmt.Sprintf("Votre versement de %d FCFA a été envoyé.", payout.AmountCFA), "/vendor/earnings")
-	case "FAILED", "CANCELLED":
-		reason := status.FailureReason
+	case "failed":
+		reason := status.Message
 		h.payoutRepo.UpdateStatus(r.Context(), payout.ID, "failed", &reason)
 		h.cache.Del(r.Context(), vendorBalanceCacheKey(payout.UserID))
-		// Pas de notification vendeur sur un échec (voir PawaPayPayoutWebhook).
 		h.notifyAdminsPayoutFailed(r.Context(), payout, reason)
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"status": status.Status})
-}
-
-// KPayRefundWebhook reçoit la confirmation d'un remboursement via KPay.
-//
-// La doc fournie par KPay ne liste pas d'endpoint GET dédié au statut d'un
-// remboursement (contrairement à PawaPay GetRefundStatus) — à confirmer
-// contre leur API réelle avant mise en production. En attendant, on
-// revérifie via le statut du PAIEMENT parent (GetPaymentStatus sur
-// sale.ProviderTransactionID) plutôt que de faire confiance au webhook seul.
-func (h *WebhookHandler) KPayRefundWebhook(w http.ResponseWriter, r *http.Request) {
-	if h.kpay == nil {
-		http.Error(w, `{"error":"kpay_not_configured"}`, http.StatusServiceUnavailable)
-		return
-	}
-	body, ok := h.verifyKPayRequest(w, r)
-	if !ok {
-		return
-	}
-
-	var payload struct {
-		ID                string `json:"id"`
-		OriginalPaymentId string `json:"originalPaymentId"`
-	}
-	if err := json.Unmarshal(body, &payload); err != nil || payload.ID == "" {
-		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
-		return
-	}
-
-	sale, err := h.saleRepo.FindByRefundReference(r.Context(), payload.ID)
-	if err != nil {
-		http.Error(w, `{"error":"sale_not_found"}`, http.StatusNotFound)
-		return
-	}
-	if sale.Status == string(model.SaleRefunded) {
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": sale.Status})
-		return
-	}
-	if sale.ProviderTransactionID == nil {
-		http.Error(w, `{"error":"missing_provider_transaction_id"}`, http.StatusInternalServerError)
-		return
-	}
-
-	// Pas d'endpoint de statut dédié au remboursement (voir commentaire de
-	// fonction) : on relit le paiement parent, dont le statut redevient
-	// "COMPLETED" (jamais un statut "refunded" dédié côté KPay d'après leur
-	// doc) une fois le remboursement traité — on se fie donc ici au statut
-	// annoncé par le WEBHOOK lui-même pour décider, contrairement au reste de
-	// ce fichier (à corriger dès confirmation d'un vrai endpoint de statut).
-	_, err = h.kpay.GetPaymentStatus(r.Context(), *sale.ProviderTransactionID)
-	if err != nil {
-		http.Error(w, `{"error":"status_check_failed"}`, http.StatusBadGateway)
-		return
-	}
-
-	var payloadStatus struct {
-		Status string `json:"status"`
-	}
-	json.Unmarshal(body, &payloadStatus)
-
-	if payloadStatus.Status == "COMPLETED" {
-		h.saleRepo.UpdateStatus(r.Context(), sale.ID, string(model.SaleRefunded))
-		go h.notifyRefunded(context.Background(), sale)
-		h.notify(r.Context(), sale.BuyerID, "refund", "Remboursement effectué",
-			fmt.Sprintf("Votre remboursement de %d FCFA a été traité.", sale.AmountCFA), "/orders")
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]string{"status": payloadStatus.Status})
 }
 
 // PayPalWebhook reçoit les événements PayPal (paiement approuvé/capturé,
@@ -1100,7 +1040,7 @@ func (h *WebhookHandler) notifyAdminsPayoutFailed(ctx context.Context, payout *m
 	}
 }
 
-// Cadence du job de réconciliation des versements PawaPay/KPay restés
+// Cadence du job de réconciliation des versements PawaPay/PayDunya restés
 // "processing" : même principe que RunDepositReconcileLoop pour les dépôts.
 const (
 	payoutReconcileEvery  = 10 * time.Minute
@@ -1111,7 +1051,7 @@ const (
 // "processing" avec leur statut réel côté prestataire (filet de sécurité si un
 // webhook s'est perdu). À lancer une fois au démarrage.
 func (h *WebhookHandler) RunPayoutReconcileLoop(ctx context.Context) {
-	if h.pawapay == nil && h.kpay == nil {
+	if h.pawapay == nil && h.paydunya == nil {
 		log.Printf("réconciliation versements: désactivée (aucun prestataire configuré)")
 		return
 	}
@@ -1156,15 +1096,21 @@ func (h *WebhookHandler) reconcilePayoutsPass(ctx context.Context) {
 				providerStatus = "FAILED"
 			}
 			failReason = st.FailureReason
-		case "kpay":
-			if h.kpay == nil {
+		case "paydunya":
+			if h.paydunya == nil {
 				continue
 			}
-			st, err := h.kpay.GetPayoutStatus(ctx, *p.ProviderReference)
+			st, err := h.paydunya.GetDisbursementStatus(ctx, *p.ProviderReference)
 			if err != nil {
 				continue
 			}
-			providerStatus, failReason = st.Status, st.FailureReason
+			switch st.Status {
+			case "success":
+				providerStatus = "COMPLETED"
+			case "failed":
+				providerStatus = "FAILED"
+			}
+			failReason = st.Message
 		default:
 			if h.pawapay == nil {
 				continue

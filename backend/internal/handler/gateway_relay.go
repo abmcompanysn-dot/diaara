@@ -155,7 +155,7 @@ func normalizeGatewayPawaPayStatus(s string) string {
 
 // gatewayCallbackPayload — corps envoyé au client externe. Volontairement
 // minimal et déjà normalisé (voir normalizeGatewayPawaPayStatus) : le client
-// n'a jamais besoin de connaître PawaPay/KPay/PayPal en tant que tels.
+// n'a jamais besoin de connaître PawaPay/PayDunya/PayPal en tant que tels.
 type gatewayCallbackPayload struct {
 	ClientRef     string `json:"client_ref"`
 	Type          string `json:"type"`

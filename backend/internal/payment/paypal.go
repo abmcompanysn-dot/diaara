@@ -13,11 +13,11 @@ import (
 	"time"
 )
 
-// PayPal — paiement carte bancaire/PayPal, en remplacement de KPay pour ce
-// flux (KPay désactivé au checkout depuis le 2026-09-03, voir
-// CARD_PAYMENT_ENABLED côté frontend et resolveCheckoutProvider côté
-// sale_handler.go). Orders API v2 (Checkout) : flux "hosted redirect", même
-// principe que PawaPay/KPay — on crée une commande, on redirige l'acheteur
+// PayPal — paiement carte bancaire/PayPal (ni PawaPay ni PayDunya ne
+// couvrent ce flux, voir CARD_PAYMENT_ENABLED côté frontend et
+// resolveCheckoutProvider côté sale_handler.go). Orders API v2 (Checkout) :
+// flux "hosted redirect", même
+// principe que PawaPay/PayDunya — on crée une commande, on redirige l'acheteur
 // vers le lien d'approbation PayPal, il revient sur ReturnUrl, on capture
 // alors la commande (voir GetDepositStatus, appelé par checkout/return via
 // SaleHandler.CheckoutStatus).
@@ -53,7 +53,7 @@ func NewPayPalClient(cfg PayPalConfig) *PayPalClient {
 func (c *PayPalClient) Name() string { return "paypal" }
 
 // IsSandbox — utilisé côté admin/diagnostic pour afficher clairement
-// l'environnement actif (même besoin que pour PawaPay/KPay).
+// l'environnement actif (même besoin que pour PawaPay/PayDunya).
 func (c *PayPalClient) IsSandbox() bool {
 	return strings.Contains(c.cfg.BaseURL, "sandbox")
 }
@@ -187,7 +187,7 @@ type paypalOrderPayload struct {
 
 // CreateOrder — POST /v2/checkout/orders (intent=CAPTURE). Retourne l'URL
 // d'approbation PayPal (lien rel="approve") vers laquelle rediriger
-// l'acheteur — équivalent de GatewayUrl (KPay) / RedirectUrl (PawaPay).
+// l'acheteur — équivalent de RedirectUrl (PawaPay/PayDunya).
 func (c *PayPalClient) CreateOrder(ctx context.Context, req PayPalOrderRequest) (*PayPalOrderResponse, error) {
 	body := map[string]interface{}{
 		"intent": "CAPTURE",
@@ -272,7 +272,7 @@ type PayPalRefundResponse struct {
 
 // RefundCapture — POST /v2/payments/captures/{capture_id}/refund.
 // Remboursement toujours intégral (pas de montant fourni) — même choix que
-// KPay (voir kpay.go, InitiateRefund).
+// PayDunya (non automatise, voir payDunyaAdapter.InitiateRefund).
 func (c *PayPalClient) RefundCapture(ctx context.Context, captureID string) (*PayPalRefundResponse, error) {
 	var resp struct {
 		ID     string `json:"id"`
@@ -386,10 +386,10 @@ func (c *PayPalClient) GetPayoutBatch(ctx context.Context, batchID string) (*Pay
 // --- Vérification des webhooks ------------------------------------------------
 
 // VerifyWebhookSignature — POST /v1/notifications/verify-webhook-signature :
-// contrairement à KPay (HMAC simple vérifiable localement), PayPal exige de
-// leur renvoyer les en-têtes de signature + le corps brut pour validation
-// côté serveur PayPal (pas de vérification locale possible sans dupliquer
-// leur logique de certificat).
+// PayPal exige de leur renvoyer les en-têtes de signature + le corps brut
+// pour validation côté serveur PayPal (pas de vérification locale possible
+// sans dupliquer leur logique de certificat) — contrairement à PawaPay
+// (Content-Digest + liste blanche IP, vérifiables localement).
 func (c *PayPalClient) VerifyWebhookSignature(ctx context.Context, headers http.Header, rawBody []byte) (bool, error) {
 	if c.cfg.WebhookID == "" {
 		return false, fmt.Errorf("PAYPAL_WEBHOOK_ID non configuré")

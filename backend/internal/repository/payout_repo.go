@@ -178,7 +178,7 @@ func (r *PayoutRepo) SetProviderReference(ctx context.Context, id, reference str
 }
 
 // SettleManually — marque un versement "paid" SANS appel prestataire : l'argent
-// a été envoyé au vendeur hors PawaPay/KPay (Wave perso, espèces, virement).
+// a été envoyé au vendeur hors PawaPay/PayDunya (Wave perso, espèces, virement).
 // note = référence/commentaire libre, feeCFA = frais/taxe éventuellement retenus
 // (0 si aucun), adminID = l'admin qui a effectué le règlement. N'agit que sur un
 // versement non encore réglé (requested/processing/failed).

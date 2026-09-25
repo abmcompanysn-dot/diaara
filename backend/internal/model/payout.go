@@ -9,12 +9,12 @@ type Payout struct {
 	Status            string     `json:"status"`
 	PhoneNumber       string     `json:"phone_number"`
 	Operator          string     `json:"operator"`
-	Provider          string     `json:"provider"` // "pawapay" | "paypal" | "manual" | "kpay"(suspendu), résolu à la création
+	Provider          string     `json:"provider"` //valeur a 3 etats : "off" | "pawapay" | "paydunya". Le checkout| "paydunya"| "paypal" | "manual" |valeur a 3 etats : "off" | "pawapay" | "paydunya". Le checkout| "paydunya"(suspendu), résolu à la création
 	ProviderReference *string    `json:"provider_reference,omitempty"`
 	FailureReason     *string    `json:"failure_reason,omitempty"`
 	RequestedAt       time.Time  `json:"requested_at"`
 	PaidAt            *time.Time `json:"paid_at,omitempty"`
-	// Règlement manuel (argent envoyé au vendeur hors PawaPay/KPay) :
+	// Règlement manuel (argent envoyé au vendeur hors PawaPay/PayDunya) :
 	// IsManual + note libre + frais/taxe retenus. Voir PayoutRepo.SettleManually.
 	IsManual   bool    `json:"is_manual"`
 	ManualNote *string `json:"manual_note,omitempty"`
@@ -66,8 +66,8 @@ type ManualPayoutInput struct {
 //   - "paypal"                                          : PayPalEmail
 type DirectPayoutInput struct {
 	AmountCFA   int    `json:"amount_cfa"`
-	Channel     string `json:"channel"` // "mobile_money" | "paypal"
-	Country     string `json:"country"` // ISO 3166-1 alpha-3
+	Channel     string `json:"channel"`  // "mobile_money" | "paypal"
+	Country     string `json:"country"`  // ISO 3166-1 alpha-3
 	Operator    string `json:"operator"` // code PawaPay, ex "WAVE_SEN" — voir payment.XOFOperators
 	Phone       string `json:"phone"`
 	PayPalEmail string `json:"paypal_email"`

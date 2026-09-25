@@ -14,7 +14,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { CheckIcon } from '@/components/icons';
-import { PAYOUT_COUNTRIES } from '@/lib/operators';
+import { PAYOUT_COUNTRIES, PAYDUNYA_COUNTRIES } from '@/lib/operators';
 import { friendlyError } from '@/lib/error-messages';
 
 interface VendorChatYesProps {
@@ -55,10 +55,22 @@ export function VendorChatYes({ productId, priceCfa, country: initialCountry, re
   const [operator, setOperator] = useState('');
   const [phoneDigits, setPhoneDigits] = useState('');
   const [phoneTouched, setPhoneTouched] = useState(false);
+  // Prestataire mobile money par pays (réglage admin) — même logique que
+  // checkout-view.tsx.
+  const [countryProviders, setCountryProviders] = useState<Record<string, 'pawapay' | 'paydunya'>>({});
+
+  useEffect(() => {
+    api
+      .getCheckoutConfig()
+      .then((res) => setCountryProviders(res.country_providers || {}))
+      .catch(() => {});
+  }, []);
 
   const microTicketLabel = '600 FCFA'; // valeur par défaut affichée ; le montant réel exact vient du backend au moment du paiement
 
-  const payoutCountry = PAYOUT_COUNTRIES.find((c) => c.code === country) || PAYOUT_COUNTRIES[0];
+  const mobileMoneyProvider = countryProviders[country] || 'pawapay';
+  const operatorCountries = mobileMoneyProvider === 'paydunya' ? PAYDUNYA_COUNTRIES : PAYOUT_COUNTRIES;
+  const payoutCountry = operatorCountries.find((c) => c.code === country) || operatorCountries[0];
   const operators = payoutCountry.operators;
 
   useEffect(() => {

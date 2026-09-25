@@ -22,7 +22,7 @@ type PayoutHandler struct {
 	userRepo     *repository.UserRepo
 	settingsRepo *repository.SettingsRepo
 	pawapay      *payment.PawaPayClient
-	kpay         *payment.KPayClient
+	paydunya     *payment.PayDunyaClient
 	cache        *cache.Client
 
 	// Cache en mémoire des limites de versement par opérateur (PawaPay
@@ -40,7 +40,7 @@ func NewPayoutHandler(
 	userRepo *repository.UserRepo,
 	settingsRepo *repository.SettingsRepo,
 	pawapay *payment.PawaPayClient,
-	kpay *payment.KPayClient,
+	paydunya *payment.PayDunyaClient,
 	cacheClient *cache.Client,
 ) *PayoutHandler {
 	return &PayoutHandler{
@@ -50,23 +50,17 @@ func NewPayoutHandler(
 		userRepo:     userRepo,
 		settingsRepo: settingsRepo,
 		pawapay:      pawapay,
-		kpay:         kpay,
+		paydunya:     paydunya,
 		cache:        cacheClient,
 	}
 }
 
 // resolvePayoutProvider lit le réglage admin par opérateur exact (voir
 // model.GatewayOperatorSettingKey) et retourne le nom du prestataire à
-// utiliser ("off" bloque explicitement l'opérateur). Défaut "pawapay" si le
-// réglage est absent. KPay est suspendu (2026-09-03) : une valeur "kpay"
-// éventuellement restée en base est traitée comme "pawapay" — voir aussi le
-// refus à l'écriture dans AdminHandler.UpdateSettings.
+// utiliser ("off" bloque explicitement l'opérateur, "pawapay" ou "paydunya"
+// sinon). Défaut "pawapay" si le réglage est absent.
 func (h *PayoutHandler) resolvePayoutProvider(ctx context.Context, providerCode string) string {
-	v := h.settingsRepo.Get(ctx, model.GatewayOperatorSettingKey(providerCode), "pawapay")
-	if v == "kpay" {
-		return "pawapay"
-	}
-	return v
+	return h.settingsRepo.Get(ctx, model.GatewayOperatorSettingKey(providerCode), "pawapay")
 }
 
 // vendorBalanceCacheKey — même package que webhook_handler.go, qui invalide

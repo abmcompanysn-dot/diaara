@@ -80,7 +80,7 @@ const gatewaySignatureMaxAge = 5 * time.Minute
 
 // verifyGatewaySignature vérifie X-Diarra-Signature = HMAC-SHA256(secret,
 // timestamp + "." + body), comparaison en temps constant (même principe que
-// payment.VerifyKPaySignature). Le timestamp entre dans la signature ET dans
+// payment.NormalizePhone (signature HMAC non applicable a PayDunya)). Le timestamp entre dans la signature ET dans
 // la fenêtre de validité : un attaquant qui rejoue une requête interceptée ne
 // peut ni la faire accepter après expiration, ni changer le timestamp sans
 // invalider la signature.

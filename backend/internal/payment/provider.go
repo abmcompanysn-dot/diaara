@@ -3,35 +3,36 @@ package payment
 import (
 	"context"
 	"fmt"
+	"strconv"
 )
 
-// PaymentProvider — plus petit dénominateur commun entre PawaPay et KPay,
-// pour les points d'appel où les deux convergent naturellement (statut,
-// versement, remboursement). L'INITIATION d'un paiement reste branchée
-// explicitement dans les handlers (CreatePaymentPage vs InitiatePayment ont
-// des formes trop différentes pour être unifiées sans perdre en clarté) —
-// voir resolveDepositProvider dans sale_handler.go.
+// PaymentProvider — plus petit dénominateur commun entre PawaPay, PayDunya
+// et PayPal, pour les points d'appel où ils convergent naturellement
+// (statut, versement, remboursement). L'INITIATION d'un paiement reste
+// branchée explicitement dans les handlers (CreatePaymentPage vs
+// InitiateSoftpay ont des formes trop différentes pour être unifiées sans
+// perdre en clarté) — voir resolveDepositProvider dans sale_handler.go.
 //
-// Implémentée par pawaPayAdapter/kpayAdapter (ci-dessous), pas directement
-// par *PawaPayClient/*KPayClient : ces derniers ont déjà des méthodes
-// nommées GetDepositStatus/InitiatePayout/etc. avec les signatures brutes
-// de chaque API — un type adaptateur séparé évite toute collision et garde
-// les méthodes brutes disponibles là où leur forme complète est nécessaire
-// (ex. CreatePaymentPage, qui n'a pas d'équivalent commun).
+// Implémentée par pawaPayAdapter/payDunyaAdapter/paypalAdapter (ci-dessous),
+// pas directement par *PawaPayClient/*PayDunyaClient : ces derniers ont déjà
+// des méthodes nommées GetDepositStatus/InitiatePayout/etc. avec les
+// signatures brutes de chaque API — un type adaptateur séparé évite toute
+// collision et garde les méthodes brutes disponibles là où leur forme
+// complète est nécessaire (ex. CreatePaymentPage, qui n'a pas d'équivalent
+// commun).
 //
 // Statuts normalisés en un petit vocabulaire commun (pending|processing|
 // completed|failed|cancelled) pour que webhook_handler.go et
 // payout_handler.go n'aient plus à connaître le vocabulaire propre à
-// chaque provider (PawaPay: ACCEPTED/COMPLETED/FAILED vs KPay: PENDING/
-// PROCESSING/COMPLETED/FAILED/CANCELLED).
+// chaque provider.
 var (
 	_ PaymentProvider = pawaPayAdapter{}
-	_ PaymentProvider = kpayAdapter{}
+	_ PaymentProvider = payDunyaAdapter{}
 	_ PaymentProvider = paypalAdapter{}
 )
 
 type PaymentProvider interface {
-	Name() string // "pawapay" | "kpay"
+	Name() string // "pawapay" | "paydunya" | "paypal"
 
 	GetDepositStatus(ctx context.Context, ref string) (DepositOutcome, error)
 	InitiatePayout(ctx context.Context, req PayoutOp) (PayoutInitOutcome, error)
@@ -176,68 +177,78 @@ func (a pawaPayAdapter) InitiateRefund(ctx context.Context, depositID, refundExt
 	return out, nil
 }
 
-// --- Adaptateur KPay -------------------------------------------------------
+// --- Adaptateur PayDunya ----------------------------------------------------
+//
+// PayDunya n'a pas d'API de statut/payout/remboursement unifiée entre
+// opérateurs comme PawaPay — GetDepositStatus s'appuie sur
+// GetInvoiceStatus (une facture couvre tous les opérateurs identiquement).
+// InitiatePayout/GetPayoutStatus/InitiateRefund utilisent l'API "disburse"
+// (déboursement), distincte du dépôt.
 
-type kpayAdapter struct{ *KPayClient }
+type payDunyaAdapter struct{ *PayDunyaClient }
 
 // AsProvider expose ce client via l'interface PaymentProvider commune.
-func (c *KPayClient) AsProvider() PaymentProvider { return kpayAdapter{c} }
+func (c *PayDunyaClient) AsProvider() PaymentProvider { return payDunyaAdapter{c} }
 
-func (kpayAdapter) Name() string { return "kpay" }
+func (payDunyaAdapter) Name() string { return "paydunya" }
 
-func normalizeKPayStatus(s string) string {
+func normalizePayDunyaStatus(s string) string {
 	switch s {
-	case "PENDING":
+	case "pending":
 		return "pending"
-	case "PROCESSING":
-		return "processing"
-	case "COMPLETED":
+	case "completed":
 		return "completed"
-	case "FAILED":
-		return "failed"
-	case "CANCELLED":
+	case "cancelled":
 		return "cancelled"
+	case "failed":
+		return "failed"
 	default:
 		return "pending"
 	}
 }
 
-func (a kpayAdapter) GetDepositStatus(ctx context.Context, id string) (DepositOutcome, error) {
-	resp, err := a.KPayClient.GetPaymentStatus(ctx, id)
+func (a payDunyaAdapter) GetDepositStatus(ctx context.Context, token string) (DepositOutcome, error) {
+	resp, err := a.PayDunyaClient.GetInvoiceStatus(ctx, token)
 	if err != nil {
 		return DepositOutcome{}, err
 	}
-	return DepositOutcome{Status: normalizeKPayStatus(resp.Status), FailureReason: resp.FailureReason}, nil
+	if resp.ResponseCode != "00" {
+		return DepositOutcome{Status: "pending", NotFound: true}, nil
+	}
+	return DepositOutcome{Status: normalizePayDunyaStatus(resp.Status)}, nil
 }
 
-func (a kpayAdapter) InitiatePayout(ctx context.Context, op PayoutOp) (PayoutInitOutcome, error) {
-	resp, err := a.KPayClient.InitiatePayout(ctx, PayoutInitRequest{
-		Amount:      op.Amount,
-		Provider:    op.Operator,
-		PhoneNumber: op.Phone,
-		ExternalId:  op.ClientRef,
-		Description: "Versement DIARRA",
+func (a payDunyaAdapter) InitiatePayout(ctx context.Context, op PayoutOp) (PayoutInitOutcome, error) {
+	amount, err := strconv.Atoi(op.Amount)
+	if err != nil {
+		return PayoutInitOutcome{}, fmt.Errorf("montant invalide: %w", err)
+	}
+	resp, err := a.PayDunyaClient.InitiateDisbursement(ctx, DisbursementRequest{
+		AccountAlias: op.Phone,
+		Amount:       amount,
+		WithdrawMode: op.Operator,
 	})
 	if err != nil {
 		return PayoutInitOutcome{}, err
 	}
-	return PayoutInitOutcome{Accepted: true, ProviderRef: resp.ID}, nil
+	return PayoutInitOutcome{Accepted: resp.Success, ProviderRef: resp.DisburseID, FailureReason: resp.Message}, nil
 }
 
-func (a kpayAdapter) GetPayoutStatus(ctx context.Context, id string) (PayoutOutcome, error) {
-	resp, err := a.KPayClient.GetPayoutStatus(ctx, id)
+func (a payDunyaAdapter) GetPayoutStatus(ctx context.Context, disburseID string) (PayoutOutcome, error) {
+	resp, err := a.PayDunyaClient.GetDisbursementStatus(ctx, disburseID)
 	if err != nil {
 		return PayoutOutcome{}, err
 	}
-	return PayoutOutcome{Status: normalizeKPayStatus(resp.Status), FailureReason: resp.FailureReason}, nil
+	return PayoutOutcome{Status: normalizePayDunyaStatus(resp.Status), FailureReason: resp.Message}, nil
 }
 
-func (a kpayAdapter) InitiateRefund(ctx context.Context, paymentID, refundExternalID string) (RefundInitOutcome, error) {
-	resp, err := a.KPayClient.InitiateRefund(ctx, paymentID, RefundInitRequest{ExternalId: refundExternalID})
-	if err != nil {
-		return RefundInitOutcome{}, err
-	}
-	return RefundInitOutcome{Accepted: true, ProviderRef: resp.ID}, nil
+// InitiateRefund — PayDunya n'expose pas d'API de remboursement automatisé
+// documentée publiquement (contrairement à PawaPay/PayPal) ; un
+// remboursement PayDunya se fait aujourd'hui manuellement depuis leur
+// dashboard. Retourne une erreur explicite plutôt que d'échouer
+// silencieusement — voir AdminHandler, qui affiche cette erreur à l'admin.
+func (a payDunyaAdapter) InitiateRefund(ctx context.Context, depositRef, refundExternalID string) (RefundInitOutcome, error) {
+	return RefundInitOutcome{}, fmt.Errorf("remboursement PayDunya non automatisé : à effectuer manuellement depuis leur dashboard")
 }
 
 // --- Adaptateur PayPal -------------------------------------------------------

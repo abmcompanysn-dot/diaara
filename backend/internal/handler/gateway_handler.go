@@ -20,13 +20,13 @@ import (
 
 // GatewayHandler expose DIARRA comme passerelle de paiement pour des
 // applications externes (ex. ABMCY Core) : elles créent des dépôts/versements/
-// remboursements ici au lieu d'intégrer PawaPay/KPay/PayPal directement.
+// remboursements ici au lieu d'intégrer PawaPay/PayDunya/PayPal directement.
 // Réutilise l'abstraction déjà unifiée entre les 3 agrégateurs (voir
 // internal/payment/provider.go, PaymentProvider) — aucune nouvelle logique
 // d'appel agrégateur, seulement une couche HTTP + persistance dédiée
 // (gateway_transactions, migration 029) au-dessus.
 //
-// DIARRA garde la responsabilité des callbacks agrégateur (PawaPay/KPay/
+// DIARRA garde la responsabilité des callbacks agrégateur (PawaPay/PayDunya/
 // PayPal -> DIARRA, déjà géré par WebhookHandler) et les RELAIE vers le
 // client externe (DIARRA -> callback_url du client, voir relayGatewayCallback
 // dans webhook_handler.go) : le client n'a jamais besoin de recevoir un

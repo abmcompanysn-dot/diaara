@@ -18,7 +18,7 @@ import (
 // Nil-safe : si les clés VAPID ne sont pas configurées (dev local, ou avant
 // que l'admin les génère en prod), PushService reste nil et
 // WebhookHandler.notify continue de fonctionner normalement (juste sans
-// push) — même principe que paypal/kpay/yesBusiness ailleurs dans ce repo.
+// push) — même principe que paypal/paydunya/yesBusiness ailleurs dans ce repo.
 type PushService struct {
 	pushRepo *repository.PushRepo
 	client   *webpush.Options

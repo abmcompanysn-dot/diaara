@@ -51,7 +51,7 @@ type AdminHandler struct {
 	files         StorageService
 	startTime     time.Time
 	pawapay       *payment.PawaPayClient
-	kpay          *payment.KPayClient
+	paydunya      *payment.PayDunyaClient
 	paypal        *payment.PayPalClient
 	notifications *email.NotificationService // nil si aucun fournisseur email configuré
 	cache         *cache.Client
@@ -319,7 +319,7 @@ func NewAdminHandler(
 	files StorageService,
 	startTime time.Time,
 	pawapay *payment.PawaPayClient,
-	kpay *payment.KPayClient,
+	paydunya *payment.PayDunyaClient,
 	paypal *payment.PayPalClient,
 	notifications *email.NotificationService,
 	cacheClient *cache.Client,
@@ -338,7 +338,7 @@ func NewAdminHandler(
 		storage:       storage,
 		files:         files,
 		startTime:     startTime,
-		kpay:          kpay,
+		paydunya:      paydunya,
 		paypal:        paypal,
 		pawapay:       pawapay,
 		notifications: notifications,
@@ -855,24 +855,18 @@ func (h *AdminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// Réglages par opérateur (versements) et par pays (checkout) — voir
-	// model.GatewayOperatorSettingKey / CheckoutProviderSettingKey. KPay est
-	// suspendu (2026-09-03) : "kpay" est refusé pour les deux familles de
-	// réglages, seuls "off"/"pawapay" (versements) et "pawapay" (checkout)
-	// sont acceptés. Le code KPay reste dormant, réactivable en retirant ces
-	// deux gardes + en réintroduisant la construction du client dans main.go.
+	// model.GatewayOperatorSettingKey / CheckoutProviderSettingKey.
+	// "pawapay" et "paydunya" sont les deux prestataires mobile money actifs
+	// (voir SaleHandler.resolveCheckoutProvider / PayoutHandler.resolvePayoutProvider).
 	for key, value := range input {
 		switch {
 		case strings.HasPrefix(key, "gateway_op_"):
-			if value != "off" && value != "pawapay" {
+			if value != "off" && value != "pawapay" && value != "paydunya" {
 				http.Error(w, `{"error":"invalid_gateway_provider"}`, http.StatusBadRequest)
 				return
 			}
 		case strings.HasPrefix(key, "checkout_provider_"):
-			// KPay désactivé de ce flux depuis le 2026-09-03 (intégration
-			// incomplète — voir SaleHandler.resolveCheckoutProvider, qui ignore
-			// de toute façon ce réglage) : refusé ici aussi pour ne pas laisser
-			// un admin croire que le choix a un effet.
-			if value != "pawapay" {
+			if value != "pawapay" && value != "paydunya" {
 				http.Error(w, `{"error":"invalid_checkout_provider"}`, http.StatusBadRequest)
 				return
 			}
@@ -986,26 +980,32 @@ func (h *AdminHandler) initiatePayoutWithProvider(w http.ResponseWriter, r *http
 		return true
 	}
 
-	if payout.Provider == "kpay" {
-		if h.kpay == nil {
+	if payout.Provider == "paydunya" {
+		if h.paydunya == nil {
 			http.Error(w, `{"error":"payment_not_configured"}`, http.StatusServiceUnavailable)
 			return false
 		}
-		resp, err := h.kpay.InitiatePayout(r.Context(), payment.PayoutInitRequest{
-			Amount:      fmt.Sprintf("%d", payout.AmountCFA),
-			Provider:    payout.Operator,
-			PhoneNumber: payout.PhoneNumber,
-			ExternalId:  payout.ID,
-			Description: "Versement DIARRA",
+		op, ok := payment.FindPayDunyaOperatorByPawaPayCode(payout.Operator)
+		if !ok {
+			reason := "unknown_operator"
+			h.payoutRepo.UpdateStatus(r.Context(), payout.ID, "failed", &reason)
+			h.cache.Del(r.Context(), vendorBalanceCacheKey(payout.UserID))
+			http.Error(w, `{"error":"payout_rejected","reason":"unknown_operator"}`, http.StatusBadGateway)
+			return false
+		}
+		resp, err := h.paydunya.InitiateDisbursement(r.Context(), payment.DisbursementRequest{
+			AccountAlias: payout.PhoneNumber,
+			Amount:       payout.AmountCFA,
+			WithdrawMode: op.WithdrawMode,
 		})
-		if err != nil {
+		if err != nil || !resp.Success {
 			reason := "payout_init_failed"
 			h.payoutRepo.UpdateStatus(r.Context(), payout.ID, "failed", &reason)
 			h.cache.Del(r.Context(), vendorBalanceCacheKey(payout.UserID))
 			http.Error(w, `{"error":"payout_rejected","reason":"payout_init_failed"}`, http.StatusBadGateway)
 			return false
 		}
-		if err := h.payoutRepo.SetProviderReference(r.Context(), payout.ID, resp.ID); err != nil {
+		if err := h.payoutRepo.SetProviderReference(r.Context(), payout.ID, resp.DisburseID); err != nil {
 			http.Error(w, `{"error":"payout_update_failed"}`, http.StatusInternalServerError)
 			return false
 		}
@@ -1051,7 +1051,7 @@ func (h *AdminHandler) initiatePayoutWithProvider(w http.ResponseWriter, r *http
 // SettlePayoutAuto — POST /api/admin/payouts/{id}/settle-auto (scope
 // "finance") : l'admin choisit de régler AUTOMATIQUEMENT une demande de
 // versement restée "en attente" (requested) — déclenche le versement chez le
-// prestataire (PawaPay/KPay). Le versement passe "processing", puis
+// prestataire (PawaPay/PayDunya). Le versement passe "processing", puis
 // "paid"/"failed" via le webhook prestataire (ou la réconciliation de fond).
 // L'alternative est le règlement manuel (SettlePayoutManual).
 func (h *AdminHandler) SettlePayoutAuto(w http.ResponseWriter, r *http.Request) {
@@ -1101,7 +1101,7 @@ func (h *AdminHandler) RetryPayout(w http.ResponseWriter, r *http.Request) {
 }
 
 // CheckPayoutProvider — POST /api/admin/payouts/{id}/check-provider (scope
-// "finance") : interroge le prestataire (PawaPay/KPay) sur le VRAI statut d'un
+// "finance") : interroge le prestataire (PawaPay/PayDunya) sur le VRAI statut d'un
 // versement "processing", et applique COMPLETED→paid (+ email vendeur) /
 // FAILED→failed. Équivalent de CheckSaleProvider pour les versements — sert de
 // bouton « Vérifier chez PawaPay » si le webnook s'est perdu.
@@ -1123,8 +1123,8 @@ func (h *AdminHandler) CheckPayoutProvider(w http.ResponseWriter, r *http.Reques
 	providerStatus := ""
 
 	// Statut prestataire normalisé au vocabulaire commun ("completed"/"failed"/
-	// "processing"/…) pour PayPal ; brut ("COMPLETED"/"FAILED") pour PawaPay/KPay.
-	// Le switch de décision plus bas accepte les deux.
+	// "processing"/…) pour PayPal/PayDunya ; brut ("COMPLETED"/"FAILED") pour
+	// PawaPay. Le switch de décision plus bas accepte les deux.
 	switch payout.Provider {
 	case "paypal":
 		if h.paypal == nil {
@@ -1145,17 +1145,24 @@ func (h *AdminHandler) CheckPayoutProvider(w http.ResponseWriter, r *http.Reques
 		default:
 			providerStatus = "PROCESSING"
 		}
-	case "kpay":
-		if h.kpay == nil {
+	case "paydunya":
+		if h.paydunya == nil {
 			http.Error(w, `{"error":"payment_not_configured"}`, http.StatusServiceUnavailable)
 			return
 		}
-		st, err := h.kpay.GetPayoutStatus(r.Context(), *payout.ProviderReference)
+		st, err := h.paydunya.GetDisbursementStatus(r.Context(), *payout.ProviderReference)
 		if err != nil {
 			http.Error(w, `{"error":"provider_unreachable"}`, http.StatusBadGateway)
 			return
 		}
-		providerStatus = st.Status
+		switch st.Status {
+		case "success":
+			providerStatus = "COMPLETED"
+		case "failed":
+			providerStatus = "FAILED"
+		default:
+			providerStatus = "PROCESSING"
+		}
 	default: // pawapay
 		if h.pawapay == nil {
 			http.Error(w, `{"error":"payment_not_configured"}`, http.StatusServiceUnavailable)
@@ -1403,8 +1410,34 @@ func (h *AdminHandler) CheckSaleProvider(w http.ResponseWriter, r *http.Request)
 		http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
 		return
 	}
-	if sale.PaymentProvider == "kpay" {
-		http.Error(w, `{"error":"provider_check_unsupported","provider":"kpay"}`, http.StatusBadRequest)
+	if sale.PaymentProvider == "paydunya" {
+		if h.paydunya == nil {
+			http.Error(w, `{"error":"payment_not_configured"}`, http.StatusServiceUnavailable)
+			return
+		}
+		status, err := h.paydunya.GetInvoiceStatus(r.Context(), sale.PaymentReference)
+		if err != nil {
+			http.Error(w, `{"error":"provider_unreachable"}`, http.StatusBadGateway)
+			return
+		}
+		resp := map[string]string{
+			"provider":        "paydunya",
+			"sale_status":     sale.Status,
+			"provider_status": status.Status,
+		}
+		if status.Status == "completed" && sale.Status == string(model.SalePending) && h.webhook != nil {
+			if err := h.webhook.ConfirmPaidSale(r.Context(), sale); err != nil {
+				http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
+				return
+			}
+			resp["sale_status"] = string(model.SalePaid)
+		} else if (status.Status == "failed" || status.Status == "cancelled") && sale.Status == string(model.SalePending) {
+			if err := h.saleRepo.UpdateStatus(r.Context(), sale.ID, string(model.SaleFailed)); err == nil {
+				resp["sale_status"] = string(model.SaleFailed)
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(resp)
 		return
 	}
 
@@ -1541,7 +1574,7 @@ func (h *AdminHandler) deliverManuallyConfirmed(ctx context.Context, sale *model
 }
 
 // SettlePayoutManual — POST /api/admin/payouts/{id}/settle-manual : marque un
-// versement "paid" SANS appel PawaPay/KPay — l'argent a été envoyé au vendeur
+// versement "paid" SANS appel PawaPay/PayDunya — l'argent a été envoyé au vendeur
 // autrement (Wave perso, espèces, virement). Corps : { note, fee_cfa }.
 func (h *AdminHandler) SettlePayoutManual(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
@@ -1830,38 +1863,22 @@ func (h *AdminHandler) RefundSale(w http.ResponseWriter, r *http.Request) {
 	h.logActivity(middleware.GetUserID(r.Context()), "sale_refund_initiated", "sale", id,
 		fmt.Sprintf("Remboursement initié : %d FCFA (%s)", sale.AmountCFA, sale.PaymentProvider))
 
-	if sale.PaymentProvider == "kpay" {
-		if h.kpay == nil {
-			http.Error(w, `{"error":"payment_not_configured"}`, http.StatusServiceUnavailable)
-			return
-		}
-		if sale.ProviderTransactionID == nil {
-			http.Error(w, `{"error":"missing_provider_transaction_id"}`, http.StatusInternalServerError)
-			return
-		}
-		resp, err := h.kpay.InitiateRefund(r.Context(), *sale.ProviderTransactionID, payment.RefundInitRequest{
-			ExternalId: sale.ID,
-		})
-		if err != nil {
-			http.Error(w, `{"error":"refund_rejected","reason":"refund_init_failed"}`, http.StatusBadGateway)
-			return
-		}
-		if err := h.saleRepo.SetRefundReference(r.Context(), sale.ID, resp.ID); err != nil {
-			http.Error(w, `{"error":"refund_update_failed"}`, http.StatusInternalServerError)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]string{"status": "refund_pending"})
+	// PayDunya n'expose pas d'API de remboursement automatisé (voir
+	// payDunyaAdapter.InitiateRefund) — à faire manuellement depuis leur
+	// dashboard, DIARRA se contente d'informer l'admin plutôt que d'échouer
+	// silencieusement.
+	if sale.PaymentProvider == "paydunya" {
+		http.Error(w, `{"error":"manual_refund_required","reason":"Remboursement PayDunya non automatisé : à effectuer depuis leur dashboard."}`, http.StatusNotImplemented)
 		return
 	}
 
 	// PayPal : ProviderTransactionID a déjà été remplacé par l'ID de CAPTURE
 	// (pas l'ID de commande) au moment où le paiement a été confirmé — voir
 	// DepositOutcome.UpdatedProviderRef dans paypalAdapter.GetDepositStatus.
-	// Contrairement à KPay/PawaPay, PayPal confirme le remboursement en
-	// synchrone dans la réponse HTTP (pas de webhook à attendre pour savoir
-	// si c'est accepté) — on peut donc marquer la vente remboursée tout de
-	// suite si le statut renvoyé est COMPLETED.
+	// PayPal confirme le remboursement en synchrone dans la réponse HTTP (pas
+	// de webhook à attendre pour savoir si c'est accepté) — on peut donc
+	// marquer la vente remboursée tout de suite si le statut renvoyé est
+	// COMPLETED.
 	if sale.PaymentProvider == "paypal" {
 		if h.paypal == nil {
 			http.Error(w, `{"error":"payment_not_configured"}`, http.StatusServiceUnavailable)

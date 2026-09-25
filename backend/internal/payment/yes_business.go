@@ -15,8 +15,8 @@ import (
 )
 
 // yes_business.go — client HTTP DIARRA -> YES.abmcy Business (achat
-// conversationnel "in-chat"). Contrairement à PawaPay/PayPal/KPay, DIARRA
-// est ici le SEUL appelant : les 5 endpoints (session/initiate,
+// conversationnel "in-chat"). Contrairement à PawaPay/PayPal/PayDunya,
+// DIARRA est ici le SEUL appelant : les 5 endpoints (session/initiate,
 // session/{id}/status, session/{id}/send-offer, session/{id}/review,
 // delivery/fulfill) sont tous côté YES Business — DIARRA n'expose jamais de
 // route à YES en retour. Voir doc d'intégration fournie par YES le

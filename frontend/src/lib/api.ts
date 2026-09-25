@@ -193,7 +193,10 @@ export const api = {
   // affiché (interrupteur admin, voir /admin/settings et
   // model.SettingCardPaymentEnabled côté backend).
   getCheckoutConfig: () =>
-    fetchApi<{ card_payment_enabled: boolean }>('/api/checkout/config', { skipAuth: true }),
+    fetchApi<{ card_payment_enabled: boolean; country_providers: Record<string, 'pawapay' | 'paydunya'> }>(
+      '/api/checkout/config',
+      { skipAuth: true }
+    ),
 
   // Products
   getProducts: (params?: { category?: string; search?: string }) => {

@@ -1,0 +1,306 @@
+package payment
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"time"
+)
+
+// PayDunya — dépôt mobile money direct via l'API PayDunya (2 étapes,
+// contrairement à PawaPay en une seule) :
+//  1. Création d'une "facture" (checkout-invoice/create) qui renvoie un
+//     token.
+//  2. Appel SoftPay pour cet opérateur précis (endpoint ET noms de champs
+//     différents par opérateur — pas d'API uniforme comme PawaPay) avec ce
+//     token + numéro de téléphone de l'acheteur, qui déclenche la demande
+//     d'autorisation sur son téléphone.
+//
+// Statut final : callback (callback_url posé à la création de facture) ou
+// polling de checkout-invoice/confirm/{token} — voir GetInvoiceStatus.
+// Docs : https://developers.paydunya.com/doc/FR/http_json (facture),
+// https://developers.paydunya.com/doc/FR/softpay (softpay par opérateur).
+
+type PayDunyaConfig struct {
+	MasterKey   string // PAYDUNYA-MASTER-KEY
+	PrivateKey  string // PAYDUNYA-PRIVATE-KEY
+	Token       string // PAYDUNYA-TOKEN
+	BaseURL     string // défaut sandbox: https://app.paydunya.com/sandbox-api/v1
+	CallbackURL string // URL publique du webhook IPN (déclarée dans le dashboard ET envoyée par requête)
+}
+
+type PayDunyaClient struct {
+	cfg    PayDunyaConfig
+	client *http.Client
+}
+
+func NewPayDunyaClient(cfg PayDunyaConfig) *PayDunyaClient {
+	baseURL := cfg.BaseURL
+	if baseURL == "" {
+		baseURL = "https://app.paydunya.com/sandbox-api/v1"
+	}
+	cfg.BaseURL = baseURL
+	return &PayDunyaClient{
+		cfg:    cfg,
+		client: &http.Client{Timeout: 30 * time.Second},
+	}
+}
+
+func (c *PayDunyaClient) setHeaders(req *http.Request) {
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("PAYDUNYA-MASTER-KEY", c.cfg.MasterKey)
+	req.Header.Set("PAYDUNYA-PRIVATE-KEY", c.cfg.PrivateKey)
+	req.Header.Set("PAYDUNYA-TOKEN", c.cfg.Token)
+}
+
+// --- Création de facture -----------------------------------------------------
+
+type InvoiceItem struct {
+	Name        string `json:"name"`
+	Quantity    int    `json:"quantity"`
+	UnitPrice   string `json:"unit_price"`
+	TotalPrice  string `json:"total_price"`
+	Description string `json:"description,omitempty"`
+}
+
+type InvoiceCustomer struct {
+	Name  string `json:"name"`
+	Email string `json:"email"`
+	Phone string `json:"phone,omitempty"`
+}
+
+type Invoice struct {
+	Items       map[string]InvoiceItem `json:"items"`
+	Customer    InvoiceCustomer        `json:"customer"`
+	TotalAmount int                    `json:"total_amount"`
+	Description string                 `json:"description"`
+}
+
+type InvoiceStore struct {
+	Name string `json:"name"`
+}
+
+type InvoiceActions struct {
+	CancelURL   string `json:"cancel_url,omitempty"`
+	ReturnURL   string `json:"return_url,omitempty"`
+	CallbackURL string `json:"callback_url,omitempty"`
+}
+
+type CreateInvoiceRequest struct {
+	Invoice    Invoice           `json:"invoice"`
+	Store      InvoiceStore      `json:"store"`
+	CustomData map[string]string `json:"custom_data,omitempty"`
+	Actions    InvoiceActions    `json:"actions"`
+}
+
+type CreateInvoiceResponse struct {
+	ResponseCode string `json:"response_code"` // "00" = succès
+	ResponseText string `json:"response_text"` // URL checkout hébergé (non utilisée, on reste sur SoftPay)
+	Description  string `json:"description"`
+	Token        string `json:"token"`
+}
+
+// CreateInvoice — POST /checkout-invoice/create. Le token renvoyé sert
+// ensuite d'invoice_token/payment_token (nom variable selon l'opérateur —
+// voir SoftpayEndpoint) pour InitiateSoftpay.
+func (c *PayDunyaClient) CreateInvoice(ctx context.Context, req CreateInvoiceRequest) (*CreateInvoiceResponse, error) {
+	if req.Actions.CallbackURL == "" {
+		req.Actions.CallbackURL = c.cfg.CallbackURL
+	}
+	var out CreateInvoiceResponse
+	if err := c.do(ctx, http.MethodPost, "/checkout-invoice/create", req, &out); err != nil {
+		return nil, err
+	}
+	if out.ResponseCode != "00" {
+		return nil, fmt.Errorf("%w: %s", ErrPaymentFailed, out.Description)
+	}
+	return &out, nil
+}
+
+// --- SoftPay (déclenchement du paiement par opérateur) -----------------------
+
+// SoftpayResponse — format commun à tous les opérateurs (voir doc : "success"
+// booléen + "message"). Les champs additionnels (redirect URLs pour Orange
+// Money) sont ignorés — DIARRA n'en a pas besoin, le statut final vient du
+// polling/callback sur la facture, pas de cette réponse.
+type SoftpayResponse struct {
+	Success bool   `json:"success"`
+	Message string `json:"message"`
+}
+
+// InitiateSoftpay — POST vers l'endpoint SoftPay de l'opérateur donné (voir
+// SoftpayEndpoint), avec le corps déjà construit par BuildSoftpayPayload
+// (les noms de champs diffèrent par opérateur, impossible à unifier dans un
+// struct Go commun).
+func (c *PayDunyaClient) InitiateSoftpay(ctx context.Context, endpoint string, payload map[string]interface{}) (*SoftpayResponse, error) {
+	var out SoftpayResponse
+	if err := c.do(ctx, http.MethodPost, "/softpay/"+endpoint, payload, &out); err != nil {
+		return nil, err
+	}
+	if !out.Success {
+		return nil, fmt.Errorf("%w: %s", ErrPaymentFailed, out.Message)
+	}
+	return &out, nil
+}
+
+// --- Statut d'une facture -----------------------------------------------------
+
+type InvoiceStatusResponse struct {
+	ResponseCode string `json:"response_code"`
+	ResponseText string `json:"response_text"`
+	Status       string `json:"status"` // pending | completed | cancelled | failed
+	Invoice      struct {
+		Token       string `json:"token"`
+		TotalAmount int    `json:"total_amount"`
+	} `json:"invoice"`
+}
+
+// GetInvoiceStatus — GET /checkout-invoice/confirm/{token}.
+func (c *PayDunyaClient) GetInvoiceStatus(ctx context.Context, token string) (*InvoiceStatusResponse, error) {
+	var out InvoiceStatusResponse
+	if err := c.do(ctx, http.MethodGet, "/checkout-invoice/confirm/"+token, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// --- Versements vendeur (API "disburse") --------------------------------------
+//
+// Flux en 2 étapes, distinct du dépôt : get-invoice (crée une facture de
+// déboursement, renvoie disburse_token) puis submit-invoice (exécute le
+// virement). InitiateDisbursement enchaîne les deux pour rester au même
+// niveau d'abstraction que PawaPay.InitiatePayout (un seul appel côté
+// PaymentProvider, voir payDunyaAdapter.InitiatePayout).
+
+type getDisburseInvoiceRequest struct {
+	AccountAlias string `json:"account_alias"`
+	Amount       int    `json:"amount"`
+	WithdrawMode string `json:"withdraw_mode"`
+	CallbackURL  string `json:"callback_url,omitempty"`
+}
+
+type getDisburseInvoiceResponse struct {
+	ResponseCode  string `json:"response_code"`
+	DisburseToken string `json:"disburse_token"`
+}
+
+type submitDisburseInvoiceRequest struct {
+	DisburseInvoice string `json:"disburse_invoice"`
+	DisburseID      string `json:"disburse_id"`
+}
+
+type submitDisburseInvoiceResponse struct {
+	ResponseCode  string `json:"response_code"`
+	Status        string `json:"status"` // success | pending | failed
+	ResponseText  string `json:"response_text"`
+	TransactionID string `json:"transaction_id"`
+}
+
+// DisbursementRequest — versement vers un compte mobile money (AccountAlias
+// = numéro local sans indicatif, WithdrawMode = code PayDunya ex
+// "orange-money-senegal", voir PayDunyaOperators[].WithdrawMode).
+type DisbursementRequest struct {
+	AccountAlias string
+	Amount       int
+	WithdrawMode string
+}
+
+type DisbursementResponse struct {
+	Success       bool
+	DisburseID    string // = disburse_token de get-invoice, sert de référence pour check-status
+	TransactionID string
+	Message       string
+}
+
+// InitiateDisbursement enchaîne get-invoice + submit-invoice.
+func (c *PayDunyaClient) InitiateDisbursement(ctx context.Context, req DisbursementRequest) (*DisbursementResponse, error) {
+	var invoice getDisburseInvoiceResponse
+	if err := c.do(ctx, http.MethodPost, "/disburse/get-invoice", getDisburseInvoiceRequest{
+		AccountAlias: req.AccountAlias,
+		Amount:       req.Amount,
+		WithdrawMode: req.WithdrawMode,
+		CallbackURL:  c.cfg.CallbackURL,
+	}, &invoice); err != nil {
+		return nil, err
+	}
+	if invoice.ResponseCode != "00" || invoice.DisburseToken == "" {
+		return nil, fmt.Errorf("%w: création facture déboursement échouée (code %s)", ErrPaymentFailed, invoice.ResponseCode)
+	}
+
+	var submit submitDisburseInvoiceResponse
+	if err := c.do(ctx, http.MethodPost, "/disburse/submit-invoice", submitDisburseInvoiceRequest{
+		DisburseInvoice: invoice.DisburseToken,
+	}, &submit); err != nil {
+		return nil, err
+	}
+	return &DisbursementResponse{
+		Success:       submit.ResponseCode == "00" && submit.Status != "failed",
+		DisburseID:    invoice.DisburseToken,
+		TransactionID: submit.TransactionID,
+		Message:       submit.ResponseText,
+	}, nil
+}
+
+type checkDisburseStatusRequest struct {
+	DisburseInvoice string `json:"disburse_invoice"`
+}
+
+// DisbursementStatusResponse — réponse de check-status.
+type DisbursementStatusResponse struct {
+	ResponseCode string `json:"response_code"`
+	Status       string `json:"status"` // success | pending | failed
+	Message      string `json:"response_text"`
+}
+
+// GetDisbursementStatus — POST /disburse/check-status.
+func (c *PayDunyaClient) GetDisbursementStatus(ctx context.Context, disburseToken string) (*DisbursementStatusResponse, error) {
+	var out DisbursementStatusResponse
+	if err := c.do(ctx, http.MethodPost, "/disburse/check-status", checkDisburseStatusRequest{
+		DisburseInvoice: disburseToken,
+	}, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+// --- HTTP interne -------------------------------------------------------------
+
+func (c *PayDunyaClient) do(ctx context.Context, method, path string, body interface{}, out interface{}) error {
+	var reader io.Reader
+	if body != nil {
+		raw, err := json.Marshal(body)
+		if err != nil {
+			return err
+		}
+		reader = bytes.NewReader(raw)
+	}
+	httpReq, err := http.NewRequestWithContext(ctx, method, c.cfg.BaseURL+path, reader)
+	if err != nil {
+		return err
+	}
+	c.setHeaders(httpReq)
+
+	resp, err := c.client.Do(httpReq)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode >= 500 {
+		return fmt.Errorf("%w: status %d: %s", ErrPaymentFailed, resp.StatusCode, string(respBody))
+	}
+	// PayDunya renvoie souvent 200 même en échec métier (success: false /
+	// response_code != "00"), à charge de l'appelant de vérifier ces champs
+	// — voir CreateInvoice/InitiateSoftpay.
+	if err := json.Unmarshal(respBody, out); err != nil {
+		return fmt.Errorf("%w: réponse illisible: %s", ErrPaymentFailed, string(respBody))
+	}
+	return nil
+}

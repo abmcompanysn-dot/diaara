@@ -165,7 +165,7 @@ func (r *SaleRepo) UpdateStatus(ctx context.Context, id, status string) error {
 }
 
 // ListPendingForProvider — ventes encore "pending" pour un prestataire donné
-// ("pawapay"/"kpay"), créées il y a moins de maxAge, plus anciennes d'abord.
+// ("pawapay"/"paydunya"), créées il y a moins de maxAge, plus anciennes d'abord.
 // Utilisé par le job de réconciliation de fond qui va revérifier chaque
 // dépôt via l'API du prestataire (filet de sécurité si un webhook s'est
 // perdu — incident du 2026-09-02).
@@ -368,13 +368,25 @@ func (r *SaleRepo) UpdatePaymentReference(ctx context.Context, id, ref string) e
 	return err
 }
 
-// SetProviderTransactionID — enregistre l'ID KPay du paiement juste après
+// SetProviderTransactionID — enregistre l.ID du paiement juste après
 // l'initiation (voir model.Sale.ProviderTransactionID) : nécessaire pour les
-// appels GET statut/remboursement ultérieurs, KPay n'utilisant pas notre
+// appels GET statut/remboursement ultérieurs, certains prestataires n.utilisant pas notre
 // payment_reference comme identifiant côté serveur.
 func (r *SaleRepo) SetProviderTransactionID(ctx context.Context, id, providerTxID string) error {
 	_, err := r.pool.Exec(ctx,
 		`UPDATE sales SET provider_transaction_id = $2 WHERE id = $1`, id, providerTxID)
+	return err
+}
+
+// SetPaymentReference — PayDunya uniquement : le token de facture n'est
+// connu qu'APRÈS la création de la vente (contrairement à PawaPay, qui
+// utilise un UUID généré par DIARRA dès la création — voir
+// SaleHandler.initiatePayDunyaDeposit). payment_reference doit être mis à
+// jour pour que CheckoutStatus/le webhook IPN retrouvent la vente par ce
+// token ensuite.
+func (r *SaleRepo) SetPaymentReference(ctx context.Context, id, paymentReference string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE sales SET payment_reference = $2 WHERE id = $1`, id, paymentReference)
 	return err
 }
 

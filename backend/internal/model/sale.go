@@ -15,10 +15,11 @@ type Sale struct {
 	VendorAmountCFA     int     `json:"vendor_amount_cfa"`
 	PaymentProvider     string  `json:"payment_provider"`
 	PaymentReference    string  `json:"payment_reference"`
-	// ProviderTransactionID : ID propre à KPay (retourné à l'initiation),
-	// nécessaire pour ses appels GET statut/remboursement — reste nil pour
-	// une vente PawaPay (payment_reference est déjà l'identifiant, généré
-	// côté DIARRA).
+	// ProviderTransactionID : ID propre à PayPal (retourné à l'initiation,
+	// remplacé par l'ID de CAPTURE une fois le paiement confirmé), nécessaire
+	// pour ses appels GET statut/remboursement — reste nil pour une vente
+	// PawaPay/PayDunya (payment_reference est déjà l'identifiant utilisé pour
+	// ces appels).
 	ProviderTransactionID *string    `json:"provider_transaction_id,omitempty"`
 	CheckoutToken         *string    `json:"checkout_token,omitempty"`
 	Status                string     `json:"status"`
@@ -44,8 +45,8 @@ type CreateOrderInput struct {
 	// à un montant client pour un produit à prix fixe.
 	AmountCFA *int `json:"amount_cfa,omitempty"`
 	// PaymentMethod : "mobile_money" (défaut, vide accepté) | "card" | "paypal".
-	// Carte/PayPal forcent KPay (PawaPay n'a pas cette capacité) — voir
-	// SaleHandler.initiateCheckout.
+	// Carte/PayPal forcent PayPal (ni PawaPay ni PayDunya ne la supportent) —
+	// voir SaleHandler.initiateCheckout.
 	PaymentMethod string `json:"payment_method,omitempty"`
 	// Phone/Operator : requis pour mobile_money — dépôt PawaPay direct
 	// (POST /v2/deposits) au lieu de la Payment Page hébergée, l'acheteur

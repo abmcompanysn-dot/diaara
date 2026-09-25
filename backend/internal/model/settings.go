@@ -6,9 +6,9 @@ import "strings"
 // sans y être listées ; ceci documente celles utilisées par le code.
 const (
 	SettingCommissionRatePct = "commission_rate_pct"
-	// Dépréciées depuis l'ajout de KPay (voir GatewayOperatorSettingKey) :
+	// Dépréciées (voir GatewayOperatorSettingKey) :
 	// regroupaient par MARQUE (ex. gateway_mtn_momo couvrait tous les pays
-	// à la fois), trop grossier pour router PawaPay/KPay opérateur par
+	// à la fois), trop grossier pour router PawaPay/PayDunya opérateur par
 	// opérateur. Gardées pour compatibilité arrière, plus lues nulle part.
 	SettingGatewayOrange = "gateway_orange_money"
 	SettingGatewayWave   = "gateway_wave"
@@ -54,17 +54,17 @@ func WhatsAppCommunitySettingKey(countryISO3 string) string {
 }
 
 // GatewayOperatorSettingKey — réglage par code opérateur EXACT (ex.
-// "MTN_MOMO_BEN"), valeur à 3 états : "off" | "pawapay" | "kpay". Pilote
+// "MTN_MOMO_BEN"), valeur à 3 états : "off" | "pawapay" | "paydunya". Pilote
 // à la fois l'activation d'un opérateur ET le prestataire qui le traite —
 // un seul champ pour éviter les états contradictoires (ex. désactivé mais
-// assigné à kpay). Voir payment.GatewaySettingKey pour l'ancien
+// assigné à un prestataire). Voir payment.GatewaySettingKey pour l'ancien
 // regroupement par marque (déprécié).
 func GatewayOperatorSettingKey(providerCode string) string {
 	return "gateway_op_" + strings.ToLower(providerCode)
 }
 
 // CheckoutProviderSettingKey — réglage par PAYS (ISO 3166-1 alpha-3), valeur
-// "pawapay" | "kpay". Le checkout (mode GATEWAY, page hébergée) ne connaît
+// à 2 états : "pawapay" | "paydunya". Le checkout (mode GATEWAY, page hébergée) ne connaît
 // que le pays de l'acheteur au moment de la redirection, jamais l'opérateur
 // exact — contrairement aux versements vendeur, routés par
 // GatewayOperatorSettingKey.

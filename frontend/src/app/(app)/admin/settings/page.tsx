@@ -85,8 +85,25 @@ const CHECKOUT_COUNTRIES: { iso3: string; label: string }[] = [
   { iso3: 'ETH', label: 'Éthiopie' },
 ];
 
-type GatewayValue = 'off' | 'pawapay' | 'kpay';
-type CheckoutValue = 'pawapay' | 'kpay';
+type GatewayValue = 'off' | 'pawapay' | 'paydunya';
+type CheckoutValue = 'pawapay' | 'paydunya';
+
+// Pays couverts par PayDunya (voir backend/internal/payment/paydunya_operators.go
+// PayDunyaOperators) — ailleurs, seul "pawapay" reste sélectionnable pour le
+// checkout par pays.
+const PAYDUNYA_COUNTRIES = new Set(['SEN', 'BEN', 'CIV', 'TGO', 'MLI', 'BFA', 'CMR']);
+
+// Codes opérateur PawaPay ayant un équivalent PayDunya pour le versement
+// vendeur (miroir de PayDunyaOperator.PawaPayCode, voir
+// FindPayDunyaOperatorByPawaPayCode côté backend) — ailleurs, seul "pawapay"
+// reste sélectionnable pour cet opérateur.
+const PAYDUNYA_PAYOUT_OPERATORS = new Set([
+  'ORANGE_SEN', 'WAVE_SEN', 'FREE_SEN',
+  'MTN_MOMO_BEN', 'MOOV_BEN',
+  'MTN_MOMO_CIV', 'WAVE_CIV',
+  'MOOV_BFA',
+  'MTN_MOMO_CMR',
+]);
 
 const gatewayOpKey = (code: string) => `gateway_op_${code.toLowerCase()}`;
 const checkoutProviderKey = (iso3: string) => `checkout_provider_${iso3.toLowerCase()}`;
@@ -130,13 +147,13 @@ export default function AdminSettingsPage() {
         const g: Record<string, GatewayValue> = {};
         for (const op of OPERATORS) {
           const v = settings[gatewayOpKey(op.code)];
-          g[op.code] = v === 'off' || v === 'kpay' ? v : 'pawapay';
+          g[op.code] = v === 'off' || v === 'paydunya' ? v : 'pawapay';
         }
         setGatewayOps(g);
         const c: Record<string, CheckoutValue> = {};
         for (const country of CHECKOUT_COUNTRIES) {
           const v = settings[checkoutProviderKey(country.iso3)];
-          c[country.iso3] = v === 'kpay' ? 'kpay' : 'pawapay';
+          c[country.iso3] = v === 'paydunya' && PAYDUNYA_COUNTRIES.has(country.iso3) ? 'paydunya' : 'pawapay';
         }
         setCheckoutProviders(c);
         const wa: Record<string, string> = { general: settings[WHATSAPP_GENERAL_KEY] || '' };
@@ -170,10 +187,11 @@ export default function AdminSettingsPage() {
         yes_micro_ticket_amount_cfa: String(microTicket),
       };
       for (const op of OPERATORS) values[gatewayOpKey(op.code)] = gatewayOps[op.code] || 'pawapay';
-      // KPay pas encore activé sur ce flux (voir la carte "Paiement à l'achat —
-      // par pays" ci-dessous, non modifiable) : on envoie toujours "pawapay",
-      // même si une valeur "kpay" existait en base — l'enregistrement la corrige.
-      for (const country of CHECKOUT_COUNTRIES) values[checkoutProviderKey(country.iso3)] = 'pawapay';
+      for (const country of CHECKOUT_COUNTRIES)
+        values[checkoutProviderKey(country.iso3)] =
+          checkoutProviders[country.iso3] === 'paydunya' && PAYDUNYA_COUNTRIES.has(country.iso3)
+            ? 'paydunya'
+            : 'pawapay';
       values[WHATSAPP_GENERAL_KEY] = (whatsappLinks.general || '').trim();
       for (const country of CHECKOUT_COUNTRIES)
         values[whatsappKey(country.iso3)] = (whatsappLinks[country.iso3] || '').trim();
@@ -300,10 +318,10 @@ export default function AdminSettingsPage() {
           <CardHeader>
             <CardTitle>Versements vendeur — par opérateur</CardTitle>
             <CardDescription>
-              Pour chaque opérateur mobile money, active ou désactive les versements vendeur.
-              « Désactivé » bloque les nouvelles demandes de versement (les versements déjà
-              enregistrés ne sont pas affectés). Tous les versements automatiques passent par
-              PawaPay ; KPay est suspendu.
+              Pour chaque opérateur mobile money, active ou désactive les versements vendeur, ou
+              choisis le prestataire. « Désactivé » bloque les nouvelles demandes de versement
+              (les versements déjà enregistrés ne sont pas affectés). PayDunya n&apos;est proposé
+              que pour les opérateurs qu&apos;il couvre.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-5">
@@ -315,37 +333,32 @@ export default function AdminSettingsPage() {
                 <div className="space-y-2">
                   {group.items.map((op) => {
                     const value = gatewayOps[op.code] || 'pawapay';
+                    const paydunyaAvailable = PAYDUNYA_PAYOUT_OPERATORS.has(op.code);
+                    const options: { opt: GatewayValue; label: string }[] = [
+                      { opt: 'off', label: 'Désactivé' },
+                      { opt: 'pawapay', label: 'PawaPay' },
+                      ...(paydunyaAvailable ? [{ opt: 'paydunya' as GatewayValue, label: 'PayDunya' }] : []),
+                    ];
                     return (
                       <div
                         key={op.code}
                         className="flex items-center justify-between gap-3 p-3 rounded-lg border border-border"
                       >
-                        <div>
-                          <span className="text-sm font-medium">{op.label}</span>
-                          {value === 'kpay' && (
-                            <span className="ml-2 text-xs text-amber-700">
-                              (réglage KPay ignoré — KPay suspendu, remis à PawaPay au prochain enregistrement)
-                            </span>
-                          )}
-                        </div>
+                        <span className="text-sm font-medium">{op.label}</span>
                         <div className="flex gap-1 shrink-0">
-                          {/* KPay suspendu (2026-09-03) : seuls Désactivé / PawaPay. */}
-                          {(['off', 'pawapay'] as GatewayValue[]).map((opt) => {
-                            const optLabel = opt === 'off' ? 'Désactivé' : 'PawaPay';
-                            return (
-                              <Button
-                                key={opt}
-                                type="button"
-                                size="sm"
-                                variant={value === opt ? 'default' : 'outline'}
-                                onClick={() =>
-                                  setGatewayOps((prev) => ({ ...prev, [op.code]: opt }))
-                                }
-                              >
-                                {optLabel}
-                              </Button>
-                            );
-                          })}
+                          {options.map(({ opt, label: optLabel }) => (
+                            <Button
+                              key={opt}
+                              type="button"
+                              size="sm"
+                              variant={value === opt ? 'default' : 'outline'}
+                              onClick={() =>
+                                setGatewayOps((prev) => ({ ...prev, [op.code]: opt }))
+                              }
+                            >
+                              {optLabel}
+                            </Button>
+                          ))}
                         </div>
                       </div>
                     );
@@ -361,14 +374,15 @@ export default function AdminSettingsPage() {
             <CardTitle>Paiement à l&apos;achat — par pays</CardTitle>
             <CardDescription>
               Prestataire mobile money utilisé au moment du paiement, par pays de
-              l&apos;acheteur. KPay n&apos;est pas encore activé sur ce flux (intégration en
-              cours) : PawaPay est utilisé pour tous les pays, ce choix n&apos;est pas
-              modifiable pour l&apos;instant.
+              l&apos;acheteur. PayDunya n&apos;est disponible que pour les pays qu&apos;il
+              couvre (Sénégal, Bénin, Côte d&apos;Ivoire, Togo, Mali, Burkina Faso,
+              Cameroun) — PawaPay reste le seul choix ailleurs.
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-2">
             {CHECKOUT_COUNTRIES.map((country) => {
               const value = checkoutProviders[country.iso3] || 'pawapay';
+              const paydunyaAvailable = PAYDUNYA_COUNTRIES.has(country.iso3);
               return (
                 <div
                   key={country.iso3}
@@ -376,14 +390,23 @@ export default function AdminSettingsPage() {
                 >
                   <span className="text-sm font-medium">{country.label}</span>
                   <div className="flex items-center gap-2 shrink-0">
-                    <Button type="button" size="sm" variant="default" disabled>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={value === 'pawapay' ? 'default' : 'outline'}
+                      onClick={() => setCheckoutProviders((p) => ({ ...p, [country.iso3]: 'pawapay' }))}
+                    >
                       PawaPay
                     </Button>
-                    {value === 'kpay' && (
-                      <span className="text-xs text-amber-700">
-                        (réglage KPay existant ignoré — sera remis à PawaPay au prochain enregistrement)
-                      </span>
-                    )}
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant={value === 'paydunya' ? 'default' : 'outline'}
+                      disabled={!paydunyaAvailable}
+                      onClick={() => setCheckoutProviders((p) => ({ ...p, [country.iso3]: 'paydunya' }))}
+                    >
+                      PayDunya
+                    </Button>
                   </div>
                 </div>
               );

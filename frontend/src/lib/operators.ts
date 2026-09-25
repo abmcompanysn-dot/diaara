@@ -262,6 +262,83 @@ export const PAYOUT_COUNTRIES: PayoutCountry[] = [
   },
 ];
 
+// Opérateurs mobile money couverts par PayDunya — miroir exact de
+// backend/internal/payment/paydunya_operators.go PayDunyaOperators. Codes
+// distincts de PAYOUT_COUNTRIES (PawaPay) : ex "ORANGE_SN" ici vs
+// "ORANGE_SEN" côté PawaPay — ne jamais les confondre, PayDunya n'accepte
+// que ses propres codes.
+export const PAYDUNYA_COUNTRIES: PayoutCountry[] = [
+  {
+    code: 'SEN',
+    name: 'Sénégal',
+    dialCode: '221',
+    phoneLength: 9,
+    operators: [
+      { label: 'Orange Money', provider: 'ORANGE_SN', logo: 'orange-money.png' },
+      { label: 'Wave', provider: 'WAVE_SN', logo: 'wave.png' },
+      { label: 'Free Money', provider: 'FREE_SN', badgeColor: 'bg-white border border-green-900/15', badgeText: 'text-green-950' },
+    ],
+  },
+  {
+    code: 'BEN',
+    name: 'Bénin',
+    dialCode: '229',
+    phoneLength: 10,
+    operators: [
+      { label: 'MTN MoMo', provider: 'MTN_BJ', logo: 'mtn-momo.png' },
+      { label: 'Moov Money', provider: 'MOOV_BJ', logo: 'moov-money.png' },
+    ],
+  },
+  {
+    code: 'CIV',
+    name: "Côte d'Ivoire",
+    dialCode: '225',
+    phoneLength: 10,
+    operators: [
+      { label: 'MTN MoMo', provider: 'MTN_CI', logo: 'mtn-momo.png' },
+      { label: 'Moov Money', provider: 'MOOV_CI', logo: 'moov-money.png' },
+      { label: 'Wave', provider: 'WAVE_CI', logo: 'wave.png' },
+    ],
+  },
+  {
+    code: 'TGO',
+    name: 'Togo',
+    dialCode: '228',
+    phoneLength: 8,
+    operators: [
+      { label: 'T-Money', provider: 'TMONEY_TG', badgeColor: 'bg-yellow-100', badgeText: 'text-yellow-900' },
+    ],
+  },
+  {
+    code: 'MLI',
+    name: 'Mali',
+    dialCode: '223',
+    phoneLength: 8,
+    operators: [
+      { label: 'Orange Money', provider: 'ORANGE_ML', logo: 'orange-money.png' },
+      { label: 'Moov Money', provider: 'MOOV_ML', logo: 'moov-money.png' },
+    ],
+  },
+  {
+    code: 'BFA',
+    name: 'Burkina Faso',
+    dialCode: '226',
+    phoneLength: 8,
+    operators: [
+      { label: 'Moov Money', provider: 'MOOV_BF', logo: 'moov-money.png' },
+    ],
+  },
+  {
+    code: 'CMR',
+    name: 'Cameroun',
+    dialCode: '237',
+    phoneLength: 9,
+    operators: [
+      { label: 'MTN MoMo', provider: 'MTN_CM', logo: 'mtn-momo.png' },
+    ],
+  },
+];
+
 // Retrouve un opérateur de versement à partir de son provider (ex: "WAVE_SEN"),
 // tous pays confondus — utile pour afficher l'historique des versements où
 // seul le provider est stocké (pas le pays séparément).

@@ -3,7 +3,7 @@ package model
 import "time"
 
 // GatewayClient — une application externe autorisée à utiliser DIARRA comme
-// passerelle de paiement (ex. ABMCY Core) au lieu d'intégrer PawaPay/KPay/
+// passerelle de paiement (ex. ABMCY Core) au lieu d'intégrer PawaPay/PayDunya/
 // PayPal directement de son côté. Voir migration 029 et
 // internal/payment/provider.go (interface PaymentProvider déjà unifiée entre
 // les 3 agrégateurs, réutilisée telle quelle ici).
@@ -70,7 +70,7 @@ type GatewayTransaction struct {
 	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`
 	// RedirectURL n'est jamais stocké : renvoyé une seule fois, à la création
-	// d'un dépôt (page de paiement hébergée PawaPay/KPay). Rempli par le
+	// d'un dépôt (page de paiement hébergée PawaPay/PayDunya). Rempli par le
 	// handler, pas par le repo.
 	RedirectURL string `json:"redirect_url,omitempty"`
 }

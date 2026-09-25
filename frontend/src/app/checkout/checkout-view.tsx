@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { CHECKOUT_COUNTRIES, PAYOUT_COUNTRIES, isLoggedIn } from '@/lib/operators';
+import { CHECKOUT_COUNTRIES, PAYOUT_COUNTRIES, PAYDUNYA_COUNTRIES, isLoggedIn } from '@/lib/operators';
 import { friendlyError } from '@/lib/error-messages';
 import { ArrowLeftIcon, LockIcon, CheckIcon } from '@/components/icons';
 
@@ -82,10 +82,17 @@ export default function CheckoutView() {
   // défaut false le temps du chargement pour ne pas afficher puis
   // faire disparaître le bouton.
   const [cardPaymentEnabled, setCardPaymentEnabled] = useState(false);
+  // Prestataire mobile money par pays (réglage admin, voir /admin/settings) :
+  // détermine quelle liste d'opérateurs proposer (codes PawaPay vs PayDunya,
+  // formulaires incompatibles entre eux). Vide tant que non chargé — on
+  // suppose "pawapay" par défaut (comportement historique).
+  const [countryProviders, setCountryProviders] = useState<Record<string, 'pawapay' | 'paydunya'>>({});
 
   const guest = !isLoggedIn();
   const selectedCountry = CHECKOUT_COUNTRIES.find((c) => c.code === country);
-  const payoutCountry = PAYOUT_COUNTRIES.find((c) => c.code === country) || PAYOUT_COUNTRIES[0];
+  const mobileMoneyProvider = countryProviders[country] || 'pawapay';
+  const operatorCountries = mobileMoneyProvider === 'paydunya' ? PAYDUNYA_COUNTRIES : PAYOUT_COUNTRIES;
+  const payoutCountry = operatorCountries.find((c) => c.code === country) || operatorCountries[0];
   const operators = payoutCountry.operators;
 
   const isFlexible = product?.price_mode === 'flexible';
@@ -138,7 +145,10 @@ export default function CheckoutView() {
   useEffect(() => {
     api
       .getCheckoutConfig()
-      .then((res) => setCardPaymentEnabled(!!res.card_payment_enabled))
+      .then((res) => {
+        setCardPaymentEnabled(!!res.card_payment_enabled);
+        setCountryProviders(res.country_providers || {});
+      })
       .catch(() => setCardPaymentEnabled(false));
   }, []);
 
