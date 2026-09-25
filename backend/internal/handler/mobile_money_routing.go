@@ -26,13 +26,35 @@ import (
 // vendor-chat-yes.tsx) et doivent router identiquement.
 func resolveMobileMoneyProvider(ctx context.Context, settingsRepo *repository.SettingsRepo, country, operatorCode string) string {
 	defaultProvider := settingsRepo.Get(ctx, model.CheckoutProviderSettingKey(country), "pawapay")
-	if operatorCode == "" {
-		return defaultProvider
+	resolved := defaultProvider
+	if operatorCode != "" {
+		if v := settingsRepo.Get(ctx, model.GatewayOperatorSettingKey(operatorCode), ""); v != "" {
+			resolved = v // "off" | "pawapay" | "paydunya" — "off" traité par isOperatorBlocked
+		}
 	}
-	if v := settingsRepo.Get(ctx, model.GatewayOperatorSettingKey(operatorCode), ""); v != "" {
-		return v // "off" | "pawapay" | "paydunya" — "off" traité par isOperatorBlocked
+	if resolved == "off" {
+		return resolved
 	}
-	return defaultProvider
+	// Le réglage résolu (explicite ou défaut du pays) ne vaut que pour un
+	// prestataire qui couvre réellement cet opérateur — un opérateur
+	// PayDunya-only (Mali/Togo entiers, Djamo, Expresso, Celtiis Cash : pas
+	// de PawaPayCode) ne peut jamais être routé vers "pawapay", même en
+	// l'absence de tout réglage (voir SaleHandler.CheckoutConfig, même
+	// correctif). Sans opérateur connu (operatorCode vide ou logique
+	// introuvable), on fait confiance au réglage résolu tel quel.
+	logicalOp, ok := payment.FindLogicalOperator(operatorCode)
+	if !ok {
+		return resolved
+	}
+	for _, p := range logicalOp.AvailableProviders() {
+		if p == resolved {
+			return resolved
+		}
+	}
+	if available := logicalOp.AvailableProviders(); len(available) > 0 {
+		return available[0]
+	}
+	return resolved
 }
 
 // isOperatorBlocked — vrai si l'admin a explicitement désactivé cet

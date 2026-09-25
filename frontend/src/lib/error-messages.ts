@@ -60,6 +60,13 @@ const ERROR_MESSAGES: Record<string, string> = {
   payout_rejected: 'Le versement a été refusé par votre opérateur mobile money.',
   payout_method_required: 'Merci d\'enregistrer votre moyen de versement avant de demander un retrait.',
 
+  // Remboursements (admin)
+  sale_not_refundable: 'Cette vente ne peut pas être remboursée (déjà remboursée ou non payée).',
+  manual_refund_required:
+    "PayDunya n'a pas d'API de remboursement automatisé : effectuez ce remboursement manuellement depuis le dashboard PayDunya, puis marquez la vente comme remboursée ici si besoin.",
+  missing_provider_transaction_id: 'Référence de transaction manquante, remboursement impossible automatiquement.',
+  refund_rejected: 'Le remboursement a été refusé par le prestataire de paiement.',
+
   // Générique
   invalid_request: 'Requête invalide, vérifiez les informations saisies.',
   unauthorized: 'Merci de vous connecter pour continuer.',

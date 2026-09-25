@@ -171,11 +171,31 @@ func (h *SaleHandler) CheckoutConfig(w http.ResponseWriter, r *http.Request) {
 		if v == "off" {
 			continue
 		}
+		available := op.AvailableProviders() // ["pawapay"], ["paydunya"] ou les deux
 		if v == "" {
 			v = countryProviders[op.Country]
-			if v == "" {
-				v = "pawapay"
+		}
+		// Le défaut ("pawapay" si rien n'est réglé, voir plus haut) ne vaut
+		// que pour un opérateur que ce prestataire couvre réellement — un
+		// opérateur PayDunya-only (ex Mali/Togo entiers, Djamo, Expresso,
+		// Celtiis Cash : aucun PawaPayCode, voir LogicalOperator) route
+		// alors forcément vers son unique prestataire disponible, quel que
+		// soit le réglage général du pays (constaté 2026-09-25 : le Mali
+		// n'a aucune couverture PawaPay, le défaut "pawapay" y était
+		// impossible à honorer — initiateCheckout aurait échoué avec un
+		// pawaPayCode vide).
+		valid := false
+		for _, p := range available {
+			if p == v {
+				valid = true
+				break
 			}
+		}
+		if !valid {
+			if len(available) == 0 {
+				continue // opérateur logique sans aucun prestataire câblé — ne devrait pas arriver
+			}
+			v = available[0]
 		}
 		operatorProviders[op.Code] = v
 	}
