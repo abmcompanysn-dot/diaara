@@ -472,26 +472,14 @@ func (h *WebhookHandler) PayDunyaCallback(w http.ResponseWriter, r *http.Request
 	}
 
 	if status.Status == "completed" {
-		if err := h.saleRepo.UpdateStatus(r.Context(), sale.ID, string(model.SalePaid)); err != nil {
+		// Bug corrigé (2026-09-26) : ce webhook faisait sa propre confirmation
+		// dupliquée (UpdateStatus + emails) au lieu de passer par ConfirmPaidSale
+		// comme les webhooks PawaPay/PayPal — ça sautait YesHandler.OnSaleConfirmed,
+		// donc une conversation payée via PayDunya (micro-ticket ou solde) ne
+		// s'ouvrait/ne se livrait jamais côté YES malgré le paiement confirmé.
+		if err := h.ConfirmPaidSale(r.Context(), sale); err != nil {
 			http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
 			return
-		}
-		if h.notifications != nil {
-			go h.notifyPaid(context.Background(), sale)
-		}
-		if h.donationSvc != nil {
-			go h.donationSvc.Accumulate(context.Background(), sale.PlatformFeeCFA)
-		}
-		if product, err := h.productRepo.FindByID(r.Context(), sale.ProductID); err == nil {
-			image := h.productImageURL(product)
-			h.notifyWithImage(r.Context(), sale.BuyerID, "order_paid", "Commande confirmée",
-				fmt.Sprintf("Votre paiement de %d FCFA a été confirmé.", sale.AmountCFA), "/orders", image)
-			h.notifyWithImage(r.Context(), product.VendorID, "sale", "Nouvelle vente",
-				fmt.Sprintf("%s vient d'acheter « %s » pour %d FCFA.", sale.BuyerName, product.Title, sale.VendorAmountCFA), "/vendor/sales", image)
-			h.cache.Del(r.Context(), vendorBalanceCacheKey(product.VendorID))
-		} else {
-			h.notify(r.Context(), sale.BuyerID, "order_paid", "Commande confirmée",
-				fmt.Sprintf("Votre paiement de %d FCFA a été confirmé.", sale.AmountCFA), "/orders")
 		}
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(map[string]string{"status": "paid"})
