@@ -50,13 +50,13 @@ func NewProductRepo(pool *pgxpool.Pool) *ProductRepo {
 
 const productColumns = `id, vendor_id, title, slug, description, price_cfa, price_mode, min_price_cfa, category, file_key,
 	cover_image_key, image_prompt, moderation_status, moderation_note, affiliate_enabled, max_closer_commission_pct,
-	preview_keys, preview_status, deletion_requested, created_at, updated_at`
+	preview_keys, preview_status, deletion_requested, created_at, updated_at, theme`
 
 func scanProduct(row pgx.Row) (*model.Product, error) {
 	p := &model.Product{}
 	err := row.Scan(&p.ID, &p.VendorID, &p.Title, &p.Slug, &p.Description, &p.PriceCFA, &p.PriceMode, &p.MinPriceCFA, &p.Category,
 		&p.FileKey, &p.CoverImageKey, &p.ImagePrompt, &p.ModerationStatus, &p.ModerationNote, &p.AffiliateEnabled,
-		&p.MaxCloserCommissionPct, &p.PreviewKeys, &p.PreviewStatus, &p.DeletionRequested, &p.CreatedAt, &p.UpdatedAt)
+		&p.MaxCloserCommissionPct, &p.PreviewKeys, &p.PreviewStatus, &p.DeletionRequested, &p.CreatedAt, &p.UpdatedAt, &p.Theme)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, ErrProductNotFound
@@ -218,7 +218,7 @@ func (r *ProductRepo) ListApprovedByVendor(ctx context.Context, vendorID string)
 	return products, rows.Err()
 }
 
-func (r *ProductRepo) ListApproved(ctx context.Context, category, search string, limit, offset int) ([]*model.Product, error) {
+func (r *ProductRepo) ListApproved(ctx context.Context, category, theme, search string, limit, offset int) ([]*model.Product, error) {
 	query := `SELECT ` + productColumns + ` FROM products WHERE moderation_status = 'approved'`
 	args := []interface{}{}
 	argIdx := 1
@@ -226,6 +226,11 @@ func (r *ProductRepo) ListApproved(ctx context.Context, category, search string,
 	if category != "" {
 		query += ` AND category = $` + itoa(argIdx)
 		args = append(args, category)
+		argIdx++
+	}
+	if theme != "" {
+		query += ` AND theme = $` + itoa(argIdx)
+		args = append(args, theme)
 		argIdx++
 	}
 	if search != "" {

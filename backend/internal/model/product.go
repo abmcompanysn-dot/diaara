@@ -36,6 +36,27 @@ type Product struct {
 	DeletionRequested bool      `json:"deletion_requested"`
 	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`
+	// Theme : sujet du contenu (ex "business", "marketing", "ia"...),
+	// distinct de Category (type technique de fichier) — voir
+	// ProductThemes pour la liste des valeurs connues. Nullable : un
+	// produit créé avant ce champ, ou non classé, a Theme == nil.
+	Theme *string `json:"theme,omitempty"`
+}
+
+// ProductThemes — valeurs connues de Product.Theme, dans l'ordre
+// d'affichage du filtre catalogue. Miroir de
+// frontend/src/lib/constants.ts THEME_LABELS.
+var ProductThemes = map[string]string{
+	"business":     "Business & Entrepreneuriat",
+	"marketing":    "Marketing & Réseaux sociaux",
+	"finance":      "Argent & Finances personnelles",
+	"ia":           "IA & Prompts",
+	"tech":         "Tech & Informatique",
+	"dev_perso":    "Développement personnel",
+	"religion":     "Religion & Spiritualité",
+	"sante_beaute": "Santé, Beauté & Bien-être",
+	"education":    "Éducation & Langues",
+	"litterature":  "Littérature & Romans",
 }
 
 // AdminProduct — un produit avec l'email du vendeur, pour l'écran de

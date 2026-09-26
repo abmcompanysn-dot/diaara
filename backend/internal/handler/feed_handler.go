@@ -35,7 +35,7 @@ func (h *FeedHandler) allApprovedProducts(ctx context.Context) ([]*model.Product
 	const limit = 200
 	offset := 0
 	for {
-		batch, err := h.productRepo.ListApproved(ctx, "", "", limit, offset)
+		batch, err := h.productRepo.ListApproved(ctx, "", "", "", limit, offset)
 		if err != nil {
 			return nil, err
 		}

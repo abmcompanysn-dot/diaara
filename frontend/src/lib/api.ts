@@ -208,7 +208,7 @@ export const api = {
     }>('/api/checkout/config', { skipAuth: true }),
 
   // Products
-  getProducts: (params?: { category?: string; search?: string }) => {
+  getProducts: (params?: { category?: string; theme?: string; search?: string }) => {
     const query = new URLSearchParams(params as Record<string, string>).toString();
     return fetchApi<{ products: any[] }>(`/api/products${query ? `?${query}` : ''}`);
   },

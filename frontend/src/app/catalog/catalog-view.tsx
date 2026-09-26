@@ -26,7 +26,7 @@ import {
   GridIcon,
   ListIcon,
 } from '@/components/icons';
-import { CATEGORY_LABELS, formatPrice } from '@/lib/constants';
+import { CATEGORY_LABELS, THEME_LABELS, formatPrice } from '@/lib/constants';
 import { cn } from '@/lib/utils';
 
 interface Product {
@@ -99,6 +99,10 @@ export default function CatalogView() {
   const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState('');
   const [category, setCategory] = useState('');
+  // Thème : sujet du contenu (Business, Marketing, IA...), filtre
+  // indépendant de la catégorie (type technique de fichier) — voir
+  // THEME_LABELS.
+  const [theme, setTheme] = useState('');
   const [sort, setSort] = useState<SortKey>('recent');
   const [view, setView] = useState<ViewMode>('grid');
   const [loading, setLoading] = useState(true);
@@ -106,7 +110,7 @@ export default function CatalogView() {
 
   useEffect(() => {
     loadProducts();
-  }, [category]);
+  }, [category, theme]);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -121,9 +125,10 @@ export default function CatalogView() {
   const loadProducts = async () => {
     setLoading(true);
     try {
-      const params: { search?: string; category?: string } = {};
+      const params: { search?: string; category?: string; theme?: string } = {};
       if (search) params.search = search;
       if (category) params.category = category;
+      if (theme) params.theme = theme;
       const result = await api.getProducts(params);
       setProducts(result.products);
     } catch (err) {
@@ -216,6 +221,40 @@ export default function CatalogView() {
                   )}
                 >
                   <Icon size={14} className="shrink-0" />
+                  {label}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Chips de thèmes (sujet du contenu), défilement horizontal */}
+          <div className="mt-2 flex gap-2 overflow-x-auto no-scrollbar -mx-4 px-4 pb-1">
+            <button
+              type="button"
+              onClick={() => setTheme('')}
+              className={cn(
+                'shrink-0 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors border',
+                theme === ''
+                  ? 'bg-white text-green-950 border-white'
+                  : 'bg-white/5 text-white/60 border-white/10 hover:bg-white/10'
+              )}
+            >
+              Tous les thèmes
+            </button>
+            {Object.entries(THEME_LABELS).map(([value, label]) => {
+              const active = theme === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setTheme(value)}
+                  className={cn(
+                    'shrink-0 inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-medium transition-colors border',
+                    active
+                      ? 'bg-white text-green-950 border-white'
+                      : 'bg-white/5 text-white/60 border-white/10 hover:bg-white/10'
+                  )}
+                >
                   {label}
                 </button>
               );

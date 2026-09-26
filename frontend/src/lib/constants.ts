@@ -10,6 +10,22 @@ export const CATEGORY_LABELS: Record<string, string> = {
   other: 'Autres',
 };
 
+/** Libellés des thèmes produits (sujet du contenu, distinct de la
+ *  catégorie qui est le type technique de fichier) — miroir de
+ *  backend/internal/model/product.go ProductThemes. */
+export const THEME_LABELS: Record<string, string> = {
+  business: 'Business & Entrepreneuriat',
+  marketing: 'Marketing & Réseaux sociaux',
+  finance: 'Argent & Finances personnelles',
+  ia: 'IA & Prompts',
+  tech: 'Tech & Informatique',
+  dev_perso: 'Développement personnel',
+  religion: 'Religion & Spiritualité',
+  sante_beaute: 'Santé, Beauté & Bien-être',
+  education: 'Éducation & Langues',
+  litterature: 'Littérature & Romans',
+};
+
 /** Statuts de commande / vente (français). */
 export const ORDER_STATUS_LABELS: Record<string, string> = {
   pending: 'En attente',
