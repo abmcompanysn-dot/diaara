@@ -479,6 +479,8 @@ func main() {
 		r.Use(middleware.OptionalAuth(jwtManager))
 		r.Get("/", eventHandler.ListApproved)
 		r.Get("/{id}", eventHandler.Get)
+		r.Get("/{id}/cover", eventHandler.Cover)
+		r.Get("/gallery/{imageId}/file", eventHandler.GalleryImage)
 		r.Post("/offers/{offerId}/register", eventHandler.RegisterFree)
 	})
 
@@ -509,6 +511,11 @@ func main() {
 		r.Post("/{id}/offers", eventHandler.AddOffer)
 		r.Put("/offers/{offerId}", eventHandler.UpdateOffer)
 		r.Delete("/offers/{offerId}", eventHandler.DeleteOffer)
+		r.Post("/{id}/gallery", eventHandler.AddGalleryImage)
+		r.Delete("/gallery/{imageId}", eventHandler.DeleteGalleryImage)
+		r.Post("/{id}/schedule", eventHandler.AddScheduleItem)
+		r.Put("/schedule/{itemId}", eventHandler.UpdateScheduleItem)
+		r.Delete("/schedule/{itemId}", eventHandler.DeleteScheduleItem)
 	})
 
 	// Scan des billets (vérification à l'entrée) — accessible à tout

@@ -302,6 +302,10 @@ export const api = {
     cover_image_key?: string;
     event_date?: string; // "YYYY-MM-DD" (valeur brute d'un <input type="date">)
     meeting_link?: string;
+    accent_color?: string;
+    venue_name?: string;
+    venue_address?: string;
+    venue_map_url?: string;
     offers: { title: string; is_free: boolean; price_cfa?: number }[];
   }) =>
     fetchApi<{ event: any }>('/api/vendor/events', {
@@ -311,7 +315,17 @@ export const api = {
 
   updateEvent: (
     id: string,
-    data: { title?: string; description?: string; cover_image_key?: string; event_date?: string; meeting_link?: string }
+    data: {
+      title?: string;
+      description?: string;
+      cover_image_key?: string;
+      event_date?: string;
+      meeting_link?: string;
+      accent_color?: string;
+      venue_name?: string;
+      venue_address?: string;
+      venue_map_url?: string;
+    }
   ) =>
     fetchApi<{ event: any }>(`/api/vendor/events/${id}`, {
       method: 'PUT',
@@ -340,7 +354,36 @@ export const api = {
   getEvents: () => fetchApi<{ events: any[] }>('/api/events', { skipAuth: true }),
 
   getEvent: (idOrSlug: string) =>
-    fetchApi<{ event: any; offers: any[] }>(`/api/events/${idOrSlug}`, { skipAuth: true }),
+    fetchApi<{ event: any; offers: any[]; gallery: any[]; schedule: any[] }>(`/api/events/${idOrSlug}`, {
+      skipAuth: true,
+    }),
+
+  // Galerie photo d'un événement (en plus de cover_image_key). L'image doit
+  // déjà être uploadée (même endpoint générique que la couverture).
+  addEventGalleryImage: (eventId: string, fileKey: string) =>
+    fetchApi<{ image: any }>(`/api/vendor/events/${eventId}/gallery`, {
+      method: 'POST',
+      body: JSON.stringify({ file_key: fileKey }),
+    }),
+
+  deleteEventGalleryImage: (imageId: string) =>
+    fetchApi<void>(`/api/vendor/events/gallery/${imageId}`, { method: 'DELETE' }),
+
+  // Programme / planning : une ligne = un créneau (heure libre en texte).
+  addEventScheduleItem: (eventId: string, data: { time_label: string; title: string; description?: string }) =>
+    fetchApi<{ item: any }>(`/api/vendor/events/${eventId}/schedule`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  updateEventScheduleItem: (itemId: string, data: { time_label?: string; title?: string; description?: string }) =>
+    fetchApi<{ item: any }>(`/api/vendor/events/schedule/${itemId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    }),
+
+  deleteEventScheduleItem: (itemId: string) =>
+    fetchApi<void>(`/api/vendor/events/schedule/${itemId}`, { method: 'DELETE' }),
 
   registerFreeEventOffer: (offerId: string, data: { full_name: string; email: string; phone: string }) =>
     fetchApi<{ id: string }>(`/api/events/offers/${offerId}/register`, {

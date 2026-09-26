@@ -93,6 +93,10 @@ func (h *EventHandler) Create(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if input.AccentColor != nil && !validHexColor(*input.AccentColor) {
+		http.Error(w, `{"error":"invalid_accent_color"}`, http.StatusBadRequest)
+		return
+	}
 
 	event, err := h.eventRepo.Create(r.Context(), input, userID)
 	if err != nil {
@@ -188,6 +192,10 @@ func (h *EventHandler) Update(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, `{"error":"invalid_cover_image"}`, http.StatusBadRequest)
 			return
 		}
+	}
+	if input.AccentColor != nil && !validHexColor(*input.AccentColor) {
+		http.Error(w, `{"error":"invalid_accent_color"}`, http.StatusBadRequest)
+		return
 	}
 
 	event, err := h.eventRepo.Update(r.Context(), id, userID, input)
@@ -435,8 +443,241 @@ func (h *EventHandler) Get(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"offers_failed"}`, http.StatusInternalServerError)
 		return
 	}
+	gallery, err := h.eventRepo.ListGalleryImages(r.Context(), event.ID)
+	if err != nil {
+		http.Error(w, `{"error":"gallery_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	schedule, err := h.eventRepo.ListScheduleItems(r.Context(), event.ID)
+	if err != nil {
+		http.Error(w, `{"error":"schedule_failed"}`, http.StatusInternalServerError)
+		return
+	}
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(map[string]interface{}{"event": event, "offers": offers})
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"event": event, "offers": offers, "gallery": gallery, "schedule": schedule,
+	})
+}
+
+// Cover — GET /api/events/{id}/cover (public). Sert l'image de couverture de
+// l'événement en la téléchargeant depuis le stockage objet — même principe
+// que ProductHandler.Cover (le file_key n'est jamais une URL publique
+// directe). Ne vérifie pas le statut de modération : une image seule ne
+// révèle rien de sensible, et la fiche non approuvée reste bloquée par Get.
+func (h *EventHandler) Cover(w http.ResponseWriter, r *http.Request) {
+	idOrSlug := chi.URLParam(r, "id")
+	event, err := h.eventRepo.FindByID(r.Context(), idOrSlug)
+	if err != nil {
+		http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
+		return
+	}
+	if event.CoverImageKey == nil || *event.CoverImageKey == "" {
+		http.Error(w, `{"error":"no_cover"}`, http.StatusNotFound)
+		return
+	}
+	if h.storage == nil {
+		http.Error(w, `{"error":"storage_not_configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	data, err := h.storage.Download(r.Context(), *event.CoverImageKey)
+	if err != nil {
+		http.Error(w, `{"error":"cover_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", imageContentType(*event.CoverImageKey, data))
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Write(data)
+}
+
+// validHexColor accepte "" (effacer/pas de couleur) ou "#RRGGBB". Rejette
+// les noms de couleur CSS ou rgb() : un format unique simplifie l'injection
+// telle quelle dans un style inline côté frontend, sans risque XSS (six
+// chiffres hexadécimaux, rien d'autre n'est syntaxiquement possible).
+func validHexColor(s string) bool {
+	if s == "" {
+		return true
+	}
+	if len(s) != 7 || s[0] != '#' {
+		return false
+	}
+	for _, c := range s[1:] {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')) {
+			return false
+		}
+	}
+	return true
+}
+
+// --- Galerie photo ---
+
+// AddGalleryImage — POST /api/vendor/events/{id}/gallery (propriétaire).
+// L'image doit déjà être uploadée (voir ProductHandler.Upload, même endpoint
+// générique) : le body ne porte que la clé de stockage résultante.
+func (h *EventHandler) AddGalleryImage(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	eventID := chi.URLParam(r, "id")
+
+	var input model.AddEventGalleryImageInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil || input.FileKey == "" {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+	if err := validateCoverImageKey(r.Context(), h.storage, input.FileKey); err != nil {
+		http.Error(w, `{"error":"invalid_image"}`, http.StatusBadRequest)
+		return
+	}
+
+	// Vérifie la propriété de l'événement avant d'ajouter (FindByID ne filtre
+	// pas par vendor_id, contrairement aux méthodes *Owned).
+	event, err := h.eventRepo.FindByID(r.Context(), eventID)
+	if err != nil || event.VendorID != userID {
+		http.Error(w, `{"error":"not_found_or_forbidden"}`, http.StatusNotFound)
+		return
+	}
+
+	img, err := h.eventRepo.AddGalleryImage(r.Context(), eventID, input.FileKey)
+	if err != nil {
+		http.Error(w, `{"error":"add_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]interface{}{"image": img})
+}
+
+// DeleteGalleryImage — DELETE /api/vendor/events/gallery/{imageId} (propriétaire).
+func (h *EventHandler) DeleteGalleryImage(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	imageID := chi.URLParam(r, "imageId")
+	if err := h.eventRepo.DeleteGalleryImageOwned(r.Context(), imageID, userID); err != nil {
+		if err == repository.ErrEventNotFound {
+			http.Error(w, `{"error":"not_found_or_forbidden"}`, http.StatusNotFound)
+			return
+		}
+		http.Error(w, `{"error":"delete_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// GalleryImage — GET /api/events/gallery/{imageId}/file (public). Même
+// principe que EventHandler.Cover : le fichier n'est jamais servi via une URL
+// de stockage publique directe.
+func (h *EventHandler) GalleryImage(w http.ResponseWriter, r *http.Request) {
+	imageID := chi.URLParam(r, "imageId")
+	img, err := h.eventRepo.FindGalleryImageByID(r.Context(), imageID)
+	if err != nil {
+		http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
+		return
+	}
+	if h.storage == nil {
+		http.Error(w, `{"error":"storage_not_configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+	data, err := h.storage.Download(r.Context(), img.FileKey)
+	if err != nil {
+		http.Error(w, `{"error":"image_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", imageContentType(img.FileKey, data))
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Write(data)
+}
+
+// --- Programme / planning ---
+
+// AddScheduleItem — POST /api/vendor/events/{id}/schedule (propriétaire).
+func (h *EventHandler) AddScheduleItem(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	eventID := chi.URLParam(r, "id")
+
+	var input model.AddEventScheduleItemInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+	input.TimeLabel = strings.TrimSpace(input.TimeLabel)
+	input.Title = strings.TrimSpace(input.Title)
+	if input.TimeLabel == "" || input.Title == "" {
+		http.Error(w, `{"error":"time_label_and_title_required"}`, http.StatusBadRequest)
+		return
+	}
+
+	event, err := h.eventRepo.FindByID(r.Context(), eventID)
+	if err != nil || event.VendorID != userID {
+		http.Error(w, `{"error":"not_found_or_forbidden"}`, http.StatusNotFound)
+		return
+	}
+
+	item, err := h.eventRepo.AddScheduleItem(r.Context(), eventID, input)
+	if err != nil {
+		http.Error(w, `{"error":"add_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]interface{}{"item": item})
+}
+
+// UpdateScheduleItem — PUT /api/vendor/events/schedule/{itemId} (propriétaire).
+func (h *EventHandler) UpdateScheduleItem(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	itemID := chi.URLParam(r, "itemId")
+
+	if _, err := h.eventRepo.FindScheduleItemOwned(r.Context(), itemID, userID); err != nil {
+		http.Error(w, `{"error":"not_found_or_forbidden"}`, http.StatusNotFound)
+		return
+	}
+
+	var input model.UpdateEventScheduleItemInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+	item, err := h.eventRepo.UpdateScheduleItem(r.Context(), itemID, input)
+	if err != nil {
+		http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"item": item})
+}
+
+// DeleteScheduleItem — DELETE /api/vendor/events/schedule/{itemId} (propriétaire).
+func (h *EventHandler) DeleteScheduleItem(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	itemID := chi.URLParam(r, "itemId")
+	if err := h.eventRepo.DeleteScheduleItemOwned(r.Context(), itemID, userID); err != nil {
+		if err == repository.ErrEventNotFound {
+			http.Error(w, `{"error":"not_found_or_forbidden"}`, http.StatusNotFound)
+			return
+		}
+		http.Error(w, `{"error":"delete_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // RegisterFree — POST /api/events/offers/{offerId}/register (public).

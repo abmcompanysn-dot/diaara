@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
-import { api } from '@/lib/api';
+import { api, apiOrigin } from '@/lib/api';
 import { formatPrice } from '@/lib/constants';
 import { PageLoader } from '@/components/page-loader';
 import { CheckIcon } from '@/components/icons';
@@ -15,6 +15,10 @@ interface EventData {
   description?: string | null;
   event_date?: string | null;
   cover_image_key?: string | null;
+  accent_color?: string | null;
+  venue_name?: string | null;
+  venue_address?: string | null;
+  venue_map_url?: string | null;
 }
 
 interface Offer {
@@ -26,7 +30,18 @@ interface Offer {
   product_price_cfa?: number | null;
 }
 
-function FreeOfferForm({ offerId }: { offerId: string }) {
+interface GalleryImage {
+  id: string;
+}
+
+interface ScheduleItem {
+  id: string;
+  time_label: string;
+  title: string;
+  description?: string | null;
+}
+
+function FreeOfferForm({ offerId, accent }: { offerId: string; accent: string }) {
   const [fullName, setFullName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
@@ -88,7 +103,8 @@ function FreeOfferForm({ offerId }: { offerId: string }) {
       <button
         type="submit"
         disabled={submitting}
-        className="w-full h-10 rounded-md bg-[#0E6B46] text-white text-sm font-semibold hover:bg-[#0c5a3c] transition-colors disabled:opacity-60"
+        style={{ backgroundColor: accent }}
+        className="w-full h-10 rounded-md text-white text-sm font-semibold transition-opacity hover:opacity-90 disabled:opacity-60"
       >
         {submitting ? 'Inscription...' : "S'inscrire gratuitement"}
       </button>
@@ -102,6 +118,8 @@ export default function EventDetail() {
 
   const [event, setEvent] = useState<EventData | null>(null);
   const [offers, setOffers] = useState<Offer[]>([]);
+  const [gallery, setGallery] = useState<GalleryImage[]>([]);
+  const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -112,6 +130,8 @@ export default function EventDetail() {
       .then((res) => {
         setEvent(res.event);
         setOffers(res.offers || []);
+        setGallery(res.gallery || []);
+        setSchedule(res.schedule || []);
       })
       .catch((err: any) => setError(friendlyError(err)))
       .finally(() => setLoading(false));
@@ -130,10 +150,28 @@ export default function EventDetail() {
     );
   }
 
+  const accent = event.accent_color || '#0E6B46';
+  const hasVenue = event.venue_name || event.venue_address;
+
   return (
     <>
-      <section className="gradient-green text-white relative overflow-hidden">
+      <section
+        className="text-white relative overflow-hidden"
+        style={event.accent_color ? { background: `linear-gradient(135deg, ${accent}, #052018)` } : undefined}
+      >
+        <div
+          className={event.accent_color ? undefined : 'gradient-green absolute inset-0'}
+          aria-hidden
+        />
         <div className="wax-pattern absolute inset-0" aria-hidden />
+        {event.cover_image_key && (
+          <img
+            src={`${apiOrigin}/api/events/${event.id}/cover`}
+            alt=""
+            aria-hidden
+            className="absolute inset-0 w-full h-full object-cover opacity-30"
+          />
+        )}
         <div className="relative max-w-3xl mx-auto px-4 py-16 text-center">
           {event.event_date && (
             <p className="font-mono text-sm text-green-300 uppercase tracking-widest mb-4">
@@ -147,8 +185,58 @@ export default function EventDetail() {
           )}
           <h1 className="font-display text-3xl sm:text-4xl font-bold tracking-tight">{event.title}</h1>
           {event.description && <p className="mt-5 text-white/75 max-w-xl mx-auto">{event.description}</p>}
+          {hasVenue && (
+            <p className="mt-4 text-sm text-white/80">
+              📍 {event.venue_name}
+              {event.venue_name && event.venue_address ? ' — ' : ''}
+              {event.venue_address}
+              {event.venue_map_url && (
+                <>
+                  {' '}
+                  <a href={event.venue_map_url} target="_blank" rel="noopener noreferrer" className="underline">
+                    Voir sur la carte
+                  </a>
+                </>
+              )}
+            </p>
+          )}
         </div>
       </section>
+
+      {schedule.length > 0 && (
+        <section className="py-16 max-w-3xl mx-auto px-4">
+          <h2 className="font-display text-2xl font-bold text-green-950 text-center mb-8">Programme</h2>
+          <div className="space-y-4">
+            {schedule.map((item) => (
+              <div key={item.id} className="flex gap-4 rounded-xl border border-green-900/10 bg-white shadow-card p-4">
+                <div className="font-mono text-sm font-bold shrink-0 w-20" style={{ color: accent }}>
+                  {item.time_label}
+                </div>
+                <div className="min-w-0">
+                  <p className="font-semibold text-green-950">{item.title}</p>
+                  {item.description && <p className="text-sm text-green-900/70 mt-1">{item.description}</p>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {gallery.length > 0 && (
+        <section className="pb-16 max-w-4xl mx-auto px-4">
+          <h2 className="font-display text-2xl font-bold text-green-950 text-center mb-8">Galerie</h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+            {gallery.map((img) => (
+              <img
+                key={img.id}
+                src={`${apiOrigin}/api/events/gallery/${img.id}/file`}
+                alt=""
+                className="w-full h-32 sm:h-40 object-cover rounded-xl border border-green-900/10"
+              />
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="py-16 max-w-4xl mx-auto px-4">
         <h2 className="font-display text-2xl font-bold text-green-950 text-center mb-8">Offres</h2>
@@ -156,15 +244,16 @@ export default function EventDetail() {
           {offers.map((offer) => (
             <div key={offer.id} className="rounded-2xl border border-green-900/10 bg-white shadow-lift p-6">
               <h3 className="font-display text-lg font-bold text-green-950">{offer.title}</h3>
-              <p className="mt-1 text-2xl font-bold text-forest">
+              <p className="mt-1 text-2xl font-bold" style={{ color: accent }}>
                 {offer.is_free ? 'Gratuit' : formatPrice(offer.product_price_cfa || 0)}
               </p>
               {offer.is_free ? (
-                <FreeOfferForm offerId={offer.id} />
+                <FreeOfferForm offerId={offer.id} accent={accent} />
               ) : (
                 <Link
                   href={`/checkout?product=${offer.product_slug || offer.product_id}`}
-                  className="mt-4 h-11 rounded-md bg-[#0E6B46] text-white text-sm font-semibold flex items-center justify-center hover:bg-[#0c5a3c] transition-colors"
+                  style={{ backgroundColor: accent }}
+                  className="mt-4 h-11 rounded-md text-white text-sm font-semibold flex items-center justify-center transition-opacity hover:opacity-90"
                 >
                   Choisir cette offre
                 </Link>

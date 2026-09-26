@@ -14,10 +14,55 @@ type Event struct {
 	CoverImageKey    *string    `json:"cover_image_key,omitempty"`
 	EventDate        *time.Time `json:"event_date,omitempty"`
 	MeetingLink      *string    `json:"meeting_link,omitempty"`
+	// Personnalisation de la page publique (voir migration 045).
+	AccentColor   *string `json:"accent_color,omitempty"`
+	VenueName     *string `json:"venue_name,omitempty"`
+	VenueAddress  *string `json:"venue_address,omitempty"`
+	VenueMapURL   *string `json:"venue_map_url,omitempty"`
 	ModerationStatus string     `json:"moderation_status"`
 	ModerationNote   *string    `json:"moderation_note,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`
 	UpdatedAt        time.Time  `json:"updated_at"`
+}
+
+// EventGalleryImage — une photo de la galerie d'un événement (en plus de sa
+// cover_image_key), affichée dans l'ordre sort_order.
+type EventGalleryImage struct {
+	ID        string    `json:"id"`
+	EventID   string    `json:"event_id"`
+	FileKey   string    `json:"file_key"`
+	SortOrder int16     `json:"sort_order"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// EventScheduleItem — un créneau du programme/planning d'un événement.
+// TimeLabel est du texte libre ("14h00", "Jour 2 — matin") plutôt qu'une
+// heure structurée : reste affichable même si la date exacte de l'événement
+// n'est pas encore fixée.
+type EventScheduleItem struct {
+	ID          string    `json:"id"`
+	EventID     string    `json:"event_id"`
+	TimeLabel   string    `json:"time_label"`
+	Title       string    `json:"title"`
+	Description *string   `json:"description,omitempty"`
+	SortOrder   int16     `json:"sort_order"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+type AddEventGalleryImageInput struct {
+	FileKey string `json:"file_key"`
+}
+
+type AddEventScheduleItemInput struct {
+	TimeLabel   string  `json:"time_label"`
+	Title       string  `json:"title"`
+	Description *string `json:"description,omitempty"`
+}
+
+type UpdateEventScheduleItemInput struct {
+	TimeLabel   *string `json:"time_label,omitempty"`
+	Title       *string `json:"title,omitempty"`
+	Description *string `json:"description,omitempty"`
 }
 
 // EventOffer — un palier d'inscription pour un événement (ex: "Standard",
@@ -58,6 +103,10 @@ type CreateEventInput struct {
 	CoverImageKey *string    `json:"cover_image_key,omitempty"`
 	EventDate     *time.Time `json:"event_date,omitempty"`
 	MeetingLink   *string    `json:"meeting_link,omitempty"`
+	AccentColor   *string    `json:"accent_color,omitempty"`
+	VenueName     *string    `json:"venue_name,omitempty"`
+	VenueAddress  *string    `json:"venue_address,omitempty"`
+	VenueMapURL   *string    `json:"venue_map_url,omitempty"`
 	// Offers : 1 à 3 entrées, validées côté handler (voir EventHandler.Create).
 	Offers []CreateEventOfferInput `json:"offers"`
 }
@@ -74,6 +123,10 @@ type UpdateEventInput struct {
 	CoverImageKey *string    `json:"cover_image_key,omitempty"`
 	EventDate     *time.Time `json:"event_date,omitempty"`
 	MeetingLink   *string    `json:"meeting_link,omitempty"`
+	AccentColor   *string    `json:"accent_color,omitempty"`
+	VenueName     *string    `json:"venue_name,omitempty"`
+	VenueAddress  *string    `json:"venue_address,omitempty"`
+	VenueMapURL   *string    `json:"venue_map_url,omitempty"`
 }
 
 type CreateEventRegistrationInput struct {

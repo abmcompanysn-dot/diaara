@@ -26,12 +26,14 @@ func NewEventRepo(pool *pgxpool.Pool) *EventRepo {
 }
 
 const eventColumns = `id, vendor_id, title, slug, description, cover_image_key, event_date, meeting_link,
+	accent_color, venue_name, venue_address, venue_map_url,
 	moderation_status, moderation_note, created_at, updated_at`
 
 func scanEvent(row pgx.Row) (*model.Event, error) {
 	e := &model.Event{}
 	err := row.Scan(&e.ID, &e.VendorID, &e.Title, &e.Slug, &e.Description, &e.CoverImageKey, &e.EventDate,
-		&e.MeetingLink, &e.ModerationStatus, &e.ModerationNote, &e.CreatedAt, &e.UpdatedAt)
+		&e.MeetingLink, &e.AccentColor, &e.VenueName, &e.VenueAddress, &e.VenueMapURL,
+		&e.ModerationStatus, &e.ModerationNote, &e.CreatedAt, &e.UpdatedAt)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, ErrEventNotFound
@@ -70,10 +72,12 @@ func (r *EventRepo) Create(ctx context.Context, input model.CreateEventInput, ve
 		return nil, err
 	}
 	row := r.pool.QueryRow(ctx,
-		`INSERT INTO events (vendor_id, title, slug, description, cover_image_key, event_date, meeting_link)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7)
+		`INSERT INTO events (vendor_id, title, slug, description, cover_image_key, event_date, meeting_link,
+			accent_color, venue_name, venue_address, venue_map_url)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 		 RETURNING `+eventColumns,
 		vendorID, input.Title, slug, input.Description, input.CoverImageKey, input.EventDate, input.MeetingLink,
+		input.AccentColor, input.VenueName, input.VenueAddress, input.VenueMapURL,
 	)
 	return scanEvent(row)
 }
@@ -120,7 +124,8 @@ func scanEvents(rows pgx.Rows) ([]*model.Event, error) {
 	for rows.Next() {
 		e := &model.Event{}
 		if err := rows.Scan(&e.ID, &e.VendorID, &e.Title, &e.Slug, &e.Description, &e.CoverImageKey, &e.EventDate,
-			&e.MeetingLink, &e.ModerationStatus, &e.ModerationNote, &e.CreatedAt, &e.UpdatedAt); err != nil {
+			&e.MeetingLink, &e.AccentColor, &e.VenueName, &e.VenueAddress, &e.VenueMapURL,
+			&e.ModerationStatus, &e.ModerationNote, &e.CreatedAt, &e.UpdatedAt); err != nil {
 			return nil, err
 		}
 		out = append(out, e)
@@ -136,10 +141,15 @@ func (r *EventRepo) Update(ctx context.Context, id, vendorID string, input model
 			cover_image_key = COALESCE($5, cover_image_key),
 			event_date = COALESCE($6, event_date),
 			meeting_link = COALESCE($7, meeting_link),
+			accent_color = COALESCE($8, accent_color),
+			venue_name = COALESCE($9, venue_name),
+			venue_address = COALESCE($10, venue_address),
+			venue_map_url = COALESCE($11, venue_map_url),
 			updated_at = now()
 		 WHERE id = $1 AND vendor_id = $2
 		 RETURNING `+eventColumns,
 		id, vendorID, input.Title, input.Description, input.CoverImageKey, input.EventDate, input.MeetingLink,
+		input.AccentColor, input.VenueName, input.VenueAddress, input.VenueMapURL,
 	)
 	return scanEvent(row)
 }
@@ -322,4 +332,152 @@ func (r *EventRepo) ListRegistrationsByEvent(ctx context.Context, eventID string
 		out = append(out, reg)
 	}
 	return out, rows.Err()
+}
+
+// --- Galerie photo ---
+
+const eventGalleryColumns = `id, event_id, file_key, sort_order, created_at`
+
+func scanGalleryImage(row pgx.Row) (*model.EventGalleryImage, error) {
+	img := &model.EventGalleryImage{}
+	err := row.Scan(&img.ID, &img.EventID, &img.FileKey, &img.SortOrder, &img.CreatedAt)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, errors.New("event: gallery image not found")
+		}
+		return nil, err
+	}
+	return img, nil
+}
+
+// AddGalleryImage ajoute une photo à la fin de la galerie (sort_order = max+1).
+func (r *EventRepo) AddGalleryImage(ctx context.Context, eventID, fileKey string) (*model.EventGalleryImage, error) {
+	row := r.pool.QueryRow(ctx, `
+		INSERT INTO event_gallery_images (event_id, file_key, sort_order)
+		VALUES ($1, $2, COALESCE((SELECT max(sort_order) + 1 FROM event_gallery_images WHERE event_id = $1), 0))
+		RETURNING `+eventGalleryColumns, eventID, fileKey)
+	return scanGalleryImage(row)
+}
+
+// FindGalleryImageByID — lecture publique d'une photo par son ID seul (sert
+// à l'endpoint de streaming public, voir EventHandler.GalleryImage).
+func (r *EventRepo) FindGalleryImageByID(ctx context.Context, id string) (*model.EventGalleryImage, error) {
+	return scanGalleryImage(r.pool.QueryRow(ctx,
+		`SELECT `+eventGalleryColumns+` FROM event_gallery_images WHERE id = $1`, id))
+}
+
+func (r *EventRepo) ListGalleryImages(ctx context.Context, eventID string) ([]*model.EventGalleryImage, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+eventGalleryColumns+` FROM event_gallery_images WHERE event_id = $1 ORDER BY sort_order`, eventID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []*model.EventGalleryImage{}
+	for rows.Next() {
+		img := &model.EventGalleryImage{}
+		if err := rows.Scan(&img.ID, &img.EventID, &img.FileKey, &img.SortOrder, &img.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, img)
+	}
+	return out, rows.Err()
+}
+
+// DeleteGalleryImageOwned supprime une photo, filtrée par vendor_id du parent
+// (jointure sur events) pour qu'un vendeur ne puisse jamais toucher à la
+// galerie d'un événement qui n'est pas le sien.
+func (r *EventRepo) DeleteGalleryImageOwned(ctx context.Context, imageID, vendorID string) error {
+	tag, err := r.pool.Exec(ctx, `
+		DELETE FROM event_gallery_images
+		WHERE id = $1 AND event_id IN (SELECT id FROM events WHERE vendor_id = $2)`,
+		imageID, vendorID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrEventNotFound
+	}
+	return nil
+}
+
+// --- Programme / planning ---
+
+const eventScheduleColumns = `id, event_id, time_label, title, description, sort_order, created_at`
+
+func scanScheduleItem(row pgx.Row) (*model.EventScheduleItem, error) {
+	item := &model.EventScheduleItem{}
+	err := row.Scan(&item.ID, &item.EventID, &item.TimeLabel, &item.Title, &item.Description, &item.SortOrder, &item.CreatedAt)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, errors.New("event: schedule item not found")
+		}
+		return nil, err
+	}
+	return item, nil
+}
+
+func (r *EventRepo) AddScheduleItem(ctx context.Context, eventID string, in model.AddEventScheduleItemInput) (*model.EventScheduleItem, error) {
+	row := r.pool.QueryRow(ctx, `
+		INSERT INTO event_schedule_items (event_id, time_label, title, description, sort_order)
+		VALUES ($1, $2, $3, $4, COALESCE((SELECT max(sort_order) + 1 FROM event_schedule_items WHERE event_id = $1), 0))
+		RETURNING `+eventScheduleColumns, eventID, in.TimeLabel, in.Title, in.Description)
+	return scanScheduleItem(row)
+}
+
+func (r *EventRepo) ListScheduleItems(ctx context.Context, eventID string) ([]*model.EventScheduleItem, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+eventScheduleColumns+` FROM event_schedule_items WHERE event_id = $1 ORDER BY sort_order`, eventID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []*model.EventScheduleItem{}
+	for rows.Next() {
+		item := &model.EventScheduleItem{}
+		if err := rows.Scan(&item.ID, &item.EventID, &item.TimeLabel, &item.Title, &item.Description, &item.SortOrder, &item.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, item)
+	}
+	return out, rows.Err()
+}
+
+// FindScheduleItemOwned retrouve un créneau, vérifiant qu'il appartient bien
+// à un événement du vendeur (jointure events.vendor_id).
+func (r *EventRepo) FindScheduleItemOwned(ctx context.Context, itemID, vendorID string) (*model.EventScheduleItem, error) {
+	row := r.pool.QueryRow(ctx, `
+		SELECT si.id, si.event_id, si.time_label, si.title, si.description, si.sort_order, si.created_at
+		FROM event_schedule_items si
+		JOIN events e ON e.id = si.event_id
+		WHERE si.id = $1 AND e.vendor_id = $2`, itemID, vendorID)
+	return scanScheduleItem(row)
+}
+
+func (r *EventRepo) UpdateScheduleItem(ctx context.Context, itemID string, in model.UpdateEventScheduleItemInput) (*model.EventScheduleItem, error) {
+	row := r.pool.QueryRow(ctx, `
+		UPDATE event_schedule_items SET
+			time_label = COALESCE($2, time_label),
+			title = COALESCE($3, title),
+			description = COALESCE($4, description)
+		WHERE id = $1
+		RETURNING `+eventScheduleColumns, itemID, in.TimeLabel, in.Title, in.Description)
+	return scanScheduleItem(row)
+}
+
+// DeleteScheduleItemOwned supprime un créneau, filtré par vendor_id du parent.
+func (r *EventRepo) DeleteScheduleItemOwned(ctx context.Context, itemID, vendorID string) error {
+	tag, err := r.pool.Exec(ctx, `
+		DELETE FROM event_schedule_items
+		WHERE id = $1 AND event_id IN (SELECT id FROM events WHERE vendor_id = $2)`,
+		itemID, vendorID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrEventNotFound
+	}
+	return nil
 }
