@@ -306,6 +306,8 @@ export const api = {
     venue_name?: string;
     venue_address?: string;
     venue_map_url?: string;
+    logo_key?: string;
+    about_organizer?: string;
     offers: { title: string; is_free: boolean; price_cfa?: number }[];
   }) =>
     fetchApi<{ event: any }>('/api/vendor/events', {
@@ -325,6 +327,8 @@ export const api = {
       venue_name?: string;
       venue_address?: string;
       venue_map_url?: string;
+      logo_key?: string;
+      about_organizer?: string;
     }
   ) =>
     fetchApi<{ event: any }>(`/api/vendor/events/${id}`, {
@@ -354,9 +358,26 @@ export const api = {
   getEvents: () => fetchApi<{ events: any[] }>('/api/events', { skipAuth: true }),
 
   getEvent: (idOrSlug: string) =>
-    fetchApi<{ event: any; offers: any[]; gallery: any[]; schedule: any[] }>(`/api/events/${idOrSlug}`, {
-      skipAuth: true,
+    fetchApi<{
+      event: any;
+      offers: any[];
+      gallery: any[];
+      schedule: any[];
+      hero_images: any[];
+      organizer_name: string;
+      other_events: any[];
+      other_products: any[];
+    }>(`/api/events/${idOrSlug}`, { skipAuth: true }),
+
+  // Carrousel hero (max 5 images) — distinct de la galerie photo.
+  addEventHeroImage: (eventId: string, fileKey: string) =>
+    fetchApi<{ image: any }>(`/api/vendor/events/${eventId}/hero`, {
+      method: 'POST',
+      body: JSON.stringify({ file_key: fileKey }),
     }),
+
+  deleteEventHeroImage: (imageId: string) =>
+    fetchApi<void>(`/api/vendor/events/hero/${imageId}`, { method: 'DELETE' }),
 
   // Galerie photo d'un événement (en plus de cover_image_key). L'image doit
   // déjà être uploadée (même endpoint générique que la couverture).

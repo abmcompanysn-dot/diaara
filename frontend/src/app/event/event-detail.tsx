@@ -15,10 +15,12 @@ interface EventData {
   description?: string | null;
   event_date?: string | null;
   cover_image_key?: string | null;
+  logo_key?: string | null;
   accent_color?: string | null;
   venue_name?: string | null;
   venue_address?: string | null;
   venue_map_url?: string | null;
+  about_organizer?: string | null;
 }
 
 interface Offer {
@@ -39,6 +41,67 @@ interface ScheduleItem {
   time_label: string;
   title: string;
   description?: string | null;
+}
+
+interface HeroImage {
+  id: string;
+}
+
+interface OtherEvent {
+  id: string;
+  slug: string;
+  title: string;
+  cover_image_key?: string | null;
+}
+
+interface OtherProduct {
+  id: string;
+  slug?: string | null;
+  title: string;
+  price_cfa: number;
+  cover_image_key?: string | null;
+}
+
+// Carrousel du bandeau hero : défilement automatique (5 s) entre les images
+// dédiées uploadées par le vendeur (distinctes de la galerie photo).
+function HeroCarousel({ images }: { images: HeroImage[] }) {
+  const [active, setActive] = useState(0);
+
+  useEffect(() => {
+    if (images.length <= 1) return;
+    const timer = setInterval(() => setActive((i) => (i + 1) % images.length), 5000);
+    return () => clearInterval(timer);
+  }, [images.length]);
+
+  if (images.length === 0) return null;
+
+  return (
+    <div className="absolute inset-0">
+      {images.map((img, i) => (
+        <img
+          key={img.id}
+          src={`${apiOrigin}/api/events/hero/${img.id}/file`}
+          alt=""
+          aria-hidden
+          className="absolute inset-0 w-full h-full object-cover opacity-30 transition-opacity duration-700"
+          style={{ opacity: i === active ? 0.3 : 0 }}
+        />
+      ))}
+      {images.length > 1 && (
+        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5 z-10">
+          {images.map((img, i) => (
+            <button
+              key={img.id}
+              type="button"
+              aria-label={`Image ${i + 1}`}
+              onClick={() => setActive(i)}
+              className={`w-1.5 h-1.5 rounded-full transition-colors ${i === active ? 'bg-white' : 'bg-white/40'}`}
+            />
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 function FreeOfferForm({ offerId, accent }: { offerId: string; accent: string }) {
@@ -120,6 +183,10 @@ export default function EventDetail() {
   const [offers, setOffers] = useState<Offer[]>([]);
   const [gallery, setGallery] = useState<GalleryImage[]>([]);
   const [schedule, setSchedule] = useState<ScheduleItem[]>([]);
+  const [heroImages, setHeroImages] = useState<HeroImage[]>([]);
+  const [organizerName, setOrganizerName] = useState('');
+  const [otherEvents, setOtherEvents] = useState<OtherEvent[]>([]);
+  const [otherProducts, setOtherProducts] = useState<OtherProduct[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -132,6 +199,10 @@ export default function EventDetail() {
         setOffers(res.offers || []);
         setGallery(res.gallery || []);
         setSchedule(res.schedule || []);
+        setHeroImages(res.hero_images || []);
+        setOrganizerName(res.organizer_name || '');
+        setOtherEvents(res.other_events || []);
+        setOtherProducts(res.other_products || []);
       })
       .catch((err: any) => setError(friendlyError(err)))
       .finally(() => setLoading(false));
@@ -164,15 +235,26 @@ export default function EventDetail() {
           aria-hidden
         />
         <div className="wax-pattern absolute inset-0" aria-hidden />
-        {event.cover_image_key && (
-          <img
-            src={`${apiOrigin}/api/events/${event.id}/cover`}
-            alt=""
-            aria-hidden
-            className="absolute inset-0 w-full h-full object-cover opacity-30"
-          />
+        {heroImages.length > 0 ? (
+          <HeroCarousel images={heroImages} />
+        ) : (
+          event.cover_image_key && (
+            <img
+              src={`${apiOrigin}/api/events/${event.id}/cover`}
+              alt=""
+              aria-hidden
+              className="absolute inset-0 w-full h-full object-cover opacity-30"
+            />
+          )
         )}
         <div className="relative max-w-3xl mx-auto px-4 py-16 text-center">
+          {event.logo_key && (
+            <img
+              src={`${apiOrigin}/api/events/${event.id}/logo`}
+              alt={event.title}
+              className="h-14 sm:h-16 object-contain mx-auto mb-6"
+            />
+          )}
           {event.event_date && (
             <p className="font-mono text-sm text-green-300 uppercase tracking-widest mb-4">
               //{' '}
@@ -262,6 +344,59 @@ export default function EventDetail() {
           ))}
         </div>
       </section>
+
+      {event.about_organizer && (
+        <section className="pb-16 max-w-2xl mx-auto px-4 text-center">
+          <h2 className="font-display text-2xl font-bold text-green-950 mb-4">À propos de l&rsquo;organisateur</h2>
+          {organizerName && <p className="font-semibold text-green-950 mb-2">{organizerName}</p>}
+          <p className="text-green-900/70 whitespace-pre-line">{event.about_organizer}</p>
+        </section>
+      )}
+
+      {(otherEvents.length > 0 || otherProducts.length > 0) && (
+        <section className="pb-16 max-w-4xl mx-auto px-4">
+          <h2 className="font-display text-2xl font-bold text-green-950 text-center mb-8">
+            Autres offres {organizerName ? `de ${organizerName}` : "de l'organisateur"}
+          </h2>
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+            {otherEvents.map((e) => (
+              <Link
+                key={e.id}
+                href={`/event?id=${e.slug}`}
+                className="rounded-xl border border-green-900/10 bg-white shadow-card overflow-hidden hover:shadow-lift transition-shadow"
+              >
+                {e.cover_image_key && (
+                  <img
+                    src={`${apiOrigin}/api/events/${e.id}/cover`}
+                    alt=""
+                    className="w-full h-24 sm:h-32 object-cover"
+                  />
+                )}
+                <p className="p-3 text-sm font-medium text-green-950 truncate">{e.title}</p>
+              </Link>
+            ))}
+            {otherProducts.map((p) => (
+              <Link
+                key={p.id}
+                href={`/product?id=${p.slug || p.id}`}
+                className="rounded-xl border border-green-900/10 bg-white shadow-card overflow-hidden hover:shadow-lift transition-shadow"
+              >
+                {p.cover_image_key && (
+                  <img
+                    src={`${apiOrigin}/api/products/${p.id}/cover`}
+                    alt=""
+                    className="w-full h-24 sm:h-32 object-cover"
+                  />
+                )}
+                <div className="p-3">
+                  <p className="text-sm font-medium text-green-950 truncate">{p.title}</p>
+                  <p className="text-xs text-green-900/60 font-mono mt-0.5">{formatPrice(p.price_cfa)}</p>
+                </div>
+              </Link>
+            ))}
+          </div>
+        </section>
+      )}
     </>
   );
 }

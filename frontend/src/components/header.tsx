@@ -126,6 +126,9 @@ export function Header() {
   // doublon et casserait l'effet "application" recherché. Placé après tous
   // les hooks pour respecter les règles des hooks React.
   if (pathname.startsWith('/vendor')) return null;
+  // La page événement publique est un mini-site autonome (logo/couleur du
+  // vendeur, sans habillage DIARRA) — voir event-detail.tsx.
+  if (pathname.startsWith('/event')) return null;
 
   return (
     <header className="sticky top-0 z-50 bg-green-950/95 backdrop-blur border-b border-green-400/20">

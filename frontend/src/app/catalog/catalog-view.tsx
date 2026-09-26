@@ -313,7 +313,7 @@ export default function CatalogView() {
 
         {loading ? (
           <div
-            className={cn(view === 'grid' ? 'grid grid-cols-2 gap-2.5 sm:gap-4 lg:grid-cols-3' : 'flex flex-col gap-3')}
+            className={cn(view === 'grid' ? 'grid grid-cols-2 gap-2.5 sm:gap-4 lg:grid-cols-4' : 'flex flex-col gap-3')}
           >
             {Array.from({ length: 6 }).map((_, i) => (
               <CardSkeleton key={i} view={view} />
@@ -326,7 +326,7 @@ export default function CatalogView() {
             description="Modifiez votre recherche ou parcourez une autre catégorie."
           />
         ) : view === 'grid' ? (
-          <div className="grid grid-cols-2 gap-2.5 sm:gap-4 lg:grid-cols-3">
+          <div className="grid grid-cols-2 gap-2.5 sm:gap-4 lg:grid-cols-4">
             {sortedProducts.map((product) => (
               <div
                 key={product.id}

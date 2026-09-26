@@ -351,7 +351,7 @@ func main() {
 	// voir migration 034_events.sql) — généralise le mécanisme du Summit à
 	// n'importe quel vendeur.
 	eventRepo := repository.NewEventRepo(pool)
-	eventHandler := handler.NewEventHandler(eventRepo, productRepo, storageService, notifications, os.Getenv("FRONTEND_URL"))
+	eventHandler := handler.NewEventHandler(eventRepo, productRepo, userRepo, storageService, notifications, os.Getenv("FRONTEND_URL"))
 
 	// Billets PDF (QR de vérification à l'entrée) — générés à la demande,
 	// jamais au moment du webhook de paiement (voir internal/eventfile).
@@ -480,7 +480,9 @@ func main() {
 		r.Get("/", eventHandler.ListApproved)
 		r.Get("/{id}", eventHandler.Get)
 		r.Get("/{id}/cover", eventHandler.Cover)
+		r.Get("/{id}/logo", eventHandler.Logo)
 		r.Get("/gallery/{imageId}/file", eventHandler.GalleryImage)
+		r.Get("/hero/{imageId}/file", eventHandler.HeroImage)
 		r.Post("/offers/{offerId}/register", eventHandler.RegisterFree)
 	})
 
@@ -516,6 +518,8 @@ func main() {
 		r.Post("/{id}/schedule", eventHandler.AddScheduleItem)
 		r.Put("/schedule/{itemId}", eventHandler.UpdateScheduleItem)
 		r.Delete("/schedule/{itemId}", eventHandler.DeleteScheduleItem)
+		r.Post("/{id}/hero", eventHandler.AddHeroImage)
+		r.Delete("/hero/{imageId}", eventHandler.DeleteHeroImage)
 	})
 
 	// Scan des billets (vérification à l'entrée) — accessible à tout

@@ -19,6 +19,11 @@ type Event struct {
 	VenueName     *string `json:"venue_name,omitempty"`
 	VenueAddress  *string `json:"venue_address,omitempty"`
 	VenueMapURL   *string `json:"venue_map_url,omitempty"`
+	// Mini-site événement (voir migration 046) : logo remplaçant celui de
+	// DIARRA sur cette page (qui n'affiche déjà plus le header/footer du
+	// site), et présentation libre de l'organisateur.
+	LogoKey        *string `json:"logo_key,omitempty"`
+	AboutOrganizer *string `json:"about_organizer,omitempty"`
 	ModerationStatus string     `json:"moderation_status"`
 	ModerationNote   *string    `json:"moderation_note,omitempty"`
 	CreatedAt        time.Time  `json:"created_at"`
@@ -49,7 +54,24 @@ type EventScheduleItem struct {
 	CreatedAt   time.Time `json:"created_at"`
 }
 
+// EventHeroImage — une image du carrousel hero (max 5, distinct de la
+// galerie photo affichée plus bas sur la page).
+type EventHeroImage struct {
+	ID        string    `json:"id"`
+	EventID   string    `json:"event_id"`
+	FileKey   string    `json:"file_key"`
+	SortOrder int16     `json:"sort_order"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// MaxEventHeroImages — plafond du carrousel hero (voir EventHandler.AddHeroImage).
+const MaxEventHeroImages = 5
+
 type AddEventGalleryImageInput struct {
+	FileKey string `json:"file_key"`
+}
+
+type AddEventHeroImageInput struct {
 	FileKey string `json:"file_key"`
 }
 
@@ -107,6 +129,8 @@ type CreateEventInput struct {
 	VenueName     *string    `json:"venue_name,omitempty"`
 	VenueAddress  *string    `json:"venue_address,omitempty"`
 	VenueMapURL   *string    `json:"venue_map_url,omitempty"`
+	LogoKey        *string `json:"logo_key,omitempty"`
+	AboutOrganizer *string `json:"about_organizer,omitempty"`
 	// Offers : 1 à 3 entrées, validées côté handler (voir EventHandler.Create).
 	Offers []CreateEventOfferInput `json:"offers"`
 }
@@ -127,6 +151,8 @@ type UpdateEventInput struct {
 	VenueName     *string    `json:"venue_name,omitempty"`
 	VenueAddress  *string    `json:"venue_address,omitempty"`
 	VenueMapURL   *string    `json:"venue_map_url,omitempty"`
+	LogoKey        *string `json:"logo_key,omitempty"`
+	AboutOrganizer *string `json:"about_organizer,omitempty"`
 }
 
 type CreateEventRegistrationInput struct {

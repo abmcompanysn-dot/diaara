@@ -9,6 +9,8 @@ export function Footer() {
   // Même raisonnement que le Header : l'espace vendeur se comporte comme une
   // app autonome, sans le pied de page marketing du reste du site.
   if (pathname.startsWith('/vendor')) return null;
+  // La page événement publique est un mini-site autonome — voir Header.
+  if (pathname.startsWith('/event')) return null;
 
   return (
     <footer className="bg-green-950 text-white/70">

@@ -26,13 +26,13 @@ func NewEventRepo(pool *pgxpool.Pool) *EventRepo {
 }
 
 const eventColumns = `id, vendor_id, title, slug, description, cover_image_key, event_date, meeting_link,
-	accent_color, venue_name, venue_address, venue_map_url,
+	accent_color, venue_name, venue_address, venue_map_url, logo_key, about_organizer,
 	moderation_status, moderation_note, created_at, updated_at`
 
 func scanEvent(row pgx.Row) (*model.Event, error) {
 	e := &model.Event{}
 	err := row.Scan(&e.ID, &e.VendorID, &e.Title, &e.Slug, &e.Description, &e.CoverImageKey, &e.EventDate,
-		&e.MeetingLink, &e.AccentColor, &e.VenueName, &e.VenueAddress, &e.VenueMapURL,
+		&e.MeetingLink, &e.AccentColor, &e.VenueName, &e.VenueAddress, &e.VenueMapURL, &e.LogoKey, &e.AboutOrganizer,
 		&e.ModerationStatus, &e.ModerationNote, &e.CreatedAt, &e.UpdatedAt)
 	if err != nil {
 		if err == pgx.ErrNoRows {
@@ -73,11 +73,11 @@ func (r *EventRepo) Create(ctx context.Context, input model.CreateEventInput, ve
 	}
 	row := r.pool.QueryRow(ctx,
 		`INSERT INTO events (vendor_id, title, slug, description, cover_image_key, event_date, meeting_link,
-			accent_color, venue_name, venue_address, venue_map_url)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+			accent_color, venue_name, venue_address, venue_map_url, logo_key, about_organizer)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		 RETURNING `+eventColumns,
 		vendorID, input.Title, slug, input.Description, input.CoverImageKey, input.EventDate, input.MeetingLink,
-		input.AccentColor, input.VenueName, input.VenueAddress, input.VenueMapURL,
+		input.AccentColor, input.VenueName, input.VenueAddress, input.VenueMapURL, input.LogoKey, input.AboutOrganizer,
 	)
 	return scanEvent(row)
 }
@@ -124,7 +124,7 @@ func scanEvents(rows pgx.Rows) ([]*model.Event, error) {
 	for rows.Next() {
 		e := &model.Event{}
 		if err := rows.Scan(&e.ID, &e.VendorID, &e.Title, &e.Slug, &e.Description, &e.CoverImageKey, &e.EventDate,
-			&e.MeetingLink, &e.AccentColor, &e.VenueName, &e.VenueAddress, &e.VenueMapURL,
+			&e.MeetingLink, &e.AccentColor, &e.VenueName, &e.VenueAddress, &e.VenueMapURL, &e.LogoKey, &e.AboutOrganizer,
 			&e.ModerationStatus, &e.ModerationNote, &e.CreatedAt, &e.UpdatedAt); err != nil {
 			return nil, err
 		}
@@ -145,11 +145,13 @@ func (r *EventRepo) Update(ctx context.Context, id, vendorID string, input model
 			venue_name = COALESCE($9, venue_name),
 			venue_address = COALESCE($10, venue_address),
 			venue_map_url = COALESCE($11, venue_map_url),
+			logo_key = COALESCE($12, logo_key),
+			about_organizer = COALESCE($13, about_organizer),
 			updated_at = now()
 		 WHERE id = $1 AND vendor_id = $2
 		 RETURNING `+eventColumns,
 		id, vendorID, input.Title, input.Description, input.CoverImageKey, input.EventDate, input.MeetingLink,
-		input.AccentColor, input.VenueName, input.VenueAddress, input.VenueMapURL,
+		input.AccentColor, input.VenueName, input.VenueAddress, input.VenueMapURL, input.LogoKey, input.AboutOrganizer,
 	)
 	return scanEvent(row)
 }
@@ -400,6 +402,95 @@ func (r *EventRepo) DeleteGalleryImageOwned(ctx context.Context, imageID, vendor
 		return ErrEventNotFound
 	}
 	return nil
+}
+
+// --- Carrousel hero (max 5, voir model.MaxEventHeroImages) ---
+
+const eventHeroColumns = `id, event_id, file_key, sort_order, created_at`
+
+func scanHeroImage(row pgx.Row) (*model.EventHeroImage, error) {
+	img := &model.EventHeroImage{}
+	err := row.Scan(&img.ID, &img.EventID, &img.FileKey, &img.SortOrder, &img.CreatedAt)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, errors.New("event: hero image not found")
+		}
+		return nil, err
+	}
+	return img, nil
+}
+
+// CountHeroImages — pour appliquer le plafond MaxEventHeroImages côté handler
+// avant insertion (pas de contrainte SQL, même choix que event_offers).
+func (r *EventRepo) CountHeroImages(ctx context.Context, eventID string) (int, error) {
+	var n int
+	err := r.pool.QueryRow(ctx, `SELECT count(*) FROM event_hero_images WHERE event_id = $1`, eventID).Scan(&n)
+	return n, err
+}
+
+func (r *EventRepo) AddHeroImage(ctx context.Context, eventID, fileKey string) (*model.EventHeroImage, error) {
+	row := r.pool.QueryRow(ctx, `
+		INSERT INTO event_hero_images (event_id, file_key, sort_order)
+		VALUES ($1, $2, COALESCE((SELECT max(sort_order) + 1 FROM event_hero_images WHERE event_id = $1), 0))
+		RETURNING `+eventHeroColumns, eventID, fileKey)
+	return scanHeroImage(row)
+}
+
+// FindHeroImageByID — lecture publique par ID seul (endpoint de streaming
+// public, voir EventHandler.HeroImage — même principe que GalleryImage).
+func (r *EventRepo) FindHeroImageByID(ctx context.Context, id string) (*model.EventHeroImage, error) {
+	return scanHeroImage(r.pool.QueryRow(ctx,
+		`SELECT `+eventHeroColumns+` FROM event_hero_images WHERE id = $1`, id))
+}
+
+func (r *EventRepo) ListHeroImages(ctx context.Context, eventID string) ([]*model.EventHeroImage, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+eventHeroColumns+` FROM event_hero_images WHERE event_id = $1 ORDER BY sort_order`, eventID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	out := []*model.EventHeroImage{}
+	for rows.Next() {
+		img := &model.EventHeroImage{}
+		if err := rows.Scan(&img.ID, &img.EventID, &img.FileKey, &img.SortOrder, &img.CreatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, img)
+	}
+	return out, rows.Err()
+}
+
+// DeleteHeroImageOwned supprime une image du carrousel, filtrée par
+// vendor_id du parent — même garde que DeleteGalleryImageOwned.
+func (r *EventRepo) DeleteHeroImageOwned(ctx context.Context, imageID, vendorID string) error {
+	tag, err := r.pool.Exec(ctx, `
+		DELETE FROM event_hero_images
+		WHERE id = $1 AND event_id IN (SELECT id FROM events WHERE vendor_id = $2)`,
+		imageID, vendorID)
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		return ErrEventNotFound
+	}
+	return nil
+}
+
+// ListOtherApprovedByVendor — événements approuvés du même vendeur, hors
+// l'événement courant, pour la section "Autres événements de cet
+// organisateur" de la page publique.
+func (r *EventRepo) ListOtherApprovedByVendor(ctx context.Context, vendorID, excludeEventID string) ([]*model.Event, error) {
+	rows, err := r.pool.Query(ctx,
+		`SELECT `+eventColumns+` FROM events
+		 WHERE vendor_id = $1 AND id != $2 AND moderation_status = 'approved'
+		 ORDER BY created_at DESC LIMIT 6`, vendorID, excludeEventID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return scanEvents(rows)
 }
 
 // --- Programme / planning ---

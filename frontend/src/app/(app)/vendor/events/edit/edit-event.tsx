@@ -39,6 +39,13 @@ interface ScheduleItem {
   description?: string | null;
 }
 
+interface HeroImage {
+  id: string;
+  file_key: string;
+}
+
+const MAX_HERO_IMAGES = 5;
+
 // Formulaire d'ajout d'offre — le titre et le prix suffisent ; is_free et
 // le lien de visio de l'événement (déjà requis pour une offre gratuite à
 // la création de l'événement) ne se redemandent pas ici.
@@ -115,8 +122,15 @@ export default function EditEvent() {
   const [venueName, setVenueName] = useState('');
   const [venueAddress, setVenueAddress] = useState('');
   const [venueMapUrl, setVenueMapUrl] = useState('');
+  const [logoPreview, setLogoPreview] = useState('');
+  const [logoKey, setLogoKey] = useState<string | undefined>(undefined);
+  const [aboutOrganizer, setAboutOrganizer] = useState('');
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  const [heroImages, setHeroImages] = useState<HeroImage[]>([]);
+  const [heroUploading, setHeroUploading] = useState(false);
+  const [heroError, setHeroError] = useState('');
 
   const [offers, setOffers] = useState<Offer[]>([]);
   const [addingOffer, setAddingOffer] = useState(false);
@@ -164,13 +178,19 @@ export default function EditEvent() {
         setVenueName(event.venue_name || '');
         setVenueAddress(event.venue_address || '');
         setVenueMapUrl(event.venue_map_url || '');
+        setAboutOrganizer(event.about_organizer || '');
         if (event.cover_image_key) {
           setCoverKey(event.cover_image_key);
           setCoverPreview(`${apiOrigin}/api/events/${id}/cover`);
         }
+        if (event.logo_key) {
+          setLogoKey(event.logo_key);
+          setLogoPreview(`${apiOrigin}/api/events/${id}/logo`);
+        }
         setOffers(res.offers || []);
         setGallery(res.gallery || []);
         setSchedule(res.schedule || []);
+        setHeroImages(res.hero_images || []);
       })
       .catch((err: any) => setError(friendlyError(err)))
       .finally(() => setLoading(false));
@@ -186,6 +206,21 @@ export default function EditEvent() {
       form.append('type', 'cover');
       const res = await api.uploadFile(form);
       setCoverKey(res.file_key);
+    } catch (err: any) {
+      setError(friendlyError(err));
+    }
+  };
+
+  const handleLogoSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0] || null;
+    if (!f) return;
+    setLogoPreview(URL.createObjectURL(f));
+    try {
+      const form = new FormData();
+      form.append('file', f);
+      form.append('type', 'cover');
+      const res = await api.uploadFile(form);
+      setLogoKey(res.file_key);
     } catch (err: any) {
       setError(friendlyError(err));
     }
@@ -210,6 +245,8 @@ export default function EditEvent() {
         venue_name: venueName.trim() || undefined,
         venue_address: venueAddress.trim() || undefined,
         venue_map_url: venueMapUrl.trim() || undefined,
+        logo_key: logoKey,
+        about_organizer: aboutOrganizer.trim() || undefined,
       });
       router.push('/vendor/events');
     } catch (err: any) {
@@ -246,6 +283,41 @@ export default function EditEvent() {
       setGallery((prev) => prev.filter((img) => img.id !== imageId));
     } catch (err: any) {
       setGalleryError(friendlyError(err));
+    }
+  };
+
+  const handleHeroSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const f = e.target.files?.[0] || null;
+    if (!f) return;
+    setHeroError('');
+    if (heroImages.length >= MAX_HERO_IMAGES) {
+      setHeroError(`Maximum ${MAX_HERO_IMAGES} images pour le carrousel.`);
+      e.target.value = '';
+      return;
+    }
+    setHeroUploading(true);
+    try {
+      const form = new FormData();
+      form.append('file', f);
+      form.append('type', 'cover');
+      const uploaded = await api.uploadFile(form);
+      const res = await api.addEventHeroImage(id, uploaded.file_key);
+      setHeroImages((prev) => [...prev, res.image]);
+    } catch (err: any) {
+      setHeroError(friendlyError(err));
+    } finally {
+      setHeroUploading(false);
+      e.target.value = '';
+    }
+  };
+
+  const handleDeleteHeroImage = async (imageId: string) => {
+    setHeroError('');
+    try {
+      await api.deleteEventHeroImage(imageId);
+      setHeroImages((prev) => prev.filter((img) => img.id !== imageId));
+    } catch (err: any) {
+      setHeroError(friendlyError(err));
     }
   };
 
@@ -376,10 +448,73 @@ export default function EditEvent() {
                 />
               </div>
 
+              <div className="space-y-2 pt-2 border-t border-border">
+                <Label htmlFor="logo">Logo de l&rsquo;événement</Label>
+                {logoPreview && (
+                  <img src={logoPreview} alt="Aperçu du logo" className="h-16 object-contain rounded-lg border border-border p-2 bg-white" />
+                )}
+                <Input id="logo" type="file" accept="image/*" onChange={handleLogoSelect} />
+                <p className="text-xs text-muted-foreground">
+                  Remplace le logo DIARRA sur la page publique de cet événement (qui n&rsquo;affiche déjà plus le menu ni le pied de page du site).
+                </p>
+              </div>
+
+              <div className="space-y-2 pt-2 border-t border-border">
+                <Label htmlFor="about-organizer">À propos de l&rsquo;organisateur</Label>
+                <Textarea
+                  id="about-organizer"
+                  value={aboutOrganizer}
+                  onChange={(e) => setAboutOrganizer(e.target.value)}
+                  placeholder="Présentez-vous ou présentez votre structure aux visiteurs de cette page."
+                  className="min-h-24"
+                />
+              </div>
+
               <Button type="submit" disabled={submitting} className="w-full font-semibold">
                 {submitting ? 'Enregistrement...' : 'Enregistrer'}
               </Button>
             </form>
+          </CardContent>
+        </Card>
+
+        <Card className="shadow-card border-green-900/5 mt-6">
+          <CardHeader>
+            <CardTitle>Carrousel du bandeau (hero)</CardTitle>
+            <CardDescription>
+              Jusqu&rsquo;à {MAX_HERO_IMAGES} images qui défilent en haut de la page publique — distinctes de la galerie photo ci-dessous.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {heroError && <p className="text-xs text-red-600">{heroError}</p>}
+            {heroImages.length > 0 && (
+              <div className="grid grid-cols-3 gap-2">
+                {heroImages.map((img) => (
+                  <div key={img.id} className="relative group">
+                    <img
+                      src={`${apiOrigin}/api/events/hero/${img.id}/file`}
+                      alt=""
+                      className="w-full h-24 object-cover rounded-lg border border-border"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => handleDeleteHeroImage(img.id)}
+                      className="absolute top-1 right-1 bg-black/60 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity"
+                      aria-label="Supprimer cette image"
+                    >
+                      <TrashIcon size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {heroImages.length < MAX_HERO_IMAGES ? (
+              <>
+                <Input type="file" accept="image/*" onChange={handleHeroSelect} disabled={heroUploading} />
+                {heroUploading && <p className="text-xs text-muted-foreground">Envoi en cours...</p>}
+              </>
+            ) : (
+              <p className="text-xs text-muted-foreground">Limite de {MAX_HERO_IMAGES} images atteinte.</p>
+            )}
           </CardContent>
         </Card>
 

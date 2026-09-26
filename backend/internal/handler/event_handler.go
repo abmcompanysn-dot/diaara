@@ -28,15 +28,17 @@ const maxEventFieldLen = 200
 type EventHandler struct {
 	eventRepo     *repository.EventRepo
 	productRepo   *repository.ProductRepo
+	userRepo      *repository.UserRepo
 	storage       StorageService
 	notifications *email.NotificationService
 	frontendURL   string
 }
 
-func NewEventHandler(eventRepo *repository.EventRepo, productRepo *repository.ProductRepo, storage StorageService, notifications *email.NotificationService, frontendURL string) *EventHandler {
+func NewEventHandler(eventRepo *repository.EventRepo, productRepo *repository.ProductRepo, userRepo *repository.UserRepo, storage StorageService, notifications *email.NotificationService, frontendURL string) *EventHandler {
 	return &EventHandler{
 		eventRepo:     eventRepo,
 		productRepo:   productRepo,
+		userRepo:      userRepo,
 		storage:       storage,
 		notifications: notifications,
 		frontendURL:   frontendURL,
@@ -96,6 +98,12 @@ func (h *EventHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if input.AccentColor != nil && !validHexColor(*input.AccentColor) {
 		http.Error(w, `{"error":"invalid_accent_color"}`, http.StatusBadRequest)
 		return
+	}
+	if input.LogoKey != nil {
+		if err := validateCoverImageKey(r.Context(), h.storage, *input.LogoKey); err != nil {
+			http.Error(w, `{"error":"invalid_logo"}`, http.StatusBadRequest)
+			return
+		}
 	}
 
 	event, err := h.eventRepo.Create(r.Context(), input, userID)
@@ -196,6 +204,12 @@ func (h *EventHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if input.AccentColor != nil && !validHexColor(*input.AccentColor) {
 		http.Error(w, `{"error":"invalid_accent_color"}`, http.StatusBadRequest)
 		return
+	}
+	if input.LogoKey != nil {
+		if err := validateCoverImageKey(r.Context(), h.storage, *input.LogoKey); err != nil {
+			http.Error(w, `{"error":"invalid_logo"}`, http.StatusBadRequest)
+			return
+		}
 	}
 
 	event, err := h.eventRepo.Update(r.Context(), id, userID, input)
@@ -453,9 +467,33 @@ func (h *EventHandler) Get(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"schedule_failed"}`, http.StatusInternalServerError)
 		return
 	}
+	heroImages, err := h.eventRepo.ListHeroImages(r.Context(), event.ID)
+	if err != nil {
+		http.Error(w, `{"error":"hero_images_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	// Nom de l'organisateur (boutique, à défaut nom affiché) pour la section
+	// "À propos de l'organisateur" — best-effort, jamais bloquant.
+	var organizerName string
+	if vendor, err := h.userRepo.FindByID(r.Context(), event.VendorID); err == nil {
+		if vendor.ShopName != nil && *vendor.ShopName != "" {
+			organizerName = *vendor.ShopName
+		} else if vendor.DisplayName != nil {
+			organizerName = *vendor.DisplayName
+		}
+	}
+
+	// "Autres offres du même organisateur" : ses autres événements approuvés
+	// + ses autres produits catalogue approuvés — best-effort, jamais bloquant.
+	otherEvents, _ := h.eventRepo.ListOtherApprovedByVendor(r.Context(), event.VendorID, event.ID)
+	otherProducts, _ := h.productRepo.ListApprovedByVendor(r.Context(), event.VendorID)
+
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"event": event, "offers": offers, "gallery": gallery, "schedule": schedule,
+		"hero_images": heroImages, "organizer_name": organizerName,
+		"other_events": otherEvents, "other_products": otherProducts,
 	})
 }
 
@@ -487,6 +525,123 @@ func (h *EventHandler) Cover(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", imageContentType(*event.CoverImageKey, data))
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Write(data)
+}
+
+// Logo — GET /api/events/{id}/logo (public). Sert le logo propre à
+// l'événement (remplace le logo DIARRA sur cette page, qui n'affiche déjà
+// plus le header/footer du site) — même principe que Cover.
+func (h *EventHandler) Logo(w http.ResponseWriter, r *http.Request) {
+	idOrSlug := chi.URLParam(r, "id")
+	event, err := h.eventRepo.FindByID(r.Context(), idOrSlug)
+	if err != nil {
+		http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
+		return
+	}
+	if event.LogoKey == nil || *event.LogoKey == "" {
+		http.Error(w, `{"error":"no_logo"}`, http.StatusNotFound)
+		return
+	}
+	if h.storage == nil {
+		http.Error(w, `{"error":"storage_not_configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+	data, err := h.storage.Download(r.Context(), *event.LogoKey)
+	if err != nil {
+		http.Error(w, `{"error":"logo_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", imageContentType(*event.LogoKey, data))
+	w.Header().Set("Cache-Control", "public, max-age=3600")
+	w.Write(data)
+}
+
+// --- Carrousel hero ---
+
+// AddHeroImage — POST /api/vendor/events/{id}/hero (propriétaire). Plafonné
+// à model.MaxEventHeroImages.
+func (h *EventHandler) AddHeroImage(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	eventID := chi.URLParam(r, "id")
+
+	var input model.AddEventHeroImageInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil || input.FileKey == "" {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+	if err := validateCoverImageKey(r.Context(), h.storage, input.FileKey); err != nil {
+		http.Error(w, `{"error":"invalid_image"}`, http.StatusBadRequest)
+		return
+	}
+
+	event, err := h.eventRepo.FindByID(r.Context(), eventID)
+	if err != nil || event.VendorID != userID {
+		http.Error(w, `{"error":"not_found_or_forbidden"}`, http.StatusNotFound)
+		return
+	}
+	count, err := h.eventRepo.CountHeroImages(r.Context(), eventID)
+	if err != nil {
+		http.Error(w, `{"error":"count_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	if count >= model.MaxEventHeroImages {
+		http.Error(w, fmt.Sprintf(`{"error":"hero_images_limit_reached","limit":%d}`, model.MaxEventHeroImages), http.StatusBadRequest)
+		return
+	}
+
+	img, err := h.eventRepo.AddHeroImage(r.Context(), eventID, input.FileKey)
+	if err != nil {
+		http.Error(w, `{"error":"add_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]interface{}{"image": img})
+}
+
+// DeleteHeroImage — DELETE /api/vendor/events/hero/{imageId} (propriétaire).
+func (h *EventHandler) DeleteHeroImage(w http.ResponseWriter, r *http.Request) {
+	userID := middleware.GetUserID(r.Context())
+	if userID == "" {
+		http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+		return
+	}
+	imageID := chi.URLParam(r, "imageId")
+	if err := h.eventRepo.DeleteHeroImageOwned(r.Context(), imageID, userID); err != nil {
+		if err == repository.ErrEventNotFound {
+			http.Error(w, `{"error":"not_found_or_forbidden"}`, http.StatusNotFound)
+			return
+		}
+		http.Error(w, `{"error":"delete_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// HeroImage — GET /api/events/hero/{imageId}/file (public). Même principe
+// que GalleryImage.
+func (h *EventHandler) HeroImage(w http.ResponseWriter, r *http.Request) {
+	imageID := chi.URLParam(r, "imageId")
+	img, err := h.eventRepo.FindHeroImageByID(r.Context(), imageID)
+	if err != nil {
+		http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
+		return
+	}
+	if h.storage == nil {
+		http.Error(w, `{"error":"storage_not_configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+	data, err := h.storage.Download(r.Context(), img.FileKey)
+	if err != nil {
+		http.Error(w, `{"error":"image_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	w.Header().Set("Content-Type", imageContentType(img.FileKey, data))
 	w.Header().Set("Cache-Control", "public, max-age=3600")
 	w.Write(data)
 }
