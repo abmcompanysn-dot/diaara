@@ -395,7 +395,7 @@ func (h *WebhookHandler) PawaPayWebhook(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if status.Data.Status == "FAILED" {
-		if err := h.saleRepo.UpdateStatus(r.Context(), sale.ID, string(model.SaleFailed)); err != nil {
+		if err := h.saleRepo.MarkFailed(r.Context(), sale.ID, pawaPayFailureCode(status)); err != nil {
 			http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
 			return
 		}
@@ -487,7 +487,7 @@ func (h *WebhookHandler) PayDunyaCallback(w http.ResponseWriter, r *http.Request
 	}
 
 	if status.Status == "failed" || status.Status == "cancelled" {
-		if err := h.saleRepo.UpdateStatus(r.Context(), sale.ID, string(model.SaleFailed)); err != nil {
+		if err := h.saleRepo.MarkFailed(r.Context(), sale.ID, status.Status); err != nil {
 			http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
 			return
 		}
@@ -721,7 +721,7 @@ func (h *WebhookHandler) PayPalWebhook(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if sale.Status == string(model.SalePending) {
-			h.saleRepo.UpdateStatus(r.Context(), sale.ID, string(model.SaleFailed))
+			h.saleRepo.MarkFailed(r.Context(), sale.ID, "card_declined")
 			if h.notifications != nil {
 				go h.notifyFailed(context.Background(), sale)
 			}
@@ -874,7 +874,7 @@ func (h *WebhookHandler) reconcileDepositsPass(ctx context.Context) {
 			// considérer que ça n'aboutira plus (incident 2026-09-05,
 			// plusieurs ventes de test restées "En attente" indéfiniment).
 			if time.Since(sale.CreatedAt) > 3*time.Minute {
-				if err := h.saleRepo.UpdateStatus(ctx, sale.ID, string(model.SaleFailed)); err == nil {
+				if err := h.saleRepo.MarkFailed(ctx, sale.ID, "not_validated"); err == nil {
 					if h.notifications != nil {
 						go h.notifyFailed(context.Background(), sale)
 					}
@@ -893,7 +893,7 @@ func (h *WebhookHandler) reconcileDepositsPass(ctx context.Context) {
 			}
 			confirmed++
 		case "FAILED":
-			if err := h.saleRepo.UpdateStatus(ctx, sale.ID, string(model.SaleFailed)); err != nil {
+			if err := h.saleRepo.MarkFailed(ctx, sale.ID, pawaPayFailureCode(status)); err != nil {
 				continue
 			}
 			if h.notifications != nil {

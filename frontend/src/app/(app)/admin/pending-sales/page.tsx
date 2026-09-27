@@ -15,6 +15,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog';
 import { formatPrice, SALE_STATUS_BADGE, ORDER_STATUS_LABELS } from '@/lib/constants';
 import { friendlyError } from '@/lib/error-messages';
 import { SearchIcon } from '@/components/icons';
+import { PaymentDetails, PhoneContact, contactPhone } from '@/components/sale-payment-info';
 
 interface PendingSale {
   id: string;
@@ -22,6 +23,9 @@ interface PendingSale {
   buyer_name: string;
   buyer_email: string;
   buyer_phone?: string | null;
+  payer_phone?: string | null;
+  payment_operator?: string | null;
+  failure_reason?: string | null;
   vendor_email: string;
   country?: string | null;
   amount_cfa: number;
@@ -139,7 +143,7 @@ export default function AdminPendingSalesPage() {
           s.product_title.toLowerCase().includes(q) ||
           s.buyer_name.toLowerCase().includes(q) ||
           s.buyer_email.toLowerCase().includes(q) ||
-          (s.buyer_phone || '').toLowerCase().includes(q)
+          contactPhone(s).includes(q.replace(/\D/g, '') || q)
       );
     }
     return list;
@@ -219,6 +223,7 @@ export default function AdminPendingSalesPage() {
                   <TableHead>Acheteur</TableHead>
                   <TableHead>Email</TableHead>
                   <TableHead>Téléphone</TableHead>
+                  <TableHead>Paiement</TableHead>
                   <TableHead>Montant</TableHead>
                   <TableHead>Statut</TableHead>
                   <TableHead>Relances</TableHead>
@@ -234,8 +239,11 @@ export default function AdminPendingSalesPage() {
                     <TableCell className="max-w-[160px] truncate">{sale.product_title}</TableCell>
                     <TableCell className="whitespace-nowrap">{sale.buyer_name}</TableCell>
                     <TableCell className="text-sm text-green-900/70">{sale.buyer_email}</TableCell>
-                    <TableCell className="text-sm text-green-900/70 whitespace-nowrap">
-                      {sale.buyer_phone || '—'}
+                    <TableCell className="text-sm">
+                      <PhoneContact phone={contactPhone(sale)} />
+                    </TableCell>
+                    <TableCell className="max-w-[220px]">
+                      <PaymentDetails sale={sale} showRaw />
                     </TableCell>
                     <TableCell className="font-mono whitespace-nowrap">{formatPrice(sale.amount_cfa)}</TableCell>
                     <TableCell>

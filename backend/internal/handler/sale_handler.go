@@ -388,6 +388,9 @@ func (h *SaleHandler) Create(w http.ResponseWriter, r *http.Request) {
 	checkoutToken := newUUID()
 	sale.PaymentReference = newUUID()
 	sale.CheckoutToken = &checkoutToken
+	if providerName != "paypal" {
+		setPayerDetails(sale, input.Operator, input.Phone)
+	}
 
 	created, err := h.saleRepo.Create(r.Context(), sale)
 	if err != nil {
@@ -401,7 +404,7 @@ func (h *SaleHandler) Create(w http.ResponseWriter, r *http.Request) {
 	redirectURL, err := h.initiateCheckout(r.Context(), created, product, input.Country, providerName, input.Phone, input.Operator, input.OTP)
 	if err != nil || redirectURL == "" {
 		log.Printf("payment_init_failed sale=%s provider=%s: %v", created.ID, providerName, err)
-		h.saleRepo.UpdateStatus(r.Context(), created.ID, string(model.SaleFailed))
+		h.saleRepo.MarkFailed(r.Context(), created.ID, initFailureReason(err))
 		http.Error(w, `{"error":"payment_init_failed"}`, http.StatusBadGateway)
 		return
 	}
@@ -467,7 +470,11 @@ func (h *SaleHandler) CheckoutStatus(w http.ResponseWriter, r *http.Request) {
 				}
 			case outcome.Status == "failed" || outcome.Status == "cancelled":
 				status = string(model.SaleFailed)
-				h.saleRepo.UpdateStatus(r.Context(), sale.ID, status)
+				reason := outcome.FailureReason
+				if reason == "" {
+					reason = outcome.Status
+				}
+				h.saleRepo.MarkFailed(r.Context(), sale.ID, reason)
 			// NotFound (PawaPay) : l'acheteur n'a jamais validé sur leur page
 			// hébergée. Un NOT_FOUND immédiatement après création peut juste
 			// être un léger décalage côté PawaPay — on laisse une marge de 3
@@ -477,7 +484,7 @@ func (h *SaleHandler) CheckoutStatus(w http.ResponseWriter, r *http.Request) {
 			// pour ne plus refaire cet appel prestataire à chaque poll suivant.
 			case outcome.NotFound && time.Since(sale.CreatedAt) > 3*time.Minute:
 				status = string(model.SaleFailed)
-				h.saleRepo.UpdateStatus(r.Context(), sale.ID, status)
+				h.saleRepo.MarkFailed(r.Context(), sale.ID, "not_validated")
 			}
 		}
 	}

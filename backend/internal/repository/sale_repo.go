@@ -22,13 +22,15 @@ func NewSaleRepo(pool *pgxpool.Pool) *SaleRepo {
 }
 
 const saleColumns = `id, product_id, buyer_id, buyer_name, country, referral_link_id, amount_cfa, platform_fee_cfa,
-	closer_commission_cfa, vendor_amount_cfa, payment_provider, payment_reference, provider_transaction_id, checkout_token, status, refund_reference, delivered_at, created_at`
+	closer_commission_cfa, vendor_amount_cfa, payment_provider, payment_reference, provider_transaction_id, checkout_token, status, refund_reference, delivered_at, created_at,
+	payer_phone, payment_operator, failure_reason`
 
 func scanSale(row pgx.Row) (*model.Sale, error) {
 	s := &model.Sale{}
 	err := row.Scan(&s.ID, &s.ProductID, &s.BuyerID, &s.BuyerName, &s.Country, &s.ReferralLinkID, &s.AmountCFA,
 		&s.PlatformFeeCFA, &s.CloserCommissionCFA, &s.VendorAmountCFA, &s.PaymentProvider,
-		&s.PaymentReference, &s.ProviderTransactionID, &s.CheckoutToken, &s.Status, &s.RefundReference, &s.DeliveredAt, &s.CreatedAt)
+		&s.PaymentReference, &s.ProviderTransactionID, &s.CheckoutToken, &s.Status, &s.RefundReference, &s.DeliveredAt, &s.CreatedAt,
+		&s.PayerPhone, &s.PaymentOperator, &s.FailureReason)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, ErrSaleNotFound
@@ -41,21 +43,36 @@ func scanSale(row pgx.Row) (*model.Sale, error) {
 func (r *SaleRepo) Create(ctx context.Context, s *model.Sale) (*model.Sale, error) {
 	row := r.pool.QueryRow(ctx,
 		`INSERT INTO sales (product_id, buyer_id, buyer_name, country, referral_link_id, amount_cfa, platform_fee_cfa,
-			closer_commission_cfa, vendor_amount_cfa, payment_provider, payment_reference, checkout_token, status)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+			closer_commission_cfa, vendor_amount_cfa, payment_provider, payment_reference, checkout_token, status,
+			payer_phone, payment_operator)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 		 RETURNING `+saleColumns,
 		s.ProductID, s.BuyerID, s.BuyerName, s.Country, s.ReferralLinkID, s.AmountCFA, s.PlatformFeeCFA,
-		s.CloserCommissionCFA, s.VendorAmountCFA, s.PaymentProvider, s.PaymentReference, s.CheckoutToken, s.Status)
+		s.CloserCommissionCFA, s.VendorAmountCFA, s.PaymentProvider, s.PaymentReference, s.CheckoutToken, s.Status,
+		s.PayerPhone, s.PaymentOperator)
 	return scanSale(row)
 }
 
+// MarkFailed — passe une vente en "failed" en conservant la raison (code
+// prestataire ou "payment_init_failed"), affichée au vendeur/admin pour
+// savoir comment relancer le client. Une raison vide n'écrase pas une
+// raison déjà connue.
+func (r *SaleRepo) MarkFailed(ctx context.Context, id, reason string) error {
+	_, err := r.pool.Exec(ctx,
+		`UPDATE sales SET status = 'failed', failure_reason = COALESCE(NULLIF($2, ''), failure_reason) WHERE id = $1`,
+		id, reason)
+	return err
+}
+
 // VendorSaleView — vente enrichie pour l'espace vendeur : le vendeur voit
-// qui a acheté (nom, email, pays) et quel produit, sans exposer les autres
-// champs internes (frais plateforme, etc. déjà visibles ailleurs).
+// qui a acheté (nom, email, téléphone, pays), avec quel numéro/opérateur il
+// a tenté de payer et pourquoi ça a échoué, sans exposer les autres champs
+// internes (frais plateforme, etc. déjà visibles ailleurs).
 type VendorSaleView struct {
 	*model.Sale
-	BuyerEmail   string `json:"buyer_email"`
-	ProductTitle string `json:"product_title"`
+	BuyerEmail   string  `json:"buyer_email"`
+	BuyerPhone   *string `json:"buyer_phone,omitempty"`
+	ProductTitle string  `json:"product_title"`
 }
 
 // ListByVendor retourne les ventes des produits d'un vendeur, avec les
@@ -65,7 +82,8 @@ func (r *SaleRepo) ListByVendor(ctx context.Context, vendorID string) ([]*Vendor
 		`SELECT s.id, s.product_id, s.buyer_id, s.buyer_name, s.country, s.referral_link_id, s.amount_cfa,
 			s.platform_fee_cfa, s.closer_commission_cfa, s.vendor_amount_cfa, s.payment_provider,
 			s.payment_reference, s.provider_transaction_id, s.checkout_token, s.status, s.refund_reference, s.delivered_at, s.created_at,
-			u.email, p.title
+			s.reminded_at, s.reminder_count, s.payer_phone, s.payment_operator, s.failure_reason,
+			u.email, u.phone, p.title
 		 FROM sales s
 		 JOIN products p ON p.id = s.product_id
 		 JOIN users u ON u.id = s.buyer_id
@@ -83,7 +101,8 @@ func (r *SaleRepo) ListByVendor(ctx context.Context, vendorID string) ([]*Vendor
 		if err := rows.Scan(&s.ID, &s.ProductID, &s.BuyerID, &s.BuyerName, &s.Country, &s.ReferralLinkID, &s.AmountCFA,
 			&s.PlatformFeeCFA, &s.CloserCommissionCFA, &s.VendorAmountCFA, &s.PaymentProvider,
 			&s.PaymentReference, &s.ProviderTransactionID, &s.CheckoutToken, &s.Status, &s.RefundReference, &s.DeliveredAt, &s.CreatedAt,
-			&v.BuyerEmail, &v.ProductTitle); err != nil {
+			&s.RemindedAt, &s.ReminderCount, &s.PayerPhone, &s.PaymentOperator, &s.FailureReason,
+			&v.BuyerEmail, &v.BuyerPhone, &v.ProductTitle); err != nil {
 			return nil, err
 		}
 		views = append(views, v)
@@ -240,7 +259,7 @@ const pendingSaleSelect = `
 		s.platform_fee_cfa, s.closer_commission_cfa, s.vendor_amount_cfa, s.payment_provider,
 		s.payment_reference, s.provider_transaction_id, s.checkout_token, s.status, s.refund_reference,
 		s.delivered_at, s.created_at,
-		s.reminded_at, s.reminder_count,
+		s.reminded_at, s.reminder_count, s.payer_phone, s.payment_operator, s.failure_reason,
 		u.email, u.phone, p.title, p.vendor_id, vu.email
 	 FROM sales s
 	 JOIN products p ON p.id = s.product_id
@@ -257,7 +276,7 @@ func scanPendingSaleRows(rows pgx.Rows) ([]*PendingSaleView, error) {
 			&s.PlatformFeeCFA, &s.CloserCommissionCFA, &s.VendorAmountCFA, &s.PaymentProvider,
 			&s.PaymentReference, &s.ProviderTransactionID, &s.CheckoutToken, &s.Status, &s.RefundReference,
 			&s.DeliveredAt, &s.CreatedAt,
-			&s.RemindedAt, &s.ReminderCount,
+			&s.RemindedAt, &s.ReminderCount, &s.PayerPhone, &s.PaymentOperator, &s.FailureReason,
 			&v.BuyerEmail, &v.BuyerPhone, &v.ProductTitle, &v.VendorID, &v.VendorEmail); err != nil {
 			return nil, err
 		}
@@ -271,6 +290,17 @@ func scanPendingSaleRows(rows pgx.Rows) ([]*PendingSaleView, error) {
 func (r *SaleRepo) ListPendingAndFailed(ctx context.Context) ([]*PendingSaleView, error) {
 	rows, err := r.pool.Query(ctx, pendingSaleSelect+`
 	 WHERE s.status IN ('pending', 'failed')
+	 ORDER BY s.created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	return scanPendingSaleRows(rows)
+}
+
+// ListAllDetailed — toutes les ventes, plus récentes d'abord, enrichies du
+// contact acheteur, du produit et du vendeur (vue admin « Ventes »).
+func (r *SaleRepo) ListAllDetailed(ctx context.Context) ([]*PendingSaleView, error) {
+	rows, err := r.pool.Query(ctx, pendingSaleSelect+`
 	 ORDER BY s.created_at DESC`)
 	if err != nil {
 		return nil, err

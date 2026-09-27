@@ -30,6 +30,12 @@ type Sale struct {
 	// envoyée à l'acheteur et nombre total de relances (voir SaleRepo.MarkReminded).
 	RemindedAt    *time.Time `json:"reminded_at,omitempty"`
 	ReminderCount int        `json:"reminder_count"`
+	// Détails saisis au checkout (voir migration 047) : numéro réellement
+	// débité (MSISDN international), opérateur logique choisi, et raison de
+	// l'échec éventuel — pour que vendeur et admin puissent relancer le client.
+	PayerPhone      *string `json:"payer_phone,omitempty"`
+	PaymentOperator *string `json:"payment_operator,omitempty"`
+	FailureReason   *string `json:"failure_reason,omitempty"`
 }
 
 type CreateOrderInput struct {

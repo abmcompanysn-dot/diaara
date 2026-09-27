@@ -10,6 +10,52 @@ import (
 	"github.com/diarra/backend/internal/repository"
 )
 
+// setPayerDetails renseigne sur une vente le numéro et l'opérateur saisis par
+// l'acheteur (voir migration 047) — jusqu'ici transmis au prestataire puis
+// perdus, ce qui empêchait vendeur et admin de relancer le client. Le numéro
+// est stocké au format international (MSISDN) quand l'opérateur est connu,
+// sinon tel que saisi. No-op pour un paiement sans téléphone (carte/PayPal).
+func setPayerDetails(sale *model.Sale, operatorCode, phone string) {
+	if operatorCode != "" {
+		op := operatorCode
+		sale.PaymentOperator = &op
+	}
+	if phone == "" {
+		return
+	}
+	stored := phone
+	if logicalOp, ok := payment.FindLogicalOperator(operatorCode); ok {
+		if msisdn, err := payment.NormalizePhone(logicalOp.DialCode, phone); err == nil {
+			stored = msisdn
+		}
+	}
+	sale.PayerPhone = &stored
+}
+
+// initFailureReason — raison stockée quand la demande de paiement n'a même
+// pas pu partir chez le prestataire (numéro refusé, opérateur indisponible,
+// OTP manquant...). Tronquée : c'est un indice pour l'admin, pas un log.
+func initFailureReason(err error) string {
+	if err == nil {
+		return "payment_init_failed"
+	}
+	msg := err.Error()
+	if len(msg) > 200 {
+		msg = msg[:200]
+	}
+	return "payment_init_failed: " + msg
+}
+
+// pawaPayFailureCode — code d'échec d'un dépôt PawaPay FAILED (ex
+// "PAYER_NOT_FOUND", "INSUFFICIENT_BALANCE", "PAYMENT_NOT_APPROVED"),
+// "FAILED" si PawaPay n'en fournit pas.
+func pawaPayFailureCode(status *payment.DepositStatusResponse) string {
+	if status != nil && status.Data != nil && status.Data.FailureReason != nil && status.Data.FailureReason.FailureCode != "" {
+		return status.Data.FailureReason.FailureCode
+	}
+	return "FAILED"
+}
+
 // resolveMobileMoneyProvider détermine le prestataire mobile money
 // ("pawapay" | "paydunya") pour un opérateur donné. Deux niveaux (voir
 // model.GatewayOperatorSettingKey/CheckoutProviderSettingKey) :

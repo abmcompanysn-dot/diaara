@@ -173,6 +173,7 @@ func (h *YesHandler) OpenConversation(w http.ResponseWriter, r *http.Request) {
 		ReferralLinkID:   referralLinkID,
 		Status:           string(model.SalePending),
 	}
+	setPayerDetails(microSale, input.Operator, input.Phone)
 	created, err := h.saleRepo.Create(r.Context(), microSale)
 	if err != nil {
 		http.Error(w, `{"error":"sale_creation_failed"}`, http.StatusInternalServerError)
@@ -200,7 +201,7 @@ func (h *YesHandler) OpenConversation(w http.ResponseWriter, r *http.Request) {
 		providerName, input.Operator, input.Phone, returnURL, input.OTP)
 	if err != nil {
 		log.Printf("yes micro-ticket payment_init_failed sale=%s: %v", created.ID, err)
-		h.saleRepo.UpdateStatus(r.Context(), created.ID, string(model.SaleFailed))
+		h.saleRepo.MarkFailed(r.Context(), created.ID, initFailureReason(err))
 		http.Error(w, `{"error":"payment_init_failed"}`, http.StatusBadGateway)
 		return
 	}
@@ -473,6 +474,7 @@ func (h *YesHandler) InitiateBalanceCheckout(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
+	setPayerDetails(sale, input.Operator, input.Phone)
 	created, err := h.saleRepo.Create(r.Context(), sale)
 	if err != nil {
 		http.Error(w, `{"error":"sale_creation_failed"}`, http.StatusInternalServerError)
@@ -488,7 +490,7 @@ func (h *YesHandler) InitiateBalanceCheckout(w http.ResponseWriter, r *http.Requ
 		providerName, input.Operator, input.Phone, returnURL, input.OTP)
 	if err != nil {
 		log.Printf("yes balance payment_init_failed sale=%s: %v", created.ID, err)
-		h.saleRepo.UpdateStatus(r.Context(), created.ID, string(model.SaleFailed))
+		h.saleRepo.MarkFailed(r.Context(), created.ID, initFailureReason(err))
 		http.Error(w, `{"error":"payment_init_failed"}`, http.StatusBadGateway)
 		return
 	}

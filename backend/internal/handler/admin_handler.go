@@ -1319,9 +1319,11 @@ func (h *AdminHandler) Notifications(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// Sales — GET /api/admin/sales
+// Sales — GET /api/admin/sales : toutes les ventes, avec contact acheteur
+// (nom, email, téléphone), numéro/opérateur utilisés, raison d'échec,
+// produit et vendeur — pour pouvoir relancer un client depuis l'admin.
 func (h *AdminHandler) Sales(w http.ResponseWriter, r *http.Request) {
-	sales, err := h.saleRepo.ListAll(r.Context())
+	sales, err := h.saleRepo.ListAllDetailed(r.Context())
 	if err != nil {
 		http.Error(w, `{"error":"list_failed"}`, http.StatusInternalServerError)
 		return
@@ -1446,7 +1448,7 @@ func (h *AdminHandler) CheckSaleProvider(w http.ResponseWriter, r *http.Request)
 			}
 			resp["sale_status"] = string(model.SalePaid)
 		} else if (status.Status == "failed" || status.Status == "cancelled") && sale.Status == string(model.SalePending) {
-			if err := h.saleRepo.UpdateStatus(r.Context(), sale.ID, string(model.SaleFailed)); err == nil {
+			if err := h.saleRepo.MarkFailed(r.Context(), sale.ID, status.Status); err == nil {
 				resp["sale_status"] = string(model.SaleFailed)
 			}
 		}
@@ -1484,7 +1486,7 @@ func (h *AdminHandler) CheckSaleProvider(w http.ResponseWriter, r *http.Request)
 			}
 			resp["sale_status"] = string(model.SalePaid)
 		} else if outcome.Status == "failed" && sale.Status == string(model.SalePending) {
-			if err := h.saleRepo.UpdateStatus(r.Context(), sale.ID, string(model.SaleFailed)); err == nil {
+			if err := h.saleRepo.MarkFailed(r.Context(), sale.ID, outcome.FailureReason); err == nil {
 				resp["sale_status"] = string(model.SaleFailed)
 			}
 		}
@@ -1535,8 +1537,10 @@ func (h *AdminHandler) CheckSaleProvider(w http.ResponseWriter, r *http.Request)
 			resp["sale_status"] = string(model.SalePaid)
 		}
 	case "FAILED":
-		if sale.Status == string(model.SalePending) {
-			if err := h.saleRepo.UpdateStatus(r.Context(), sale.ID, string(model.SaleFailed)); err == nil {
+		// Aussi pour une vente déjà "failed" : renseigne a posteriori la
+		// raison d'échec des ventes antérieures à la migration 047.
+		if sale.Status == string(model.SalePending) || sale.Status == string(model.SaleFailed) {
+			if err := h.saleRepo.MarkFailed(r.Context(), sale.ID, pawaPayFailureCode(status)); err == nil {
 				resp["sale_status"] = string(model.SaleFailed)
 			}
 		}

@@ -13,6 +13,7 @@ import { SearchIcon } from '@/components/icons';
 import { formatPrice, SALE_STATUS_BADGE, ORDER_STATUS_LABELS } from '@/lib/constants';
 import { CHECKOUT_COUNTRIES } from '@/lib/operators';
 import { friendlyError } from '@/lib/error-messages';
+import { PaymentDetails, PhoneContact, contactPhone } from '@/components/sale-payment-info';
 
 const STATUS_FILTERS: { value: string; label: string }[] = [
   { value: 'all', label: 'Tous' },
@@ -30,6 +31,10 @@ interface VendorSale {
   buyer_name: string;
   buyer_email: string;
   buyer_phone?: string | null;
+  payer_phone?: string | null;
+  payment_operator?: string | null;
+  payment_provider?: string;
+  failure_reason?: string | null;
   country?: string | null;
   amount_cfa: number;
   status: string;
@@ -92,7 +97,8 @@ export default function VendorSalesPage() {
         (s) =>
           s.product_title.toLowerCase().includes(q) ||
           s.buyer_name.toLowerCase().includes(q) ||
-          s.buyer_email.toLowerCase().includes(q)
+          s.buyer_email.toLowerCase().includes(q) ||
+          contactPhone(s).includes(q.replace(/\D/g, '') || q)
       );
     }
     return list;
@@ -127,7 +133,7 @@ export default function VendorSalesPage() {
             <div className="relative">
               <SearchIcon size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-green-900/40" />
               <Input
-                placeholder="Rechercher par produit ou client..."
+                placeholder="Rechercher par produit, client, email ou téléphone..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-9 bg-white"
@@ -157,9 +163,14 @@ export default function VendorSalesPage() {
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-green-950 truncate">{sale.product_title}</p>
                       <p className="text-xs text-green-900/60 truncate">{sale.buyer_name} · {sale.buyer_email}</p>
-                      {sale.buyer_phone && (
-                        <p className="text-xs text-green-900/60 truncate">📞 {sale.buyer_phone}</p>
+                      {contactPhone(sale) && (
+                        <p className="text-xs mt-0.5">
+                          <PhoneContact phone={contactPhone(sale)} />
+                        </p>
                       )}
+                      <div className="mt-1 text-xs">
+                        <PaymentDetails sale={sale} />
+                      </div>
                     </div>
                     <span className="font-mono text-sm font-bold text-green-950 shrink-0">
                       {formatPrice(sale.amount_cfa)}
@@ -202,6 +213,7 @@ export default function VendorSalesPage() {
                     <TableHead>Email</TableHead>
                     <TableHead>Téléphone</TableHead>
                     <TableHead>Pays</TableHead>
+                    <TableHead>Paiement</TableHead>
                     <TableHead>Montant</TableHead>
                     <TableHead>Statut</TableHead>
                     <TableHead>Action</TableHead>
@@ -216,8 +228,13 @@ export default function VendorSalesPage() {
                       <TableCell className="max-w-[160px] truncate">{sale.product_title}</TableCell>
                       <TableCell>{sale.buyer_name}</TableCell>
                       <TableCell className="text-sm text-green-900/70">{sale.buyer_email}</TableCell>
-                      <TableCell className="text-sm text-green-900/70 whitespace-nowrap">{sale.buyer_phone || '—'}</TableCell>
+                      <TableCell className="text-sm">
+                        <PhoneContact phone={contactPhone(sale)} />
+                      </TableCell>
                       <TableCell className="whitespace-nowrap">{countryName(sale.country)}</TableCell>
+                      <TableCell className="max-w-[200px]">
+                        <PaymentDetails sale={sale} />
+                      </TableCell>
                       <TableCell className="font-mono">{formatPrice(sale.amount_cfa)}</TableCell>
                       <TableCell>
                         <Badge variant="outline" className={SALE_STATUS_BADGE[sale.status]}>

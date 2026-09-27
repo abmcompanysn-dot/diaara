@@ -16,12 +16,21 @@ import { formatPrice, SALE_STATUS_BADGE, ORDER_STATUS_LABELS } from '@/lib/const
 import { friendlyError } from '@/lib/error-messages';
 import { openSaleReceipt } from '@/lib/sale-receipt';
 import { FileIcon, SearchIcon } from '@/components/icons';
+import { PaymentDetails, PhoneContact, contactPhone } from '@/components/sale-payment-info';
 
 interface Sale {
   id: string;
   product_id: string;
+  product_title?: string;
   buyer_id: string;
   buyer_name?: string;
+  buyer_email?: string;
+  buyer_phone?: string | null;
+  payer_phone?: string | null;
+  payment_operator?: string | null;
+  payment_provider?: string;
+  failure_reason?: string | null;
+  vendor_email?: string;
   referral_link_id?: string;
   amount_cfa: number;
   platform_fee_cfa: number;
@@ -79,7 +88,12 @@ export default function AdminSalesPage() {
     if (search.trim()) {
       const q = search.trim().toLowerCase();
       list = list.filter(
-        (s) => (s.buyer_name || '').toLowerCase().includes(q) || s.payment_reference.toLowerCase().includes(q)
+        (s) =>
+          (s.buyer_name || '').toLowerCase().includes(q) ||
+          (s.buyer_email || '').toLowerCase().includes(q) ||
+          (s.product_title || '').toLowerCase().includes(q) ||
+          contactPhone(s).includes(q.replace(/\D/g, '') || q) ||
+          s.payment_reference.toLowerCase().includes(q)
       );
     }
     return list;
@@ -118,7 +132,7 @@ export default function AdminSalesPage() {
             <div className="relative flex-1 min-w-55">
               <SearchIcon size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-green-900/40" />
               <Input
-                placeholder="Rechercher par acheteur ou référence..."
+                placeholder="Rechercher par acheteur, email, téléphone, produit ou référence..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-9 bg-white"
@@ -149,11 +163,14 @@ export default function AdminSalesPage() {
         ) : filtered.length === 0 ? (
           <EmptyState title="Aucun résultat" description="Aucune vente ne correspond à cette recherche." />
         ) : (
-          <div className="rounded-xl border border-green-900/10 bg-white shadow-card overflow-hidden">
+          <div className="rounded-xl border border-green-900/10 bg-white shadow-card overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead>Date</TableHead>
+                  <TableHead>Produit</TableHead>
+                  <TableHead>Client</TableHead>
+                  <TableHead>Paiement</TableHead>
                   <TableHead>Montant</TableHead>
                   <TableHead>Frais plateforme</TableHead>
                   <TableHead>Commission affilié</TableHead>
@@ -165,10 +182,28 @@ export default function AdminSalesPage() {
               <TableBody>
                 {filtered.map((sale) => (
                   <TableRow key={sale.id}>
-                    <TableCell className="text-sm">
+                    <TableCell className="text-sm whitespace-nowrap">
                       {new Date(sale.created_at).toLocaleString('fr-FR')}
                     </TableCell>
-                    <TableCell className="font-mono">{formatPrice(sale.amount_cfa)}</TableCell>
+                    <TableCell className="max-w-[160px]">
+                      <span className="block truncate">{sale.product_title || '—'}</span>
+                      {sale.vendor_email && (
+                        <span className="block truncate text-[11px] text-green-900/50">{sale.vendor_email}</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      <span className="block whitespace-nowrap text-green-950">{sale.buyer_name || '—'}</span>
+                      {sale.buyer_email && (
+                        <span className="block text-xs text-green-900/60">{sale.buyer_email}</span>
+                      )}
+                      <span className="block text-xs">
+                        <PhoneContact phone={contactPhone(sale)} />
+                      </span>
+                    </TableCell>
+                    <TableCell className="max-w-[220px]">
+                      <PaymentDetails sale={sale} showRaw />
+                    </TableCell>
+                    <TableCell className="font-mono whitespace-nowrap">{formatPrice(sale.amount_cfa)}</TableCell>
                     <TableCell className="font-mono">{formatPrice(sale.platform_fee_cfa)}</TableCell>
                     <TableCell>
                       {sale.referral_link_id ? (

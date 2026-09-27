@@ -108,8 +108,12 @@ var PayDunyaOperators = []PayDunyaOperator{
 		// Orange CI exige un code OTP obtenu par l'acheteur AVANT l'appel
 		// (composer #144*82# puis choisir l'option 2 sur son téléphone,
 		// voir doc PayDunya) — RequiresOTP fait apparaître un champ dédié
-		// sur le formulaire DIARRA (voir checkout-view.tsx).
-		Label: "Orange Money", Provider: "ORANGE_CI", Country: "CIV", DialCode: "225", RequiresOTP: true,
+		// sur le formulaire DIARRA (voir checkout-view.tsx), uniquement si le
+		// routage résolu est PayDunya. PawaPayCode : fusionné avec
+		// ORANGE_CIV (PawaPay) en un seul bouton au checkout — sans lui,
+		// « Orange Money » apparaissait deux fois pour la Côte d'Ivoire
+		// (constaté 2026-09-27).
+		Label: "Orange Money", Provider: "ORANGE_CI", Country: "CIV", DialCode: "225", PawaPayCode: "ORANGE_CIV", RequiresOTP: true,
 		Endpoint: "orange-money-ci", TokenField: "payment_token", WithdrawMode: "orange-money-ci",
 		BuildPayload: func(name, email, phone, token, otp string) map[string]interface{} {
 			return map[string]interface{}{"orange_money_ci_customer_fullname": name, "orange_money_ci_email": email, "orange_money_ci_phone_number": phone, "orange_money_ci_otp": otp, "payment_token": token}

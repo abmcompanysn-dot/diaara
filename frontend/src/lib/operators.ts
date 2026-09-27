@@ -305,7 +305,8 @@ export const PAYDUNYA_COUNTRIES: PayoutCountry[] = [
       // Orange CI exige un code OTP (composer #144*82# puis option 2) —
       // voir requires_otp dans api.getCheckoutConfig(), le formulaire
       // affiche un champ dédié pour cet opérateur.
-      { label: 'Orange Money', provider: 'ORANGE_CI', logo: 'orange-money.png' },
+      // pawaPayCode : fusionné avec ORANGE_CIV (un seul bouton au checkout).
+      { label: 'Orange Money', provider: 'ORANGE_CI', logo: 'orange-money.png', pawaPayCode: 'ORANGE_CIV' },
       { label: 'MTN MoMo', provider: 'MTN_CI', logo: 'mtn-momo.png', pawaPayCode: 'MTN_MOMO_CIV' },
       { label: 'Moov Money', provider: 'MOOV_CI', logo: 'moov-money.png' },
       { label: 'Wave', provider: 'WAVE_CI', logo: 'wave.png', pawaPayCode: 'WAVE_CIV' },
