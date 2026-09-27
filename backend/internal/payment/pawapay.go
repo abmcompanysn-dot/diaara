@@ -970,10 +970,11 @@ func NormalizePhone(dialCode, phone string) (string, error) {
 		return digits, nil
 	}
 	// Numéro local commençant par 0 : on retire le 0 puis on préfixe l'indicatif.
-	// Exception Bénin (229) : depuis la réforme de numérotation 2021, le "01"
-	// initial fait partie intégrante du numéro (pas un préfixe de tri à
-	// retirer) — ex "01 90 01 02 03" -> +229 01 90 01 02 03, pas +229 1 90...
-	if dialCode != "229" {
+	// Exceptions Bénin (229) et Côte d'Ivoire (225) : depuis les réformes de
+	// numérotation 2021 (10 chiffres), le "0" initial fait partie intégrante
+	// du numéro (pas un préfixe de tri à retirer) — ex "01 90 01 02 03" ->
+	// +229 01 90 01 02 03, "05 46 96 85 56" -> +225 05 46 96 85 56.
+	if dialCode != "229" && dialCode != "225" {
 		digits = strings.TrimPrefix(digits, "0")
 	}
 	if len(digits) < 6 {

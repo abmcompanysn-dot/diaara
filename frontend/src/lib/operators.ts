@@ -34,8 +34,8 @@ export const CHECKOUT_COUNTRIES: CheckoutCountry[] = [
 // au checkout : l'opérateur doit être choisi explicitement ici). Miroir exact
 // de payment.XOFOperators côté backend.
 //
-// phoneLength = nombre de chiffres attendu du numéro local (sans le 0, sans
-// l'indicatif) — indicatif à titre de guide pour l'UI, la validation finale
+// phoneLength = nombre de chiffres attendu du numéro local (sans l'indicatif ;
+// sans le 0 initial, sauf pays keepsLeadingZero où il en fait partie) — indicatif à titre de guide pour l'UI, la validation finale
 // reste côté PawaPay. logo = fichier dans /public/payments ; sinon badge texte
 // (badgeColor/badgeText, mêmes conventions que la page d'accueil).
 export interface PayoutOperator {
@@ -403,6 +403,24 @@ function buildLogicalOperators(): LogicalOperator[] {
 }
 
 export const LOGICAL_OPERATORS: LogicalOperator[] = buildLogicalOperators();
+
+// Pays où le "0" de tête fait partie intégrante du numéro (réformes de
+// numérotation à 10 chiffres) : Bénin "01 xx xx xx xx" (2021) et Côte
+// d'Ivoire "01/05/07 xx xx xx xx" (2021). Ailleurs, un "0" initial est un
+// simple préfixe national à retirer avant l'indicatif. Miroir de
+// payment.NormalizePhone côté backend.
+const LEADING_ZERO_COUNTRIES = new Set(['BEN', 'CIV']);
+
+export function keepsLeadingZero(country: string): boolean {
+  return LEADING_ZERO_COUNTRIES.has(country);
+}
+
+// Aide sous le champ téléphone, selon que le 0 initial fait partie du numéro.
+export function phoneHint(country: string, dialCode: string, phoneLength: number): string {
+  return keepsLeadingZero(country)
+    ? `${phoneLength} chiffres, avec le 0 initial (ex: +${dialCode} 0x xx xx xx xx).`
+    : `${phoneLength} chiffres, sans le 0 initial.`;
+}
 
 // Retrouve un opérateur de versement à partir de son provider (ex: "WAVE_SEN"),
 // tous pays confondus — utile pour afficher l'historique des versements où

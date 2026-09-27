@@ -16,7 +16,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { CHECKOUT_COUNTRIES, PAYOUT_COUNTRIES, PAYDUNYA_COUNTRIES, LOGICAL_OPERATORS, isLoggedIn } from '@/lib/operators';
+import { CHECKOUT_COUNTRIES, PAYOUT_COUNTRIES, PAYDUNYA_COUNTRIES, LOGICAL_OPERATORS, isLoggedIn, keepsLeadingZero, phoneHint } from '@/lib/operators';
 import { friendlyError } from '@/lib/error-messages';
 import { ArrowLeftIcon, LockIcon, CheckIcon } from '@/components/icons';
 
@@ -146,10 +146,10 @@ export default function CheckoutView() {
   };
 
   const handlePhoneChange = (raw: string) => {
-    // Bénin (229) : le "01" initial fait partie du numéro (réforme 2021),
-    // pas un préfixe à retirer — voir PayoutMethodForm pour le même cas.
+    // Bénin / Côte d'Ivoire : le "0" initial fait partie du numéro
+    // (réformes 2021), pas un préfixe à retirer — voir keepsLeadingZero.
     let digits = raw.replace(/\D/g, '');
-    if (country !== 'BEN') {
+    if (!keepsLeadingZero(country)) {
       digits = digits.replace(/^0+/, '');
     }
     digits = digits.slice(0, payoutCountry.phoneLength);
@@ -455,9 +455,7 @@ export default function CheckoutView() {
                     <p className="text-xs text-red-600">{phoneError}</p>
                   ) : (
                     <p className="text-xs text-green-900/50">
-                      {country === 'BEN'
-                        ? `${payoutCountry.phoneLength} chiffres, avec le 01 initial (ex: +229 01 xx xx xx xx).`
-                        : `${payoutCountry.phoneLength} chiffres, sans le 0 initial.`}
+                      {phoneHint(country, payoutCountry.dialCode, payoutCountry.phoneLength)}
                     </p>
                   )}
                 </div>

@@ -14,7 +14,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { CheckIcon } from '@/components/icons';
-import { PAYOUT_COUNTRIES, PAYDUNYA_COUNTRIES, CHECKOUT_COUNTRIES, LOGICAL_OPERATORS } from '@/lib/operators';
+import { PAYOUT_COUNTRIES, PAYDUNYA_COUNTRIES, CHECKOUT_COUNTRIES, LOGICAL_OPERATORS, keepsLeadingZero } from '@/lib/operators';
 import { friendlyError } from '@/lib/error-messages';
 
 interface VendorChatYesProps {
@@ -104,7 +104,7 @@ export function VendorChatYes({ productId, priceCfa, country: initialCountry, re
 
   const handlePhoneChange = (raw: string) => {
     let digits = raw.replace(/\D/g, '');
-    if (country !== 'BEN') {
+    if (!keepsLeadingZero(country)) {
       digits = digits.replace(/^0+/, '');
     }
     digits = digits.slice(0, payoutCountry.phoneLength);

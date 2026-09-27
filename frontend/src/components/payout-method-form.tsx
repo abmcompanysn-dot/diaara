@@ -12,7 +12,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { CheckIcon } from '@/components/icons';
-import { PAYOUT_COUNTRIES } from '@/lib/operators';
+import { PAYOUT_COUNTRIES, keepsLeadingZero, phoneHint } from '@/lib/operators';
 
 interface PayoutMethodFormProps {
   initialCountry?: string | null;
@@ -74,12 +74,10 @@ export function PayoutMethodForm({
   };
 
   const handlePhoneChange = (raw: string) => {
-    // Bénin (229) : depuis la réforme 2021, le "01" initial fait partie du
-    // numéro (pas un préfixe de tri à retirer comme ailleurs) — ex "01 90 01
-    // 02 03" reste tel quel, contrairement aux autres pays où un "0" de tête
-    // est un simple préfixe national à enlever avant l'indicatif.
+    // Bénin / Côte d'Ivoire : le "0" initial fait partie du numéro
+    // (réformes 2021), pas un préfixe à retirer — voir keepsLeadingZero.
     let digits = raw.replace(/\D/g, '');
-    if (country !== 'BEN') {
+    if (!keepsLeadingZero(country)) {
       digits = digits.replace(/^0+/, '');
     }
     digits = digits.slice(0, countryConfig.phoneLength);
@@ -171,9 +169,7 @@ export function PayoutMethodForm({
           <p className="text-xs text-red-600">{phoneError}</p>
         ) : (
           <p className="text-xs text-green-900/50">
-            {country === 'BEN'
-              ? `${countryConfig.phoneLength} chiffres, avec le 01 initial (ex: +229 01 xx xx xx xx).`
-              : `${countryConfig.phoneLength} chiffres, sans le 0 initial.`}
+            {phoneHint(country, countryConfig.dialCode, countryConfig.phoneLength)}
           </p>
         )}
       </div>
