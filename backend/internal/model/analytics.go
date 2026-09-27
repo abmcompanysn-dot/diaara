@@ -48,6 +48,12 @@ type SystemHealth struct {
 	Database       string  `json:"database"` // "ok" | "error"
 	Storage        string  `json:"storage"`  // "ok" | "error" | "disabled"
 	Email          string  `json:"email"`    // "ok" | "disabled" (aucun fournisseur configuré)
+	// RateLimiter : "ok" (Redis répond) | "error" (configuré mais en panne —
+	// le rate limiting est alors désactivé de fait, voir
+	// middleware.RateLimiter, fail-open volontaire) | "disabled" (REDIS_URL
+	// absent, aucune limitation nulle part, y compris hors rate limiting :
+	// cache catalogue/stats/solde vendeur).
+	RateLimiter    string  `json:"rate_limiter"`
 	UptimeSeconds  int64   `json:"uptime_seconds"`
 	GoroutineCount int     `json:"goroutine_count"`
 	MemAllocMB     float64 `json:"mem_alloc_mb"`

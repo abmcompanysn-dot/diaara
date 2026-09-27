@@ -35,6 +35,18 @@ func (c *Client) enabled() bool {
 	return c != nil && c.rdb != nil
 }
 
+// Enabled expose si Redis est configuré (REDIS_URL non vide) — distinct de
+// Ping, qui confondrait "désactivé" (nil, normal) et "configuré mais en
+// panne" (nil aussi, car Ping ne fait rien sans rdb). Sert au diagnostic
+// admin (voir AdminHandler.SystemHealth) pour distinguer les trois états
+// réels : désactivé (Enabled()==false), en panne (Enabled()==true,
+// Ping()!=nil), ok (Enabled()==true, Ping()==nil) — un rate limiter en panne
+// silencieuse (fail-open, voir middleware/rate_limit.go) doit être visible
+// quelque part plutôt que de rester invisible indéfiniment.
+func (c *Client) Enabled() bool {
+	return c.enabled()
+}
+
 func (c *Client) Ping(ctx context.Context) error {
 	if !c.enabled() {
 		return nil

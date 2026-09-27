@@ -379,6 +379,7 @@ func main() {
 	r.Use(middleware.Metrics)
 	r.Use(middleware.NewRateLimiter(redisCache, 10, 40).Middleware)
 	r.Use(middleware.SecurityHeaders)
+	r.Use(middleware.MaxRequestBody)
 
 	// CORS restrictif (ne plus utiliser "*" avec credentials)
 	corsOrigins := []string{"http://localhost:3000"}

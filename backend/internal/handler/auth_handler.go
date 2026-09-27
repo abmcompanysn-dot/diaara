@@ -5,8 +5,10 @@ import (
 	"errors"
 	"net/http"
 	"net/mail"
+	"net/url"
 	"os"
 	"regexp"
+	"strings"
 
 	"github.com/diarra/backend/internal/auth"
 	"github.com/diarra/backend/internal/middleware"
@@ -51,6 +53,45 @@ func (h *AuthHandler) setRefreshCookie(w http.ResponseWriter, token string) {
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   7 * 24 * 3600, // 7 jours
 	})
+}
+
+// allowedRefreshOrigins — même liste que CORS_ALLOWED_ORIGINS (cmd/server/main.go),
+// relue ici indépendamment : le refresh token est un cookie httpOnly (donc
+// envoyé par le navigateur sans en-tête Authorization à poser), protégé par
+// SameSite=Lax mais sans vérification Origin/Referer jusqu'ici — défense en
+// profondeur ajoutée après audit sécurité (2026-09-27) sur /refresh et
+// /logout, les deux seuls endpoints qui lisent ce cookie.
+func allowedRefreshOrigins() []string {
+	if origins := os.Getenv("CORS_ALLOWED_ORIGINS"); origins != "" {
+		return strings.Split(origins, ",")
+	}
+	return []string{"http://localhost:3000"}
+}
+
+// checkRefreshOrigin vérifie que l'en-tête Origin (ou, à défaut, Referer —
+// certains navigateurs/contextes omettent Origin sur une requête same-site)
+// correspond à une origine autorisée. Absence des DEUX en-têtes : toléré
+// (requête hors navigateur — CLI, app mobile future, health check — jamais
+// concernée par un CSRF navigateur) plutôt que bloqué, pour ne pas casser un
+// client légitime qui n'envoie simplement pas ces en-têtes.
+func checkRefreshOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		if ref := r.Header.Get("Referer"); ref != "" {
+			if u, err := url.Parse(ref); err == nil {
+				origin = u.Scheme + "://" + u.Host
+			}
+		}
+	}
+	if origin == "" {
+		return true
+	}
+	for _, allowed := range allowedRefreshOrigins() {
+		if strings.TrimSpace(allowed) == origin {
+			return true
+		}
+	}
+	return false
 }
 
 // clearRefreshCookie supprime le cookie refresh token.
@@ -380,6 +421,10 @@ func (h *AuthHandler) VerifyPhoneFirebase(w http.ResponseWriter, r *http.Request
 }
 
 func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
+	if !checkRefreshOrigin(r) {
+		http.Error(w, `{"error":"forbidden_origin"}`, http.StatusForbidden)
+		return
+	}
 	cookie, err := r.Cookie("refresh_token")
 	if err != nil {
 		http.Error(w, `{"error":"missing_token"}`, http.StatusUnauthorized)
@@ -401,6 +446,10 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	if !checkRefreshOrigin(r) {
+		http.Error(w, `{"error":"forbidden_origin"}`, http.StatusForbidden)
+		return
+	}
 	cookie, err := r.Cookie("refresh_token")
 	if err == nil && cookie.Value != "" {
 		_ = h.authService.Logout(r.Context(), cookie.Value)

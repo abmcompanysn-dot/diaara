@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/diarra/backend/internal/cache"
@@ -33,6 +34,13 @@ type RateLimiter struct {
 	// de rate/burst pour approximer le même débit soutenu qu'un token-bucket
 	// continu (ex. 0.2 req/s, burst 8 -> fenêtre de 40s).
 	window time.Duration
+	// lastErrLogUnix — horodatage (unix, secondes) du dernier WARNING Redis
+	// loggué par CETTE instance de limiter. Sans throttle, une panne Redis
+	// prolongée écrirait un log par requête (potentiellement des milliers/s
+	// en prod) sans rien ajouter d'exploitable — voir SystemHealth pour le
+	// diagnostic ponctuel, ce log sert juste à repérer le DÉBUT d'une panne
+	// dans les logs applicatifs sans devoir interroger l'API en continu.
+	lastErrLogUnix atomic.Int64
 }
 
 func NewRateLimiter(cacheClient *cache.Client, rate, burst float64) *RateLimiter {
@@ -56,7 +64,15 @@ func (l *RateLimiter) allow(ctx context.Context, key string) bool {
 func (l *RateLimiter) allowKey(ctx context.Context, key string, burst float64) bool {
 	count, err := l.cache.IncrWithExpire(ctx, "ratelimit:"+key, l.window)
 	if err != nil {
-		log.Printf("WARNING: rate limiter Redis indisponible, requête laissée passer: %v", err)
+		// Throttlé à 1 log/30s par instance (voir lastErrLogUnix) : une panne
+		// Redis prolongée ne doit pas noyer les logs applicatifs alors que le
+		// comportement (fail-open) reste inchangé pour chaque requête.
+		now := time.Now().Unix()
+		if last := l.lastErrLogUnix.Load(); now-last >= 30 {
+			if l.lastErrLogUnix.CompareAndSwap(last, now) {
+				log.Printf("WARNING: rate limiter Redis indisponible, requêtes laissées passer sans limitation: %v", err)
+			}
+		}
 		return true
 	}
 	// count == 0 : cache no-op (REDIS_URL absent) — limitation désactivée.

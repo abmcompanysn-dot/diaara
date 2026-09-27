@@ -2129,6 +2129,15 @@ func (h *AdminHandler) SystemHealth(w http.ResponseWriter, r *http.Request) {
 		health.Email = "ok"
 	}
 
+	switch {
+	case h.cache == nil || !h.cache.Enabled():
+		health.RateLimiter = "disabled"
+	case h.cache.Ping(r.Context()) != nil:
+		health.RateLimiter = "error"
+	default:
+		health.RateLimiter = "ok"
+	}
+
 	var mem runtime.MemStats
 	runtime.ReadMemStats(&mem)
 	health.GoroutineCount = runtime.NumGoroutine()
