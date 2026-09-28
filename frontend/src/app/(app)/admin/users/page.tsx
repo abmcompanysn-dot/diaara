@@ -62,6 +62,61 @@ function isSuspended(u: User) {
   return !!u.locked_until && new Date(u.locked_until) > new Date();
 }
 
+// Cellule CSV : entre guillemets (doublés à l'intérieur), et neutralisée si
+// elle commence par un caractère que Excel interpréterait comme une formule
+// (injection CSV via un email/texte saisi par un utilisateur).
+function csvCell(value: string | number): string {
+  let s = String(value ?? '');
+  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  return `"${s.replace(/"/g, '""')}"`;
+}
+
+// Téléphone : chiffres uniquement, écrit ="+225..." pour qu'Excel le garde
+// en texte (sinon "+2250546968556" devient un nombre en notation scientifique
+// et perd le 0). Sans risque d'injection : seuls des chiffres sont conservés.
+function csvPhone(phone: string | null): string {
+  const digits = (phone || '').replace(/\D/g, '');
+  return digits ? `="+${digits}"` : '""';
+}
+
+// Exporte en CSV tous les comptes NON suspendus (indépendamment des filtres
+// affichés). Séparateur ";" + BOM UTF-8 : ouverture directe et accents
+// corrects dans Excel en français.
+function exportActiveUsersCSV(users: User[]) {
+  const active = users.filter((u) => !isSuspended(u));
+  const header = [
+    'Email',
+    'Téléphone',
+    'Pays',
+    'Rôles',
+    'Admin',
+    "Date d'inscription",
+    'Produits vendus',
+    'CA généré (FCFA)',
+  ].map(csvCell);
+  const rows = active.map((u) =>
+    [
+      csvCell(u.email),
+      csvPhone(u.phone),
+      csvCell(u.country_label && u.country_label !== '—' ? u.country_label : ''),
+      csvCell((u.roles || []).map((r) => ROLE_LABELS[r] || r).join(', ') || 'Client'),
+      csvCell(u.is_admin ? 'Oui' : 'Non'),
+      csvCell(new Date(u.created_at).toLocaleDateString('fr-FR')),
+      csvCell(u.products_sold || 0),
+      csvCell(u.revenue_generated_cfa || 0),
+    ].join(';')
+  );
+  const csv = '﻿' + [header.join(';'), ...rows].join('\r\n');
+  const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `diarra-comptes-actifs-${new Date().toISOString().slice(0, 10)}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
+
 function initials(email: string) {
   return email.slice(0, 2).toUpperCase();
 }
@@ -438,7 +493,16 @@ export default function AdminUsersPage() {
         title="Utilisateurs"
         description={`${users.length} compte(s) enregistré(s)`}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              disabled={users.length === 0}
+              onClick={() => exportActiveUsersCSV(users)}
+              title="Télécharge tous les comptes non suspendus (email, téléphone, pays, rôles, inscription, ventes)"
+            >
+              Exporter en CSV ({users.filter((u) => !isSuspended(u)).length})
+            </Button>
             <Button variant="outline" size="sm" onClick={() => setGroupMsgOpen(true)}>
               Message groupé par pays
             </Button>
