@@ -1036,6 +1036,37 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
+  // Webinaires YES Business (admin) — DIARRA crée/pilote, la diffusion, le
+  // tchat et le replay restent sur l'interface Yes.abmcy.
+  adminListWebinars: () => fetchApi<{ webinars: any[] }>('/api/admin/webinars'),
+
+  adminCreateWebinar: (data: {
+    title: string;
+    description: string;
+    scheduled_start_at: string; // ISO 8601
+    estimated_duration_minutes: number;
+    access_type: 'public' | 'private';
+    participant_mic_enabled_by_default: boolean;
+    participant_camera_enabled_by_default: boolean;
+    chat_enabled: boolean;
+    qa_enabled: boolean;
+    custom_registration_fields: { key: string; label: string; required: boolean }[];
+  }) => fetchApi<{ webinar: any }>('/api/admin/webinars', { method: 'POST', body: JSON.stringify(data) }),
+
+  adminStartWebinar: (id: string, enableRecording: boolean) =>
+    fetchApi<{ webinar: any; host_token: string; websocket_token: string }>(
+      `/api/admin/webinars/${encodeURIComponent(id)}/start`,
+      { method: 'POST', body: JSON.stringify({ enable_recording: enableRecording }) }
+    ),
+
+  adminEndWebinar: (id: string) =>
+    fetchApi<{ webinar: any }>(`/api/admin/webinars/${encodeURIComponent(id)}/end`, { method: 'POST' }),
+
+  adminWebinarStats: (id: string) =>
+    fetchApi<{ registered_count: number; attended_count: number; average_watch_minutes: number }>(
+      `/api/admin/webinars/${encodeURIComponent(id)}/stats`
+    ),
+
   // Admin : liste des inscrits au DIARRA Summit.
   getSummitRegistrations: () =>
     fetchApi<{ registrations: any[]; count: number }>('/api/admin/summit/registrations'),

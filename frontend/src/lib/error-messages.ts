@@ -4,6 +4,15 @@
 const ERROR_MESSAGES: Record<string, string> = {
   // Auth
   invalid_credentials: 'Email ou mot de passe incorrect.',
+  // Webinaires YES Business (voir backend handler/webinar_handler.go).
+  yes_not_configured: 'Yes.abmcy n’est pas configuré sur le serveur (clé API manquante).',
+  yes_auth_failed: 'Yes.abmcy a refusé la clé API DIARRA (signature invalide). Vérifiez la configuration serveur.',
+  yes_unavailable: 'Yes.abmcy est momentanément indisponible. Réessayez dans quelques minutes.',
+  webinar_invalid: 'Yes.abmcy a refusé certains champs du webinaire. Vérifiez le formulaire.',
+  webinar_not_found: 'Webinaire introuvable chez Yes.abmcy.',
+  webinar_state_conflict: 'Action impossible dans l’état actuel du webinaire (déjà démarré ou terminé ?).',
+  title_required: 'Le titre est obligatoire.',
+  invalid_start_date: 'Date de début invalide.',
   user_already_exists: 'Un compte existe déjà avec cet email ou ce numéro.',
   email_already_exists: 'Un compte existe déjà avec cet email.',
   invalid_role: 'Rôle invalide.',

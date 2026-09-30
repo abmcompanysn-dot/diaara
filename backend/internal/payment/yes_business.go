@@ -205,7 +205,8 @@ func (c *YesBusinessClient) do(ctx context.Context, method, path string, body in
 
 	resp, err := c.client.Do(httpReq)
 	if err != nil {
-		return err
+		// Réseau/timeout : YES injoignable, traité comme un 502 par l'appelant.
+		return &YesAPIError{StatusCode: http.StatusBadGateway, Method: method, Path: path, Body: err.Error()}
 	}
 	defer resp.Body.Close()
 	respBody, err := io.ReadAll(resp.Body)
@@ -213,7 +214,7 @@ func (c *YesBusinessClient) do(ctx context.Context, method, path string, body in
 		return err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("%w: yes business status %d on %s %s: %s", ErrPaymentFailed, resp.StatusCode, method, path, string(respBody))
+		return &YesAPIError{StatusCode: resp.StatusCode, Method: method, Path: path, Body: string(respBody)}
 	}
 	if out != nil && len(respBody) > 0 {
 		if err := json.Unmarshal(respBody, out); err != nil {
@@ -222,6 +223,25 @@ func (c *YesBusinessClient) do(ctx context.Context, method, path string, body in
 	}
 	return nil
 }
+
+// YesAPIError — réponse non-2xx (ou YES injoignable, StatusCode 502) d'un
+// appel YES Business. Unwrap vers ErrPaymentFailed : les appelants
+// historiques (session/delivery) qui testent errors.Is(err, ErrPaymentFailed)
+// continuent de fonctionner ; les nouveaux (webinaires) distinguent 401
+// (HMAC/clé invalide), 422 (champs invalides) et 502 (YES indisponible) via
+// errors.As.
+type YesAPIError struct {
+	StatusCode int
+	Method     string
+	Path       string
+	Body       string
+}
+
+func (e *YesAPIError) Error() string {
+	return fmt.Sprintf("%v: yes business status %d on %s %s: %s", ErrPaymentFailed, e.StatusCode, e.Method, e.Path, e.Body)
+}
+
+func (e *YesAPIError) Unwrap() error { return ErrPaymentFailed }
 
 // sign — HMAC-SHA256(secret, method + "\n" + path + "\n" + timestamp + "\n" + body),
 // hex minuscules. body vide (GET, ou POST sans payload) = chaîne vide, comme

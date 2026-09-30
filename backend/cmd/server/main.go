@@ -299,6 +299,7 @@ func main() {
 	} else {
 		log.Println("WARNING: YES Business non configuré, achat conversationnel désactivé")
 	}
+	webinarHandler := handler.NewWebinarHandler(yesBusiness)
 	yesHandler := handler.NewYesHandler(yesRepo, saleRepo, productRepo, userRepo, referralRepo, settingsRepo, pawapay, paydunya, yesBusiness, s3, notifications, os.Getenv("FRONTEND_URL"), os.Getenv("API_URL"))
 	webhookHandler.SetYesHandler(yesHandler)
 	webhookHandler.SetAPIURL(os.Getenv("API_URL"))
@@ -764,6 +765,14 @@ func main() {
 
 		// Inscriptions au DIARRA Summit — même accès que les tickets (tout admin).
 		r.Get("/summit/registrations", summitHandler.List)
+
+		// Webinaires YES Business (diffusion/tchat/replay gérés par YES,
+		// DIARRA ne fait que créer/piloter) — même accès que le Summit.
+		r.Get("/webinars", webinarHandler.List)
+		r.Post("/webinars", webinarHandler.Create)
+		r.Post("/webinars/{id}/start", webinarHandler.Start)
+		r.Post("/webinars/{id}/end", webinarHandler.End)
+		r.Get("/webinars/{id}/stats", webinarHandler.Stats)
 
 		// Paliers + sponsors du Summit (CRUD complet) — même accès que le
 		// reste de l'administration Summit ci-dessus.
