@@ -1,4 +1,4 @@
-﻿# Journal des modifications — DIARRA
+# Journal des modifications — DIARRA
 
 Ce journal est spécifique au projet DIARRA (`c:\Users\Admin\DIARRA\diarra`). Il n'est jamais mélangé avec un autre projet.
 
