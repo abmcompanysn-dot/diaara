@@ -160,9 +160,9 @@ func (h *WebinarHandler) Create(w http.ResponseWriter, r *http.Request) {
 }
 
 // Start — POST /api/admin/webinars/{id}/start, corps optionnel
-// {enable_recording}. Les jetons host/websocket renvoyés par YES servent à
-// leur interface d'hébergement : relayés à l'admin pour qu'il ouvre la
-// salle, jamais stockés ni utilisés par DIARRA.
+// {enable_recording}. Renvoie le webinaire + host_join_link (bouton
+// « Rejoindre en tant qu'hôte », valable 10 min, jamais stocké) et
+// registration_link.
 func (h *WebinarHandler) Start(w http.ResponseWriter, r *http.Request) {
 	if !h.ready(w) {
 		return
@@ -178,7 +178,14 @@ func (h *WebinarHandler) Start(w http.ResponseWriter, r *http.Request) {
 		writeYesError(w, "start", err)
 		return
 	}
-	writeWebinarJSON(w, http.StatusOK, resp)
+	// Seulement les liens (doc YES §6.3) : host_token/websocket_token sont
+	// des jetons LiveKit bruts sans usage dans l'admin DIARRA, ils ne
+	// quittent pas le serveur.
+	writeWebinarJSON(w, http.StatusOK, map[string]interface{}{
+		"webinar":           resp.Webinar,
+		"host_join_link":    resp.HostJoinLink,
+		"registration_link": resp.RegistrationLink,
+	})
 }
 
 // End — POST /api/admin/webinars/{id}/end

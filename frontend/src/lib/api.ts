@@ -1088,7 +1088,7 @@ export const api = {
   }) => fetchApi<{ webinar: any }>('/api/admin/webinars', { method: 'POST', body: JSON.stringify(data) }),
 
   adminStartWebinar: (id: string, enableRecording: boolean) =>
-    fetchApi<{ webinar: any; host_token: string; websocket_token: string }>(
+    fetchApi<{ webinar: any; host_join_link: string; registration_link: string }>(
       `/api/admin/webinars/${encodeURIComponent(id)}/start`,
       { method: 'POST', body: JSON.stringify({ enable_recording: enableRecording }) }
     ),

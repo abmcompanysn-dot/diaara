@@ -74,10 +74,16 @@ func (w Webinar) MarshalJSON() ([]byte, error) {
 
 type StartWebinarResponse struct {
 	Webinar Webinar `json:"webinar"`
-	// HostToken/WebsocketToken : réservés à l'interface d'hébergement YES,
-	// jamais utilisés par le frontend DIARRA.
+	// HostToken/WebsocketToken : jetons LiveKit bruts, réservés à une
+	// intégration vidéo avancée — jamais transmis au frontend DIARRA (voir
+	// WebinarHandler.Start), qui utilise HostJoinLink.
 	HostToken      string `json:"host_token"`
 	WebsocketToken string `json:"websocket_token"`
+	// HostJoinLink — lien « Rejoindre en tant qu'hôte », valable 10 minutes :
+	// à afficher tel quel, jamais stocké (doc YES Business §6.1/6.3).
+	HostJoinLink string `json:"host_join_link"`
+	// RegistrationLink — lien PUBLIC d'inscription des participants.
+	RegistrationLink string `json:"registration_link"`
 }
 
 type WebinarStats struct {

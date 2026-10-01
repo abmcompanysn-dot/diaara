@@ -30,8 +30,17 @@ interface Webinar {
   access_type?: string;
   status?: string;
   recording_url?: string;
-  [key: string]: unknown; // champs YES non typés (liens d'inscription, etc.)
+  // Lien PUBLIC d'inscription à partager (doc YES §6.1).
+  registration_link?: string;
+  // Lien « Rejoindre en tant qu'hôte », valable 10 minutes : gardé en
+  // mémoire seulement (hostLinks), jamais stocké (doc YES §6.1/6.3).
+  host_join_link?: string;
+  [key: string]: unknown; // autres champs YES non typés
 }
+
+// Marge sous les 10 minutes de validité du lien hôte : au-delà, on propose
+// d'en obtenir un nouveau plutôt que d'ouvrir un lien sans doute expiré.
+const HOST_LINK_TTL_MS = 9 * 60 * 1000;
 
 interface Stats {
   registered_count: number;
@@ -125,6 +134,43 @@ export default function AdminWebinarsPage() {
   const [resentIds, setResentIds] = useState<Set<string>>(new Set());
   const [regSearch, setRegSearch] = useState('');
 
+  // Dernier lien hôte reçu par webinaire (réponse list ou start la plus
+  // récente) + heure de réception, en mémoire uniquement.
+  const [hostLinks, setHostLinks] = useState<Record<string, { href: string; at: number }>>({});
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+  // Re-rendu toutes les 30 s pour faire basculer un lien hôte en « expiré ».
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => setTick((n) => n + 1), 30_000);
+    return () => clearInterval(t);
+  }, []);
+
+  function rememberHostLinks(list: Webinar[]) {
+    const now = Date.now();
+    setHostLinks((prev) => {
+      const next = { ...prev };
+      for (const w of list) {
+        if (typeof w.host_join_link === 'string' && /^https?:\/\//.test(w.host_join_link)) {
+          next[w.id] = { href: w.host_join_link, at: now };
+        }
+      }
+      return next;
+    });
+  }
+
+  async function copyRegistrationLink(w: Webinar) {
+    if (!w.registration_link) return;
+    try {
+      await navigator.clipboard.writeText(w.registration_link);
+      setCopiedId(w.id);
+      setTimeout(() => setCopiedId((id) => (id === w.id ? null : id)), 2000);
+    } catch {
+      // Presse-papiers indisponible (navigateur ancien, page non sécurisée) :
+      // le lien reste sélectionnable dans le champ affiché.
+      setError('Copie impossible : sélectionnez le lien et copiez-le manuellement.');
+    }
+  }
+
   // Formulaire de création
   const [showForm, setShowForm] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -151,6 +197,7 @@ export default function AdminWebinarsPage() {
         String(b.scheduled_start_at || '').localeCompare(String(a.scheduled_start_at || ''))
       );
       setWebinars(list);
+      rememberHostLinks(list);
     } catch (err: any) {
       setError(friendlyError(err));
     } finally {
@@ -217,11 +264,15 @@ export default function AdminWebinarsPage() {
     setError('');
     setMsg('');
     try {
-      await api.adminStartWebinar(w.id, recordOnStart);
+      const r = await api.adminStartWebinar(w.id, recordOnStart);
       setMsg(
-        `« ${w.title} » est démarré${recordOnStart ? ' (enregistrement activé)' : ''}. L’hôte anime depuis l’interface Yes.abmcy (portail partenaire → onglet Webinaires).`
+        `« ${w.title} » est en direct${recordOnStart ? ' (enregistrement activé)' : ''}. Cliquez sur « Rejoindre en tant qu’hôte » pour animer.`
       );
       await load();
+      // Après load : le lien de la réponse start est le plus récent.
+      if (r.host_join_link) {
+        setHostLinks((prev) => ({ ...prev, [w.id]: { href: r.host_join_link, at: Date.now() } }));
+      }
     } catch (err: any) {
       setError(friendlyError(err));
     } finally {
@@ -473,6 +524,44 @@ export default function AdminWebinarsPage() {
                       </Badge>
                     )}
                   </div>
+
+                  {(w.registration_link || live) && (
+                    <div className="mt-3 space-y-2">
+                      {w.registration_link && (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-xs font-medium text-green-900/60">Lien d’inscription</span>
+                          <input
+                            readOnly
+                            value={w.registration_link}
+                            onFocus={(e) => e.currentTarget.select()}
+                            className="h-8 min-w-0 flex-1 rounded-md border border-green-900/15 bg-green-900/5 px-2 text-xs text-green-950"
+                            aria-label="Lien d’inscription du webinaire"
+                          />
+                          <Button size="sm" variant="outline" onClick={() => copyRegistrationLink(w)}>
+                            {copiedId === w.id ? 'Copié ✓' : 'Copier le lien'}
+                          </Button>
+                        </div>
+                      )}
+                      {live &&
+                        (() => {
+                          const link = hostLinks[w.id];
+                          const fresh = link && Date.now() - link.at < HOST_LINK_TTL_MS;
+                          return fresh ? (
+                            <Button
+                              size="sm"
+                              className="bg-red-600 hover:bg-red-700 text-white"
+                              render={<a href={link.href} target="_blank" rel="noopener noreferrer" />}
+                            >
+                              ● Rejoindre en tant qu’hôte
+                            </Button>
+                          ) : (
+                            <Button size="sm" variant="outline" disabled={loading} onClick={() => load()}>
+                              Obtenir un nouveau lien hôte (l’ancien a expiré)
+                            </Button>
+                          );
+                        })()}
+                    </div>
+                  )}
 
                   {webinarLinks(w).length > 0 && (
                     <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3 text-sm">

@@ -60,10 +60,10 @@ func TestWebinarCallsAreSigned(t *testing.T) {
 		t.Fatalf("list: %v %v %s", list, err, path)
 	}
 
-	srv = fakeYes(t, "s3cret", 200, `{"webinar":{"id":"a"},"host_token":"h","websocket_token":"ws"}`, &path)
+	srv = fakeYes(t, "s3cret", 200, `{"webinar":{"id":"a","status":"live"},"host_token":"h","websocket_token":"ws","host_join_link":"https://yes/w/a/host?t=x","registration_link":"https://yes/w/a"}`, &path)
 	st, err := newTestClient(srv.URL).StartWebinar(ctx, "a", true)
 	srv.Close()
-	if err != nil || st.HostToken != "h" || path != "POST /api/v1/yes/webinar/a/start" {
+	if err != nil || st.HostJoinLink != "https://yes/w/a/host?t=x" || st.RegistrationLink != "https://yes/w/a" || path != "POST /api/v1/yes/webinar/a/start" {
 		t.Fatalf("start: %+v %v %s", st, err, path)
 	}
 
