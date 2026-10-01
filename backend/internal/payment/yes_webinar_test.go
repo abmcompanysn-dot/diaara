@@ -82,6 +82,34 @@ func TestWebinarCallsAreSigned(t *testing.T) {
 	}
 }
 
+func TestWebinarRegistrations(t *testing.T) {
+	ctx := context.Background()
+	var path string
+
+	srv := fakeYes(t, "s3cret", 200, `[{"id":"r1","webinar_id":"a","email":"fatou@example.com","first_name":"Fatou","last_name":"Diop","phone":"","company":"","attended":true,"registered_at":"2026-09-28T10:15:00Z"}]`, &path)
+	regs, err := newTestClient(srv.URL).ListWebinarRegistrations(ctx, "a")
+	srv.Close()
+	if err != nil || len(regs) != 1 || regs[0].FirstName != "Fatou" || !regs[0].Attended || path != "GET /api/v1/yes/webinar/a/registrations" {
+		t.Fatalf("registrations: %+v %v %s", regs, err, path)
+	}
+
+	srv = fakeYes(t, "s3cret", 200, `{"status":"sent"}`, &path)
+	err = newTestClient(srv.URL).ResendWebinarRegistration(ctx, "a", "r1")
+	srv.Close()
+	if err != nil || path != "POST /api/v1/yes/webinar/a/registrations/r1/resend" {
+		t.Fatalf("resend: %v %s", err, path)
+	}
+
+	// registrationId inconnu -> 404 typé.
+	srv = fakeYes(t, "s3cret", 404, `{"error":"registration not found"}`, nil)
+	err = newTestClient(srv.URL).ResendWebinarRegistration(ctx, "a", "nope")
+	srv.Close()
+	var apiErr *YesAPIError
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != 404 {
+		t.Fatalf("resend 404: %v", err)
+	}
+}
+
 // Un id malveillant ne doit pas pouvoir changer le chemin signé.
 func TestWebinarIDIsEscaped(t *testing.T) {
 	var path string

@@ -1062,6 +1062,29 @@ export const api = {
   adminEndWebinar: (id: string) =>
     fetchApi<{ webinar: any }>(`/api/admin/webinars/${encodeURIComponent(id)}/end`, { method: 'POST' }),
 
+  adminWebinarRegistrations: (id: string) =>
+    fetchApi<{
+      registrations: {
+        id: string;
+        webinar_id: string;
+        email: string;
+        first_name: string;
+        last_name: string;
+        phone: string;
+        company: string;
+        attended: boolean;
+        registered_at: string;
+      }[];
+    }>(`/api/admin/webinars/${encodeURIComponent(id)}/registrations`),
+
+  // Renvoie l'email d'accès à UN inscrit ("ça commence bientôt" ou "c'est en
+  // direct", choisi par Yes.abmcy selon le statut du webinaire).
+  adminResendWebinarRegistration: (id: string, registrationId: string) =>
+    fetchApi<{ status: string }>(
+      `/api/admin/webinars/${encodeURIComponent(id)}/registrations/${encodeURIComponent(registrationId)}/resend`,
+      { method: 'POST' }
+    ),
+
   adminWebinarStats: (id: string) =>
     fetchApi<{ registered_count: number; attended_count: number; average_watch_minutes: number }>(
       `/api/admin/webinars/${encodeURIComponent(id)}/stats`

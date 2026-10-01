@@ -13,10 +13,10 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// WebinarHandler â€” pilotage admin des webinaires YES Business (page
-// Admin â†’ Webinaires). DIARRA crÃ©e/dÃ©marre/termine le webinaire et lit ses
+// WebinarHandler — pilotage admin des webinaires YES Business (page
+// Admin → Webinaires). DIARRA crée/démarre/termine le webinaire et lit ses
 // statistiques ; la diffusion, le tchat, les Q/R, les sondages, l'inscription
-// et le replay restent entiÃ¨rement cÃ´tÃ© interface YES (voir yes_webinar.go).
+// et le replay restent entièrement côté interface YES (voir yes_webinar.go).
 type WebinarHandler struct {
 	yes *payment.YesBusinessClient // nil si YES_BUSINESS_API_KEY/SECRET absents
 }
@@ -25,10 +25,10 @@ func NewWebinarHandler(yes *payment.YesBusinessClient) *WebinarHandler {
 	return &WebinarHandler{yes: yes}
 }
 
-// writeYesError traduit une erreur YES en rÃ©ponse HTTP propre, sans jamais
-// faire planter l'appelant : 401 (clÃ©/HMAC refusÃ©s â€” problÃ¨me de config
-// DIARRA, renvoyÃ© en 502 pour ne pas dÃ©connecter l'admin cÃ´tÃ© frontend),
-// 422 (champs invalides, dÃ©tail YES relayÃ©), 502 (YES indisponible).
+// writeYesError traduit une erreur YES en réponse HTTP propre, sans jamais
+// faire planter l'appelant : 401 (clé/HMAC refusés — problème de config
+// DIARRA, renvoyé en 502 pour ne pas déconnecter l'admin côté frontend),
+// 422 (champs invalides, détail YES relayé), 502 (YES indisponible).
 func writeYesError(w http.ResponseWriter, op string, err error) {
 	log.Printf("yes webinar %s: %v", op, err)
 	w.Header().Set("Content-Type", "application/json")
@@ -63,8 +63,8 @@ func writeYesError(w http.ResponseWriter, op string, err error) {
 	json.NewEncoder(w).Encode(map[string]string{"error": "yes_unavailable"})
 }
 
-// yesErrorDetails relaie le corps d'erreur YES (JSON si possible) â€” utile Ã
-// l'admin pour corriger un champ refusÃ© (422).
+// yesErrorDetails relaie le corps d'erreur YES (JSON si possible) — utile à
+// l'admin pour corriger un champ refusé (422).
 func yesErrorDetails(body string) interface{} {
 	var parsed interface{}
 	if json.Unmarshal([]byte(body), &parsed) == nil {
@@ -94,7 +94,7 @@ func yesCtx(r *http.Request) (context.Context, context.CancelFunc) {
 	return context.WithTimeout(r.Context(), 20*time.Second)
 }
 
-// List â€” GET /api/admin/webinars
+// List — GET /api/admin/webinars
 func (h *WebinarHandler) List(w http.ResponseWriter, r *http.Request) {
 	if !h.ready(w) {
 		return
@@ -109,9 +109,9 @@ func (h *WebinarHandler) List(w http.ResponseWriter, r *http.Request) {
 	writeWebinarJSON(w, http.StatusOK, map[string]interface{}{"webinars": webinars})
 }
 
-// Create â€” POST /api/admin/webinars. Validation minimale cÃ´tÃ© DIARRA pour
+// Create — POST /api/admin/webinars. Validation minimale côté DIARRA pour
 // renvoyer une erreur claire avant l'aller-retour YES ; YES reste l'arbitre
-// final (422 relayÃ©).
+// final (422 relayé).
 func (h *WebinarHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if !h.ready(w) {
 		return
@@ -159,10 +159,10 @@ func (h *WebinarHandler) Create(w http.ResponseWriter, r *http.Request) {
 	writeWebinarJSON(w, http.StatusCreated, map[string]interface{}{"webinar": webinar})
 }
 
-// Start â€” POST /api/admin/webinars/{id}/start, corps optionnel
-// {enable_recording}. Les jetons host/websocket renvoyÃ©s par YES servent Ã
-// leur interface d'hÃ©bergement : relayÃ©s Ã  l'admin pour qu'il ouvre la
-// salle, jamais stockÃ©s ni utilisÃ©s par DIARRA.
+// Start — POST /api/admin/webinars/{id}/start, corps optionnel
+// {enable_recording}. Les jetons host/websocket renvoyés par YES servent à
+// leur interface d'hébergement : relayés à l'admin pour qu'il ouvre la
+// salle, jamais stockés ni utilisés par DIARRA.
 func (h *WebinarHandler) Start(w http.ResponseWriter, r *http.Request) {
 	if !h.ready(w) {
 		return
@@ -181,7 +181,7 @@ func (h *WebinarHandler) Start(w http.ResponseWriter, r *http.Request) {
 	writeWebinarJSON(w, http.StatusOK, resp)
 }
 
-// End â€” POST /api/admin/webinars/{id}/end
+// End — POST /api/admin/webinars/{id}/end
 func (h *WebinarHandler) End(w http.ResponseWriter, r *http.Request) {
 	if !h.ready(w) {
 		return
@@ -196,7 +196,49 @@ func (h *WebinarHandler) End(w http.ResponseWriter, r *http.Request) {
 	writeWebinarJSON(w, http.StatusOK, map[string]interface{}{"webinar": webinar})
 }
 
-// Stats â€” GET /api/admin/webinars/{id}/stats
+// Registrations — GET /api/admin/webinars/{id}/registrations : inscrits
+// (email, prénom, nom, téléphone, entreprise, présent au live, date).
+func (h *WebinarHandler) Registrations(w http.ResponseWriter, r *http.Request) {
+	if !h.ready(w) {
+		return
+	}
+	ctx, cancel := yesCtx(r)
+	defer cancel()
+	regs, err := h.yes.ListWebinarRegistrations(ctx, chi.URLParam(r, "id"))
+	if err != nil {
+		writeYesError(w, "registrations", err)
+		return
+	}
+	writeWebinarJSON(w, http.StatusOK, map[string]interface{}{"registrations": regs})
+}
+
+// ResendRegistration — POST /api/admin/webinars/{id}/registrations/{regId}/resend :
+// renvoie l'email d'accès à UN inscrit (bouton « Relancer »). Le contenu
+// ("ça commence bientôt" / "c'est en direct") est choisi par YES selon le
+// statut du webinaire.
+func (h *WebinarHandler) ResendRegistration(w http.ResponseWriter, r *http.Request) {
+	if !h.ready(w) {
+		return
+	}
+	ctx, cancel := yesCtx(r)
+	defer cancel()
+	err := h.yes.ResendWebinarRegistration(ctx, chi.URLParam(r, "id"), chi.URLParam(r, "regId"))
+	if err != nil {
+		// 404 sur ce endpoint = inscription introuvable (doc YES §6.7), pas
+		// webinaire introuvable comme ailleurs.
+		var apiErr *payment.YesAPIError
+		if errors.As(err, &apiErr) && apiErr.StatusCode == http.StatusNotFound {
+			log.Printf("yes webinar resend: %v", err)
+			http.Error(w, `{"error":"registration_not_found"}`, http.StatusNotFound)
+			return
+		}
+		writeYesError(w, "resend", err)
+		return
+	}
+	writeWebinarJSON(w, http.StatusOK, map[string]string{"status": "sent"})
+}
+
+// Stats — GET /api/admin/webinars/{id}/stats
 func (h *WebinarHandler) Stats(w http.ResponseWriter, r *http.Request) {
 	if !h.ready(w) {
 		return

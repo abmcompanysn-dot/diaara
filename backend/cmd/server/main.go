@@ -773,6 +773,8 @@ func main() {
 		r.Post("/webinars/{id}/start", webinarHandler.Start)
 		r.Post("/webinars/{id}/end", webinarHandler.End)
 		r.Get("/webinars/{id}/stats", webinarHandler.Stats)
+		r.Get("/webinars/{id}/registrations", webinarHandler.Registrations)
+		r.Post("/webinars/{id}/registrations/{regId}/resend", webinarHandler.ResendRegistration)
 
 		// Paliers + sponsors du Summit (CRUD complet) — même accès que le
 		// reste de l'administration Summit ci-dessus.

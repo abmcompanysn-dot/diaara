@@ -138,6 +138,39 @@ func (c *YesBusinessClient) GetWebinarStats(ctx context.Context, id string) (*We
 	return &out, nil
 }
 
+// WebinarRegistration — un inscrit (doc YES Business §6.6). Attended passe
+// à true seulement une fois la personne réellement entrée dans le live.
+type WebinarRegistration struct {
+	ID           string `json:"id"`
+	WebinarID    string `json:"webinar_id"`
+	Email        string `json:"email"`
+	FirstName    string `json:"first_name"`
+	LastName     string `json:"last_name"`
+	Phone        string `json:"phone"`
+	Company      string `json:"company"`
+	Attended     bool   `json:"attended"`
+	RegisteredAt string `json:"registered_at"`
+}
+
+// ListWebinarRegistrations — GET /api/v1/yes/webinar/{id}/registrations,
+// plus ancien inscrit en premier.
+func (c *YesBusinessClient) ListWebinarRegistrations(ctx context.Context, id string) ([]WebinarRegistration, error) {
+	out := []WebinarRegistration{}
+	if err := c.do(ctx, http.MethodGet, webinarPath(id, "registrations"), nil, &out); err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// ResendWebinarRegistration — POST
+// /api/v1/yes/webinar/{id}/registrations/{registrationId}/resend, corps vide.
+// YES choisit l'email selon le statut du webinaire : "ça commence bientôt"
+// (scheduled) ou "c'est en direct maintenant" (live), avec le lien d'accès.
+func (c *YesBusinessClient) ResendWebinarRegistration(ctx context.Context, id, registrationID string) error {
+	path := webinarPath(id, "registrations/"+url.PathEscape(registrationID)+"/resend")
+	return c.do(ctx, http.MethodPost, path, nil, nil)
+}
+
 // webinarPath — l'id vient de YES (ou d'un admin) : échappé pour qu'il ne
 // puisse pas modifier le chemin signé (ex "../session/x").
 func webinarPath(id, action string) string {

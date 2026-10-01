@@ -45,10 +45,22 @@ interface RegField {
   required: boolean;
 }
 
+// Inscrit (doc YES Business §6.6).
+interface Registration {
+  id: string;
+  email: string;
+  first_name: string;
+  last_name: string;
+  phone: string;
+  company: string;
+  attended: boolean;
+  registered_at: string;
+}
+
+// Statuts documentés par YES Business (§6) : scheduled | live | ended | cancelled.
 const STATUS_LABELS: Record<string, string> = {
   scheduled: 'Programmé',
   live: 'En direct',
-  started: 'En direct',
   ended: 'Terminé',
   cancelled: 'Annulé',
 };
@@ -103,6 +115,15 @@ export default function AdminWebinarsPage() {
   const [endTarget, setEndTarget] = useState<Webinar | null>(null);
   const [startTarget, setStartTarget] = useState<Webinar | null>(null);
   const [recordOnStart, setRecordOnStart] = useState(true);
+
+  // Inscrits : chargés à la demande, un seul panneau ouvert à la fois.
+  const [regsOpenId, setRegsOpenId] = useState<string | null>(null);
+  const [regs, setRegs] = useState<Record<string, Registration[]>>({});
+  const [regsLoadingId, setRegsLoadingId] = useState<string | null>(null);
+  const [regsError, setRegsError] = useState('');
+  const [resendingId, setResendingId] = useState<string | null>(null);
+  const [resentIds, setResentIds] = useState<Set<string>>(new Set());
+  const [regSearch, setRegSearch] = useState('');
 
   // Formulaire de création
   const [showForm, setShowForm] = useState(false);
@@ -225,6 +246,44 @@ export default function AdminWebinarsPage() {
       setError(friendlyError(err));
     } finally {
       setBusyId(null);
+    }
+  }
+
+  async function loadRegistrations(w: Webinar) {
+    setRegsLoadingId(w.id);
+    setRegsError('');
+    try {
+      const r = await api.adminWebinarRegistrations(w.id);
+      setRegs((prev) => ({ ...prev, [w.id]: r.registrations || [] }));
+    } catch (err: any) {
+      setRegsError(friendlyError(err));
+    } finally {
+      setRegsLoadingId(null);
+    }
+  }
+
+  function toggleRegistrations(w: Webinar) {
+    if (regsOpenId === w.id) {
+      setRegsOpenId(null);
+      return;
+    }
+    setRegsOpenId(w.id);
+    setRegSearch('');
+    loadRegistrations(w);
+  }
+
+  async function handleResend(w: Webinar, reg: Registration) {
+    setResendingId(reg.id);
+    setRegsError('');
+    setMsg('');
+    try {
+      await api.adminResendWebinarRegistration(w.id, reg.id);
+      setResentIds((prev) => new Set(prev).add(reg.id));
+      setMsg(`Email ${(w.status || '').toLowerCase() === 'live' ? '« c’est en direct »' : '« ça commence bientôt »'} renvoyé à ${reg.email}.`);
+    } catch (err: any) {
+      setRegsError(friendlyError(err));
+    } finally {
+      setResendingId(null);
     }
   }
 
@@ -385,9 +444,17 @@ export default function AdminWebinarsPage() {
           <div className="space-y-3">
             {webinars.map((w) => {
               const status = (w.status || '').toLowerCase();
-              const ended = status === 'ended' || status === 'cancelled' || status === 'completed';
-              const live = status === 'live' || status === 'started' || status === 'in_progress';
+              const ended = status === 'ended' || status === 'cancelled';
+              const live = status === 'live';
               const s = stats[w.id];
+              const regsOpen = regsOpenId === w.id;
+              const allRegs = regs[w.id] || [];
+              const q = regSearch.trim().toLowerCase();
+              const shownRegs = q
+                ? allRegs.filter((r) =>
+                    [r.email, r.first_name, r.last_name, r.phone, r.company].some((v) => (v || '').toLowerCase().includes(q))
+                  )
+                : allRegs;
               return (
                 <div key={w.id} className="bg-white rounded-xl border border-green-900/10 shadow-card p-4">
                   <div className="flex flex-wrap items-start justify-between gap-3">
@@ -456,7 +523,119 @@ export default function AdminWebinarsPage() {
                     <Button size="sm" variant="ghost" disabled={busyId === w.id} onClick={() => handleStats(w)}>
                       {busyId === w.id ? '…' : s ? 'Actualiser les statistiques' : 'Statistiques'}
                     </Button>
+                    <Button size="sm" variant={regsOpen ? 'outline' : 'ghost'} onClick={() => toggleRegistrations(w)}>
+                      {regsOpen ? 'Masquer les inscrits' : 'Inscrits'}
+                    </Button>
                   </div>
+
+                  {regsOpen && (
+                    <div className="mt-3 pt-3 border-t border-green-900/5 space-y-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-medium text-green-950">
+                          {regsLoadingId === w.id
+                            ? 'Chargement des inscrits…'
+                            : `${allRegs.length} inscrit(s) · ${allRegs.filter((r) => r.attended).length} présent(s) au live`}
+                        </p>
+                        <div className="flex items-center gap-2">
+                          {allRegs.length > 0 && (
+                            <Input
+                              value={regSearch}
+                              onChange={(e) => setRegSearch(e.target.value)}
+                              placeholder="Rechercher un inscrit…"
+                              className="h-8 w-52 bg-white text-sm"
+                            />
+                          )}
+                          <Button size="sm" variant="ghost" disabled={regsLoadingId === w.id} onClick={() => loadRegistrations(w)}>
+                            Actualiser
+                          </Button>
+                        </div>
+                      </div>
+
+                      {regsError && (
+                        <p className="text-sm text-destructive" role="alert">
+                          {regsError}
+                        </p>
+                      )}
+                      {ended && allRegs.length > 0 && (
+                        <p className="text-xs text-green-900/50">Webinaire terminé : la relance n’est plus disponible.</p>
+                      )}
+
+                      {regsLoadingId !== w.id && allRegs.length === 0 && !regsError && (
+                        <p className="text-sm text-green-900/50">Personne n’est encore inscrit.</p>
+                      )}
+
+                      {shownRegs.length > 0 && (
+                        <ul className="divide-y divide-green-900/5 rounded-lg border border-green-900/10">
+                          {shownRegs.map((r) => {
+                            const name = [r.first_name, r.last_name].filter(Boolean).join(' ') || '—';
+                            const phoneDigits = (r.phone || '').replace(/\D/g, '');
+                            return (
+                              <li key={r.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 p-3">
+                                <div className="min-w-0">
+                                  <p className="text-sm font-medium text-green-950">
+                                    {name}
+                                    {r.company && <span className="font-normal text-green-900/60"> · {r.company}</span>}
+                                  </p>
+                                  <p className="text-xs text-green-900/60 break-all">
+                                    <a href={`mailto:${r.email}`} className="hover:underline">
+                                      {r.email}
+                                    </a>
+                                    {r.phone && (
+                                      <>
+                                        {' · '}
+                                        <a href={`tel:${r.phone}`} className="hover:underline">
+                                          {r.phone}
+                                        </a>
+                                        {phoneDigits.length >= 8 && (
+                                          <a
+                                            href={`https://wa.me/${phoneDigits}`}
+                                            target="_blank"
+                                            rel="noopener noreferrer"
+                                            className="ml-2 font-medium text-green-700 hover:underline"
+                                          >
+                                            WhatsApp
+                                          </a>
+                                        )}
+                                      </>
+                                    )}
+                                  </p>
+                                  <p className="text-[11px] text-green-900/40">
+                                    Inscrit le {r.registered_at ? new Date(r.registered_at).toLocaleString('fr-FR') : '—'}
+                                  </p>
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0">
+                                  <Badge
+                                    variant="outline"
+                                    className={r.attended ? 'border-green-300 bg-green-50 text-green-800' : 'text-green-900/50'}
+                                  >
+                                    {r.attended ? 'Présent' : 'Absent'}
+                                  </Badge>
+                                  {!ended && (
+                                    <Button
+                                      size="sm"
+                                      variant="outline"
+                                      disabled={resendingId === r.id}
+                                      onClick={() => handleResend(w, r)}
+                                      title={
+                                        live
+                                          ? 'Renvoie l’email « c’est en direct maintenant » avec le lien d’accès'
+                                          : 'Renvoie l’email « ça commence bientôt » avec le lien d’accès'
+                                      }
+                                    >
+                                      {resendingId === r.id ? 'Envoi…' : resentIds.has(r.id) ? 'Relancé ✓' : 'Relancer'}
+                                    </Button>
+                                  )}
+                                </div>
+                              </li>
+                            );
+                          })}
+                        </ul>
+                      )}
+                      {q && allRegs.length > 0 && shownRegs.length === 0 && (
+                        <p className="text-sm text-green-900/50">Aucun inscrit ne correspond à cette recherche.</p>
+                      )}
+                    </div>
+                  )}
                 </div>
               );
             })}

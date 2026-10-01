@@ -10,6 +10,7 @@ const ERROR_MESSAGES: Record<string, string> = {
   yes_unavailable: 'Yes.abmcy est momentanément indisponible. Réessayez dans quelques minutes.',
   webinar_invalid: 'Yes.abmcy a refusé certains champs du webinaire. Vérifiez le formulaire.',
   webinar_not_found: 'Webinaire introuvable chez Yes.abmcy.',
+  registration_not_found: 'Cette inscription est introuvable chez Yes.abmcy (supprimée ?).',
   webinar_state_conflict: 'Action impossible dans l’état actuel du webinaire (déjà démarré ou terminé ?).',
   title_required: 'Le titre est obligatoire.',
   invalid_start_date: 'Date de début invalide.',
