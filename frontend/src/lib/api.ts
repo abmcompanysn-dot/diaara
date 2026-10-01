@@ -14,8 +14,11 @@ interface FetchOptions extends RequestInit {
   skipAuth?: boolean;
 }
 
+// body : corps JSON complet de la réponse d'erreur, pour les écrans qui
+// affichent un détail en plus du code (ex. raison Meta d'une pub refusée,
+// montant minimum) — friendlyError reste basé sur message (le code).
 class ApiError extends Error {
-  constructor(public status: number, message: string) {
+  constructor(public status: number, message: string, public body: Record<string, any> = {}) {
     super(message);
     this.name = 'ApiError';
   }
@@ -103,7 +106,7 @@ async function fetchApi<T>(endpoint: string, options: FetchOptions = {}, isRetry
       forceLogout();
     }
     const error = await response.json().catch(() => ({ error: 'Unknown error' }));
-    throw new ApiError(response.status, error.error || 'Request failed');
+    throw new ApiError(response.status, error.error || 'Request failed', error);
   }
 
   return response.json();
@@ -1035,6 +1038,37 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(input),
     }),
+
+  // Sponsorisation de produits sur Facebook/Instagram (vendeur), payée par
+  // le solde de gains — voir backend handler/ad_handler.go.
+  getAdsConfig: () =>
+    fetchApi<{
+      enabled: boolean;
+      platforms: string[];
+      commission_pct: number;
+      min_daily_cfa: number;
+      max_duration_days: number;
+      max_amount_cfa: number;
+      available_cfa: number;
+      countries: { code: string; name: string }[];
+    }>('/api/vendor/ads/config'),
+
+  getVendorAds: () => fetchApi<{ campaigns: any[] }>('/api/vendor/ads'),
+
+  createVendorAd: (data: {
+    product_id: string;
+    amount_cfa: number;
+    duration_days: number;
+    countries: string[];
+    message: string;
+  }) => fetchApi<{ campaign: any }>('/api/vendor/ads', { method: 'POST', body: JSON.stringify(data) }),
+
+  adminListAds: () =>
+    fetchApi<{ campaigns: any[]; meta_configured: boolean; enabled: boolean; commission_pct: number; min_daily_cfa: number }>(
+      '/api/admin/ads'
+    ),
+
+  adminStopAd: (id: string) => fetchApi<{ campaign: any }>(`/api/admin/ads/${encodeURIComponent(id)}/stop`, { method: 'POST' }),
 
   // Webinaires YES Business (admin) — DIARRA crée/pilote, la diffusion, le
   // tchat et le replay restent sur l'interface Yes.abmcy.

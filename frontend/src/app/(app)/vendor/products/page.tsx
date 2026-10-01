@@ -108,6 +108,9 @@ export default function VendorProductsPage() {
             <Button variant="outline" size="sm" render={<Link href="/vendor/products/bundles" />}>
               Mes packs
             </Button>
+            <Button variant="outline" size="sm" render={<Link href="/vendor/ads" />}>
+              Mes pubs
+            </Button>
             <Button variant="outline" size="sm" render={<Link href="/vendor/messages" />}>
               Messages
             </Button>
@@ -184,6 +187,16 @@ export default function VendorProductsPage() {
                       )}
                     </div>
                     <div className="flex gap-1 shrink-0">
+                      {product.moderation_status === 'approved' && !product.deletion_requested && (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="min-h-9"
+                          render={<Link href={`/vendor/ads?product=${product.id}`} />}
+                        >
+                          Sponsoriser
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         size="sm"
@@ -260,6 +273,16 @@ export default function VendorProductsPage() {
                         )}
                       </TableCell>
                       <TableCell className="text-right space-x-1">
+                        {product.moderation_status === 'approved' && !product.deletion_requested && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="min-h-9"
+                            render={<Link href={`/vendor/ads?product=${product.id}`} />}
+                          >
+                            Sponsoriser
+                          </Button>
+                        )}
                         <Button
                           variant="ghost"
                           size="sm"

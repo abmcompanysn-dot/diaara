@@ -862,6 +862,23 @@ func (h *AdminHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Sponsorisation Meta (voir AdHandler).
+	if enabled, ok := input[model.SettingAdsEnabled]; ok && enabled != "true" && enabled != "false" {
+		http.Error(w, `{"error":"invalid_ads_enabled"}`, http.StatusBadRequest)
+		return
+	}
+	if pct, ok := input[model.SettingAdsCommissionPct]; ok {
+		if f, err := parseRate(pct); err != nil || f < 0 || f > 90 {
+			http.Error(w, `{"error":"invalid_ads_commission"}`, http.StatusBadRequest)
+			return
+		}
+	}
+	if minDaily, ok := input[model.SettingAdsMinDailyCFA]; ok {
+		if f, err := parseRate(minDaily); err != nil || f < 100 {
+			http.Error(w, `{"error":"invalid_ads_min_daily"}`, http.StatusBadRequest)
+			return
+		}
+	}
 	if enabled, ok := input[model.SettingCardPaymentEnabled]; ok {
 		if enabled != "true" && enabled != "false" {
 			http.Error(w, `{"error":"invalid_card_payment_enabled"}`, http.StatusBadRequest)

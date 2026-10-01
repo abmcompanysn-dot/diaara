@@ -24,6 +24,10 @@ type PayoutHandler struct {
 	pawapay      *payment.PawaPayClient
 	paydunya     *payment.PayDunyaClient
 	cache        *cache.Client
+	// adRepo — sponsorisations payées par le solde (voir SetAdCampaignRepo),
+	// à retrancher du disponible au même titre que les versements. nil =
+	// aucune déduction (tests, ou fonctionnalité absente).
+	adRepo *repository.AdCampaignRepo
 
 	// Cache en mémoire des limites de versement par opérateur (PawaPay
 	// Active Configuration) : ces valeurs changent rarement, on évite un
@@ -212,6 +216,20 @@ func looksLikeEmail(s string) bool {
 	return strings.IndexByte(s[at+1:], '.') > 0
 }
 
+// SetAdCampaignRepo branche la déduction des sponsorisations payées par le
+// solde (voir AdHandler) dans le calcul du disponible.
+func (h *PayoutHandler) SetAdCampaignRepo(repo *repository.AdCampaignRepo) {
+	h.adRepo = repo
+}
+
+// adDebits — sponsorisations payées par le solde et non remboursées.
+func (h *PayoutHandler) adDebits(ctx context.Context, vendorID string) (int, error) {
+	if h.adRepo == nil {
+		return 0, nil
+	}
+	return h.adRepo.BalanceDebits(ctx, vendorID)
+}
+
 // Earnings — GET /api/vendor/earnings
 // Retourne le total gagné, le disponible et l'historique des versements.
 func (h *PayoutHandler) Earnings(w http.ResponseWriter, r *http.Request) {
@@ -258,7 +276,13 @@ func (h *PayoutHandler) Earnings(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	available := totalEarned - requested
+	adsSpent, err := h.adDebits(r.Context(), userID)
+	if err != nil {
+		http.Error(w, `{"error":"stats_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	available := totalEarned - requested - adsSpent
 	if available < 0 {
 		available = 0
 	}
@@ -267,6 +291,7 @@ func (h *PayoutHandler) Earnings(w http.ResponseWriter, r *http.Request) {
 		"total_earned": totalEarned,
 		"available":    available,
 		"pending":      requested,
+		"ads_spent":    adsSpent,
 		"history":      payouts,
 		"tier":         model.VendorTier(totalEarned),
 	}
@@ -389,7 +414,13 @@ func (h *PayoutHandler) Create(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if input.AmountCFA > totalEarned-requested {
+	adsSpent, err := h.adDebits(r.Context(), userID)
+	if err != nil {
+		http.Error(w, `{"error":"stats_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	if input.AmountCFA > totalEarned-requested-adsSpent {
 		http.Error(w, `{"error":"insufficient_balance"}`, http.StatusBadRequest)
 		return
 	}

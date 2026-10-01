@@ -335,6 +335,29 @@ func main() {
 	// Versements & revenus vendeur
 	payoutHandler := handler.NewPayoutHandler(payoutRepo, saleRepo, productRepo, userRepo, settingsRepo, pawapay, paydunya, redisCache)
 
+	// Sponsorisation de produits sur Meta (Facebook + Instagram) — voir
+	// handler/ad_handler.go et payment/meta_ads.go. metaAds reste nil tant
+	// que le compte publicitaire DIARRA n'est pas configuré : la page
+	// vendeur affiche alors « bientôt disponible », rien d'autre n'est touché.
+	var metaAds *payment.MetaAdsClient
+	if os.Getenv("META_ADS_ACCESS_TOKEN") != "" && os.Getenv("META_AD_ACCOUNT_ID") != "" && os.Getenv("META_PAGE_ID") != "" {
+		metaAds = payment.NewMetaAdsClient(payment.MetaAdsConfig{
+			AccessToken:     os.Getenv("META_ADS_ACCESS_TOKEN"),
+			AppSecret:       os.Getenv("META_APP_SECRET"),
+			AdAccountID:     os.Getenv("META_AD_ACCOUNT_ID"),
+			PageID:          os.Getenv("META_PAGE_ID"),
+			InstagramUserID: os.Getenv("META_INSTAGRAM_USER_ID"),
+			Currency:        os.Getenv("META_AD_ACCOUNT_CURRENCY"),
+			GraphVersion:    os.Getenv("META_GRAPH_VERSION"),
+		})
+	} else {
+		log.Println("WARNING: Meta Ads non configuré, sponsorisation de produits indisponible")
+	}
+	adCampaignRepo := repository.NewAdCampaignRepo(pool)
+	payoutHandler.SetAdCampaignRepo(adCampaignRepo)
+	adHandler := handler.NewAdHandler(adCampaignRepo, productRepo, settingsRepo, notificationRepo, redisCache, metaAds,
+		os.Getenv("FRONTEND_URL"), os.Getenv("API_URL"))
+
 	// Support tickets
 	ticketRepo := repository.NewTicketRepo(pool)
 	ticketHandler := handler.NewTicketHandler(ticketRepo, adminPermRepo)
@@ -653,6 +676,10 @@ func main() {
 		r.Get("/payouts", payoutHandler.Earnings)
 		r.Get("/sales", saleHandler.ListVendor)
 		r.Post("/sales/{id}/remind", saleHandler.RemindVendor)
+		// Sponsorisation de produits sur Facebook/Instagram (payée par le solde).
+		r.Get("/ads/config", adHandler.Config)
+		r.Get("/ads", adHandler.ListVendor)
+		r.Post("/ads", adHandler.Create)
 	})
 
 	// Routes admin (authentifié + admin). Un admin sans scope assigné garde
@@ -743,6 +770,10 @@ func main() {
 			r.Put("/donations/recipients/{id}", donationHandler.UpdateRecipient)
 			r.Delete("/donations/recipients/{id}", donationHandler.DeleteRecipient)
 			r.Post("/donations/payouts/{id}/retry", donationHandler.RetryPayout)
+
+			// Sponsorisations Meta des vendeurs (argent réel engagé) — scope finance.
+			r.Get("/ads", adHandler.ListAdmin)
+			r.Post("/ads/{id}/stop", adHandler.Stop)
 		})
 
 		// Notifications : accessible à tout admin (même restreint), pour que
@@ -893,6 +924,10 @@ func main() {
 	// Même filet pour les versements restés "processing" (webhook prestataire
 	// perdu) : revérifie via l'API PawaPay/PayDunya et applique paid/failed.
 	go webhookHandler.RunPayoutReconcileLoop(context.Background())
+
+	// Sponsorisations Meta : statut (vérification/refus/diffusion/fin),
+	// statistiques, remboursement des campagnes refusées ou bloquées.
+	go adHandler.RunSyncLoop(context.Background())
 
 	port := os.Getenv("PORT")
 	if port == "" {

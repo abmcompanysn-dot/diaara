@@ -77,6 +77,22 @@ const ERROR_MESSAGES: Record<string, string> = {
   missing_provider_transaction_id: 'Référence de transaction manquante, remboursement impossible automatiquement.',
   refund_rejected: 'Le remboursement a été refusé par le prestataire de paiement.',
 
+  // Sponsorisation Facebook/Instagram (voir backend handler/ad_handler.go).
+  ads_unavailable: 'La sponsorisation n’est pas encore disponible. Revenez bientôt !',
+  product_not_approved: 'Ce produit doit être validé par DIARRA avant de pouvoir être sponsorisé.',
+  invalid_duration: 'Durée invalide.',
+  countries_required: 'Choisissez au moins un pays de diffusion.',
+  message_too_long: 'Le texte de la pub est trop long (500 caractères maximum).',
+  ad_amount_below_minimum: 'Montant trop faible pour cette durée.',
+  ad_amount_above_maximum: 'Montant trop élevé.',
+  ad_creation_failed: 'La sponsorisation n’a pas pu être enregistrée. Réessayez.',
+  ad_launch_failed: 'Meta n’a pas pu créer la publicité. Le montant a été recrédité sur votre solde.',
+  ad_not_running: 'Cette pub n’est pas en cours de diffusion.',
+  ad_stop_failed: 'Impossible d’arrêter la pub chez Meta pour le moment.',
+  invalid_ads_enabled: 'Valeur invalide pour l’activation des pubs.',
+  invalid_ads_commission: 'La commission doit être comprise entre 0 et 90 %.',
+  invalid_ads_min_daily: 'Le budget journalier minimum doit être d’au moins 100 FCFA.',
+
   // Générique
   invalid_request: 'Requête invalide, vérifiez les informations saisies.',
   unauthorized: 'Merci de vous connecter pour continuer.',
