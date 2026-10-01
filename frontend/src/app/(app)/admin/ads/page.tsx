@@ -1,16 +1,16 @@
 'use client';
 
 // Admin → Pubs vendeurs : toutes les sponsorisations Facebook/Instagram
-// (argent réel engagé sur le compte publicitaire Meta DIARRA), arrêt d'une
-// campagne, et réglages (activation, commission, budget journalier minimum).
+// lancées par les vendeurs depuis DIARRA, sur LEURS pages et LEURS comptes
+// publicitaires (ils paient Meta directement : aucun argent DIARRA engagé).
+// L'admin suit les campagnes, peut en arrêter une, et coupe la création de
+// nouvelles pubs avec l'interrupteur ads_enabled.
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { PageHeader } from '@/components/page-header';
 import { PageLoader } from '@/components/page-loader';
@@ -25,8 +25,6 @@ export default function AdminAdsPage() {
   const [campaigns, setCampaigns] = useState<AdCampaign[]>([]);
   const [metaConfigured, setMetaConfigured] = useState(false);
   const [enabled, setEnabled] = useState(true);
-  const [commission, setCommission] = useState('');
-  const [minDaily, setMinDaily] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -45,8 +43,6 @@ export default function AdminAdsPage() {
       setCampaigns(r.campaigns || []);
       setMetaConfigured(r.meta_configured);
       setEnabled(r.enabled);
-      setCommission(String(r.commission_pct));
-      setMinDaily(String(r.min_daily_cfa));
     } catch (err: any) {
       setError(friendlyError(err));
     } finally {
@@ -54,18 +50,15 @@ export default function AdminAdsPage() {
     }
   }
 
-  async function saveSettings(nextEnabled = enabled) {
+  async function toggleEnabled() {
+    const next = !enabled;
     setSaving(true);
     setError('');
     setMsg('');
     try {
-      await api.updateAdminSettings({
-        ads_enabled: nextEnabled ? 'true' : 'false',
-        ads_commission_pct: commission.trim(),
-        ads_min_daily_cfa: minDaily.trim(),
-      });
-      setEnabled(nextEnabled);
-      setMsg('Réglages des pubs enregistrés.');
+      await api.updateAdminSettings({ ads_enabled: next ? 'true' : 'false' });
+      setEnabled(next);
+      setMsg(next ? 'Les vendeurs peuvent créer des pubs.' : 'Création de nouvelles pubs désactivée.');
     } catch (err: any) {
       setError(friendlyError(err));
     } finally {
@@ -89,15 +82,17 @@ export default function AdminAdsPage() {
     }
   }
 
-  const totals = useMemo(() => {
-    const paid = campaigns.filter((c) => !c.refunded);
-    return {
-      revenue: paid.reduce((s, c) => s + c.amount_cfa, 0),
-      commission: paid.reduce((s, c) => s + c.commission_cfa, 0),
+  const totals = useMemo(
+    () => ({
+      count: campaigns.length,
+      budget: campaigns
+        .filter((c) => c.status !== 'failed' && c.status !== 'rejected')
+        .reduce((s, c) => s + c.budget_cfa, 0),
       spend: campaigns.reduce((s, c) => s + c.spend_cfa, 0),
       running: campaigns.filter((c) => c.status === 'active' || c.status === 'in_review').length,
-    };
-  }, [campaigns]);
+    }),
+    [campaigns]
+  );
 
   if (loading)
     return (
@@ -112,7 +107,7 @@ export default function AdminAdsPage() {
       <PageHeader
         eyebrow="// administration"
         title="Pubs vendeurs"
-        description="Sponsorisations Facebook & Instagram payées par les vendeurs"
+        description="Pubs Facebook & Instagram lancées par les vendeurs sur leurs propres comptes publicitaires"
         actions={
           <Button variant="outline" size="sm" render={<Link href="/admin" />}>
             <ArrowLeftIcon size={16} className="mr-2" />
@@ -135,49 +130,35 @@ export default function AdminAdsPage() {
 
         {!metaConfigured && (
           <div className="p-4 rounded-xl border border-amber-300 bg-amber-50 text-sm text-amber-900">
-            <p className="font-semibold">Compte publicitaire Meta non configuré</p>
+            <p className="font-semibold">App Meta non configurée</p>
             <p className="mt-1">
-              Les vendeurs voient « Bientôt disponible ». Pour activer : renseigner sur le serveur
-              META_ADS_ACCESS_TOKEN, META_AD_ACCOUNT_ID, META_PAGE_ID (et idéalement META_APP_SECRET,
-              META_AD_ACCOUNT_CURRENCY, META_INSTAGRAM_USER_ID), puis redéployer.
+              Les vendeurs voient « Bientôt disponible ». Pour activer : renseigner sur le serveur META_APP_ID,
+              META_APP_SECRET, META_OAUTH_REDIRECT_URL et META_TOKEN_ENCRYPTION_KEY, puis redéployer.
             </p>
           </div>
         )}
 
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <Kpi label="Payé par les vendeurs" value={formatPrice(totals.revenue)} />
-          <Kpi label="Commission DIARRA" value={formatPrice(totals.commission)} />
-          <Kpi label="Dépensé chez Meta" value={formatPrice(totals.spend)} />
+          <Kpi label="Campagnes" value={String(totals.count)} />
           <Kpi label="En cours" value={String(totals.running)} />
+          <Kpi label="Budgets déclarés" value={formatPrice(totals.budget)} />
+          <Kpi label="Dépensé (selon Meta)" value={formatPrice(totals.spend)} />
         </div>
 
-        <div className="bg-white rounded-xl border border-green-900/10 shadow-card p-4 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <h2 className="text-base font-semibold text-green-950">Réglages</h2>
-            <Button size="sm" variant={enabled ? 'outline' : 'default'} disabled={saving} onClick={() => saveSettings(!enabled)}>
-              {enabled ? 'Désactiver les nouvelles pubs' : 'Activer les pubs'}
-            </Button>
+        <div className="bg-white rounded-xl border border-green-900/10 shadow-card p-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold text-green-950">Création de pubs par les vendeurs</h2>
+            <p className="text-xs text-green-900/60">
+              {enabled ? 'Activée' : 'Désactivée'} · les vendeurs paient Meta directement, DIARRA ne prélève rien.
+            </p>
           </div>
-          <div className="grid gap-3 sm:grid-cols-3 items-end">
-            <div className="space-y-1.5">
-              <Label htmlFor="ads-commission">Commission DIARRA (%)</Label>
-              <Input id="ads-commission" type="number" min={0} max={90} value={commission} onChange={(e) => setCommission(e.target.value)} className="bg-white" />
-            </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="ads-min-daily">Budget pub minimum / jour (FCFA)</Label>
-              <Input id="ads-min-daily" type="number" min={100} step={100} value={minDaily} onChange={(e) => setMinDaily(e.target.value)} className="bg-white" />
-            </div>
-            <Button disabled={saving} onClick={() => saveSettings()}>
-              {saving ? 'Enregistrement…' : 'Enregistrer'}
-            </Button>
-          </div>
-          <p className="text-xs text-green-900/50">
-            La commission couvre le change FCFA → devise du compte Meta, les frais de carte et votre marge.
-          </p>
+          <Button size="sm" variant={enabled ? 'outline' : 'default'} disabled={saving} onClick={toggleEnabled}>
+            {enabled ? 'Désactiver les nouvelles pubs' : 'Activer les pubs'}
+          </Button>
         </div>
 
         {campaigns.length === 0 ? (
-          <EmptyState title="Aucune pub" description="Les sponsorisations lancées par les vendeurs apparaîtront ici." />
+          <EmptyState title="Aucune pub" description="Les pubs lancées par les vendeurs apparaîtront ici." />
         ) : (
           <div className="rounded-xl border border-green-900/10 bg-white shadow-card overflow-x-auto">
             <Table>
@@ -185,7 +166,7 @@ export default function AdminAdsPage() {
                 <TableRow>
                   <TableHead>Date</TableHead>
                   <TableHead>Produit / vendeur</TableHead>
-                  <TableHead>Montant</TableHead>
+                  <TableHead>Budget</TableHead>
                   <TableHead>Diffusion</TableHead>
                   <TableHead>Résultats</TableHead>
                   <TableHead>Statut</TableHead>
@@ -201,15 +182,18 @@ export default function AdminAdsPage() {
                       <span className="block truncate text-xs text-green-900/60">{c.vendor_email}</span>
                     </TableCell>
                     <TableCell className="whitespace-nowrap text-sm">
-                      <span className="block font-mono">{formatPrice(c.amount_cfa)}</span>
-                      <span className="block text-xs text-green-900/60">dont {formatPrice(c.commission_cfa)} commission</span>
+                      <span className="block font-mono">{formatPrice(c.budget_cfa)}</span>
+                      <span className="block text-xs text-green-900/60">compte en {c.currency}</span>
                     </TableCell>
                     <TableCell className="text-sm">
                       {c.duration_days} j · {c.countries.join(', ')}
                     </TableCell>
                     <TableCell className="text-xs whitespace-nowrap text-green-900/70">
-                      {c.impressions.toLocaleString('fr-FR')} aff. · {c.clicks.toLocaleString('fr-FR')} clics ({ctr(c.clicks, c.impressions)})
-                      <span className="block">dépensé {formatPrice(c.spend_cfa)} / {formatPrice(c.ad_budget_cfa)}</span>
+                      {c.impressions.toLocaleString('fr-FR')} aff. · {c.clicks.toLocaleString('fr-FR')} clics (
+                      {ctr(c.clicks, c.impressions)})
+                      <span className="block">
+                        dépensé {formatPrice(c.spend_cfa)} / {formatPrice(c.budget_cfa)}
+                      </span>
                     </TableCell>
                     <TableCell className="max-w-[220px]">
                       <Badge className={AD_STATUS_BADGE[c.status]}>{AD_STATUS_LABELS[c.status] || c.status}</Badge>
@@ -235,7 +219,7 @@ export default function AdminAdsPage() {
         title="Arrêter cette pub ?"
         description={
           stopTarget
-            ? `La diffusion de « ${stopTarget.product_title} » s'arrête immédiatement chez Meta. Le budget déjà dépensé n'est pas récupérable ; aucun remboursement automatique au vendeur.`
+            ? `La diffusion de « ${stopTarget.product_title} » s'arrête immédiatement chez Meta (compte publicitaire du vendeur). Le vendeur est prévenu par une notification.`
             : undefined
         }
         confirmLabel="Arrêter la pub"

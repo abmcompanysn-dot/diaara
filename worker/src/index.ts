@@ -15,7 +15,12 @@ export default {
     // redirection en se re-fetchant, ce qui échoue systématiquement en 522
     // (timeout). Comme /r/ (déjà en 'manual'), /p/ doit juste relayer la
     // 3xx telle quelle au navigateur, jamais la suivre côté serveur.
-    const isRedirectToBrowser = url.pathname.startsWith('/r/') || url.pathname.startsWith('/p/');
+    // Même chose pour le retour de Facebook Login (/api/meta/oauth/callback,
+    // voir backend handler/ad_meta_connect.go) : il redirige vers
+    // FRONTEND_URL/vendor/ads?meta=... et efface un cookie — la 3xx et son
+    // Set-Cookie doivent arriver tels quels au navigateur.
+    const isRedirectToBrowser =
+      url.pathname.startsWith('/r/') || url.pathname.startsWith('/p/') || url.pathname.startsWith('/api/meta/oauth/');
     // /p/ (partage Open Graph par produit), /feed/ et /sitemap.xml sont
     // générés dynamiquement par le backend Go (voir Caddyfile du VPS) —
     // sans ça ils tombent sur env.ASSETS.fetch et cassent silencieusement

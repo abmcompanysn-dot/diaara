@@ -1,3 +1,5 @@
+import type { AdCampaign, MetaAdAccount, MetaPage, MetaStatus } from './ads';
+
 // Vide par défaut (donc relatif/same-origin) : nginx (VPS) et le Worker
 // Cloudflare (worker/src/index.ts) proxient déjà /api/* vers le backend sur
 // le même domaine que sert la page — pas besoin de connaître l'URL finale
@@ -1039,36 +1041,51 @@ export const api = {
       body: JSON.stringify(input),
     }),
 
-  // Sponsorisation de produits sur Facebook/Instagram (vendeur), payée par
-  // le solde de gains — voir backend handler/ad_handler.go.
+  // Sponsorisation de produits sur Facebook/Instagram (vendeur) : le vendeur
+  // connecte son compte Facebook, pub sur sa page avec son compte
+  // publicitaire et paie Meta directement — voir backend
+  // handler/ad_handler.go et handler/ad_meta_connect.go.
   getAdsConfig: () =>
     fetchApi<{
       enabled: boolean;
       platforms: string[];
-      commission_pct: number;
       min_daily_cfa: number;
       max_duration_days: number;
-      max_amount_cfa: number;
-      available_cfa: number;
+      max_budget_cfa: number;
+      supported_currencies: string[];
       countries: { code: string; name: string }[];
     }>('/api/vendor/ads/config'),
 
-  getVendorAds: () => fetchApi<{ campaigns: any[] }>('/api/vendor/ads'),
+  getVendorAds: () => fetchApi<{ campaigns: AdCampaign[] }>('/api/vendor/ads'),
 
   createVendorAd: (data: {
     product_id: string;
-    amount_cfa: number;
+    budget_cfa: number;
     duration_days: number;
     countries: string[];
     message: string;
-  }) => fetchApi<{ campaign: any }>('/api/vendor/ads', { method: 'POST', body: JSON.stringify(data) }),
+  }) => fetchApi<{ campaign: AdCampaign }>('/api/vendor/ads', { method: 'POST', body: JSON.stringify(data) }),
 
-  adminListAds: () =>
-    fetchApi<{ campaigns: any[]; meta_configured: boolean; enabled: boolean; commission_pct: number; min_daily_cfa: number }>(
-      '/api/admin/ads'
-    ),
+  stopVendorAd: (id: string) =>
+    fetchApi<{ campaign: AdCampaign }>(`/api/vendor/ads/${encodeURIComponent(id)}/stop`, { method: 'POST' }),
 
-  adminStopAd: (id: string) => fetchApi<{ campaign: any }>(`/api/admin/ads/${encodeURIComponent(id)}/stop`, { method: 'POST' }),
+  // Connexion Facebook du vendeur (jamais de jeton côté navigateur).
+  getMetaStatus: () => fetchApi<MetaStatus>('/api/vendor/meta'),
+
+  // URL de la fenêtre Facebook Login (le navigateur y est ensuite redirigé).
+  getMetaConnectUrl: () => fetchApi<{ url: string }>('/api/vendor/meta/connect'),
+
+  getMetaAssets: () => fetchApi<{ pages: MetaPage[]; ad_accounts: MetaAdAccount[] }>('/api/vendor/meta/assets'),
+
+  setMetaSelection: (data: { page_id: string; ad_account_id: string }) =>
+    fetchApi<MetaStatus>('/api/vendor/meta', { method: 'PUT', body: JSON.stringify(data) }),
+
+  disconnectMeta: () => fetchApi<{ ok: boolean }>('/api/vendor/meta', { method: 'DELETE' }),
+
+  adminListAds: () => fetchApi<{ campaigns: AdCampaign[]; meta_configured: boolean; enabled: boolean }>('/api/admin/ads'),
+
+  adminStopAd: (id: string) =>
+    fetchApi<{ campaign: AdCampaign }>(`/api/admin/ads/${encodeURIComponent(id)}/stop`, { method: 'POST' }),
 
   // Webinaires YES Business (admin) — DIARRA crée/pilote, la diffusion, le
   // tchat et le replay restent sur l'interface Yes.abmcy.

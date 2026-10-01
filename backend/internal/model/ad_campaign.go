@@ -2,23 +2,22 @@ package model
 
 import "time"
 
-// AdCampaign — sponsorisation d'un produit sur une régie publicitaire
-// (Meta : Facebook + Instagram), voir migration 048 pour le détail des
-// montants et des statuts.
+// AdCampaign — sponsorisation d'un produit sur Meta (Facebook + Instagram),
+// lancée depuis DIARRA sur le compte publicitaire DU VENDEUR, qui paie Meta
+// directement. Voir migration 048 pour le détail des colonnes et statuts.
 type AdCampaign struct {
 	ID                 string     `json:"id"`
 	VendorID           string     `json:"vendor_id"`
 	ProductID          string     `json:"product_id"`
 	Platform           string     `json:"platform"`
 	Status             string     `json:"status"`
-	AmountCFA          int        `json:"amount_cfa"`
-	CommissionCFA      int        `json:"commission_cfa"`
-	AdBudgetCFA        int        `json:"ad_budget_cfa"`
+	BudgetCFA          int        `json:"budget_cfa"`
+	AdAccountID        string     `json:"ad_account_id"`
+	PageID             string     `json:"page_id"`
+	Currency           string     `json:"currency"`
 	DurationDays       int        `json:"duration_days"`
 	Countries          []string   `json:"countries"`
 	Message            string     `json:"message"`
-	PaymentMethod      string     `json:"payment_method"`
-	Refunded           bool       `json:"refunded"`
 	StartsAt           *time.Time `json:"starts_at,omitempty"`
 	EndsAt             *time.Time `json:"ends_at,omitempty"`
 	ExternalCampaignID *string    `json:"-"`
@@ -51,37 +50,57 @@ const (
 
 type CreateAdCampaignInput struct {
 	ProductID    string   `json:"product_id"`
-	AmountCFA    int      `json:"amount_cfa"`
+	BudgetCFA    int      `json:"budget_cfa"` // budget total, facturé par Meta au vendeur
 	DurationDays int      `json:"duration_days"`
 	Countries    []string `json:"countries"` // ISO 3166-1 alpha-2 (format Meta), ex "SN"
 	Message      string   `json:"message"`
 }
 
-// Réglages admin (table settings) de la sponsorisation.
-const (
-	// SettingAdsEnabled — interrupteur général ("true"/"false", "true" par
-	// défaut) : coupe la création de nouvelles campagnes sans toucher au
-	// serveur. Sans configuration Meta (META_ADS_*), la fonctionnalité reste
-	// de toute façon indisponible.
-	SettingAdsEnabled = "ads_enabled"
-	// SettingAdsCommissionPct — part DIARRA prélevée sur le montant payé par
-	// le vendeur (couvre le change, les frais de carte et la marge).
-	SettingAdsCommissionPct = "ads_commission_pct"
-	// SettingAdsMinDailyCFA — budget publicitaire minimum PAR JOUR (après
-	// commission), pour rester au-dessus du minimum journalier exigé par Meta.
-	SettingAdsMinDailyCFA = "ads_min_daily_cfa"
-)
+// VendorMetaConnection — compte Facebook connecté par le vendeur (Facebook
+// Login) et ses choix de page / compte publicitaire. Le jeton (chiffré) n'est
+// jamais sérialisé.
+type VendorMetaConnection struct {
+	VendorID       string     `json:"-"`
+	FBUserID       string     `json:"fb_user_id"`
+	FBUserName     string     `json:"fb_user_name"`
+	AccessTokenEnc string     `json:"-"`
+	TokenExpiresAt *time.Time `json:"token_expires_at,omitempty"`
+	PageID         *string    `json:"page_id,omitempty"`
+	PageName       *string    `json:"page_name,omitempty"`
+	AdAccountID    *string    `json:"ad_account_id,omitempty"`
+	AdAccountName  *string    `json:"ad_account_name,omitempty"`
+	Currency       *string    `json:"currency,omitempty"`
+	NeedsReconnect bool       `json:"needs_reconnect"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+}
+
+// Ready — page et compte publicitaire choisis, jeton valide.
+func (c *VendorMetaConnection) Ready() bool {
+	return c != nil && !c.NeedsReconnect && c.PageID != nil && *c.PageID != "" &&
+		c.AdAccountID != nil && *c.AdAccountID != "" && c.Currency != nil && *c.Currency != ""
+}
+
+// SettingAdsEnabled — interrupteur général (table settings, "true"/"false",
+// "true" par défaut) : coupe la création de nouvelles campagnes sans toucher
+// au serveur. Sans configuration Meta (META_APP_* et
+// META_TOKEN_ENCRYPTION_KEY), la fonctionnalité reste de toute façon
+// indisponible.
+const SettingAdsEnabled = "ads_enabled"
 
 const (
-	DefaultAdsCommissionPct = 20.0
-	DefaultAdsMinDailyCFA   = 1000
-	AdsMaxDurationDays      = 30
-	AdsMaxAmountCFA         = 2_000_000
-	AdsMessageMaxLen        = 500
+	// AdsMinDailyCFA — budget minimum PAR JOUR, pour rester au-dessus du
+	// minimum journalier exigé par Meta (≈ 1 € / 1 $ par jour selon la devise).
+	AdsMinDailyCFA     = 1000
+	AdsMaxDurationDays = 30
+	// AdsMaxBudgetCFA — garde-fou contre une faute de frappe (le vendeur paie
+	// lui-même Meta, mais un zéro de trop coûterait cher).
+	AdsMaxBudgetCFA  = 2_000_000
+	AdsMessageMaxLen = 500
 )
 
 // AdCountries — pays ciblables (ISO2 Meta -> libellé), alignés sur les pays
-// où DIARRA vend. Miroir de AD_COUNTRIES côté frontend (lib/ads.ts).
+// où DIARRA vend. Miroir côté frontend : renvoyé par /api/vendor/ads/config.
 var AdCountries = map[string]string{
 	"SN": "Sénégal", "CI": "Côte d'Ivoire", "BJ": "Bénin", "TG": "Togo",
 	"ML": "Mali", "BF": "Burkina Faso", "NE": "Niger", "GN": "Guinée",

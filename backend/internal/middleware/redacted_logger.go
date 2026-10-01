@@ -29,17 +29,29 @@ func RequestLogger(next http.Handler) http.Handler {
 	})
 }
 
+// redactedQueryParams — paramètres jamais écrits en clair dans les logs :
+// "token" (JWT des WebSockets) ; "code" et "state" du retour Facebook Login
+// (/api/meta/oauth/callback, voir handler/ad_meta_connect.go).
+var redactedQueryParams = map[string]bool{"token": true, "code": true, "state": true}
+
 // redactedRequestURI reproduit r.RequestURI mais remplace la valeur de tout
-// paramètre de requête nommé "token" par "***" avant de la renvoyer — jamais
-// appliqué à la requête elle-même, seulement à la chaîne loguée.
+// paramètre sensible (redactedQueryParams) par "***" avant de la renvoyer —
+// jamais appliqué à la requête elle-même, seulement à la chaîne loguée.
 func redactedRequestURI(r *http.Request) string {
 	q := r.URL.Query()
-	if _, has := q["token"]; !has {
+	sensitive := false
+	for k := range q {
+		if redactedQueryParams[k] {
+			sensitive = true
+			break
+		}
+	}
+	if !sensitive {
 		return r.RequestURI
 	}
 	redacted := make(url.Values, len(q))
 	for k, v := range q {
-		if k == "token" {
+		if redactedQueryParams[k] {
 			redacted[k] = []string{"***"}
 			continue
 		}

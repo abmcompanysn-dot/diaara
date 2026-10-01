@@ -6,42 +6,48 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"math"
 	"net/http"
 	"sort"
 	"strings"
 	"time"
 	"unicode/utf8"
 
-	"github.com/diarra/backend/internal/cache"
 	"github.com/diarra/backend/internal/middleware"
 	"github.com/diarra/backend/internal/model"
 	"github.com/diarra/backend/internal/payment"
 	"github.com/diarra/backend/internal/repository"
+	"github.com/diarra/backend/internal/secretbox"
 	"github.com/go-chi/chi/v5"
 )
 
 // AdHandler — sponsorisation de produits sur Meta (Facebook + Instagram)
-// depuis l'espace vendeur (demande du 2026-10-01). Le vendeur paie avec son
-// solde de gains ; DIARRA garde une commission et lance la campagne sur son
-// propre compte publicitaire Meta (payment/meta_ads.go). Si Meta refuse la
-// pub ou si la création échoue, la somme est rendue au solde du vendeur.
+// depuis l'espace vendeur (demande du 2026-10-01, modèle revu le même jour).
+//
+// Le vendeur connecte SON compte Facebook (Facebook Login, voir
+// ad_meta_connect.go), choisit SA page et SON compte publicitaire, puis
+// DIARRA crée la pub avec son jeton (payment/meta_ads.go). C'est le vendeur
+// qui paie Meta, sur le moyen de paiement de son compte publicitaire :
+// aucun argent ne transite par DIARRA (pas de solde débité, pas de
+// commission, pas de remboursement).
 type AdHandler struct {
 	repo          *repository.AdCampaignRepo
+	conns         *repository.MetaConnectionRepo
 	productRepo   *repository.ProductRepo
 	settingsRepo  *repository.SettingsRepo
 	notifications *repository.NotificationRepo
-	cache         *cache.Client
-	meta          *payment.MetaAdsClient // nil tant que META_ADS_* n'est pas configuré
+	meta          *payment.MetaApp // nil tant que META_APP_* n'est pas configuré
+	box           *secretbox.Box   // nil tant que META_TOKEN_ENCRYPTION_KEY n'est pas valide
 	frontendURL   string
 	apiURL        string
+	secureCookie  bool
 }
 
-func NewAdHandler(repo *repository.AdCampaignRepo, productRepo *repository.ProductRepo, settingsRepo *repository.SettingsRepo,
-	notifications *repository.NotificationRepo, cacheClient *cache.Client, meta *payment.MetaAdsClient, frontendURL, apiURL string) *AdHandler {
+func NewAdHandler(repo *repository.AdCampaignRepo, conns *repository.MetaConnectionRepo, productRepo *repository.ProductRepo,
+	settingsRepo *repository.SettingsRepo, notifications *repository.NotificationRepo, meta *payment.MetaApp, box *secretbox.Box,
+	frontendURL, apiURL string, secureCookie bool) *AdHandler {
 	return &AdHandler{
-		repo: repo, productRepo: productRepo, settingsRepo: settingsRepo, notifications: notifications,
-		cache: cacheClient, meta: meta,
+		repo: repo, conns: conns, productRepo: productRepo, settingsRepo: settingsRepo, notifications: notifications,
+		meta: meta, box: box, secureCookie: secureCookie,
 		frontendURL: strings.TrimSuffix(frontendURL, "/"), apiURL: strings.TrimSuffix(apiURL, "/"),
 	}
 }
@@ -52,64 +58,74 @@ func adJSON(w http.ResponseWriter, status int, v interface{}) {
 	json.NewEncoder(w).Encode(v)
 }
 
+// configured — app Meta + clé de chiffrement des jetons présentes.
+func (h *AdHandler) configured() bool {
+	return h.meta != nil && h.box != nil
+}
+
+// enabled — configuré ET interrupteur admin ads_enabled actif.
 func (h *AdHandler) enabled(ctx context.Context) bool {
-	return h.meta != nil && h.settingsRepo.GetBool(ctx, model.SettingAdsEnabled, true)
+	return h.configured() && h.settingsRepo.GetBool(ctx, model.SettingAdsEnabled, true)
 }
 
-func (h *AdHandler) commissionPct(ctx context.Context) float64 {
-	pct := h.settingsRepo.GetFloat(ctx, model.SettingAdsCommissionPct, model.DefaultAdsCommissionPct)
-	if pct < 0 || pct >= 100 {
-		return model.DefaultAdsCommissionPct
-	}
-	return pct
-}
-
-func (h *AdHandler) minDailyCFA(ctx context.Context) int {
-	v := int(h.settingsRepo.GetFloat(ctx, model.SettingAdsMinDailyCFA, model.DefaultAdsMinDailyCFA))
-	if v <= 0 {
-		return model.DefaultAdsMinDailyCFA
-	}
-	return v
-}
-
-// splitAmount — part DIARRA (arrondie au FCFA supérieur) et budget pub.
-func splitAmount(amount int, commissionPct float64) (commission, adBudget int) {
-	commission = int(math.Ceil(float64(amount) * commissionPct / 100))
-	return commission, amount - commission
-}
-
-// minAmountFor — montant minimum à payer pour durationDays jours, de sorte
-// que le budget pub (après commission) atteigne minDaily par jour.
-func minAmountFor(durationDays, minDaily int, commissionPct float64) int {
-	return int(math.Ceil(float64(durationDays*minDaily) / (1 - commissionPct/100)))
-}
-
-// Config — GET /api/vendor/ads/config : de quoi construire le formulaire
-// (disponibilité, commission, minimum, pays, solde disponible).
-func (h *AdHandler) Config(w http.ResponseWriter, r *http.Request) {
-	vendorID := middleware.GetUserID(r.Context())
-	available, err := h.repo.AvailableBalance(r.Context(), vendorID)
+// clientFor — client Meta du vendeur pour un compte pub / une page / une
+// devise donnés (ceux de la connexion, ou ceux d'une campagne existante).
+// Jeton indéchiffrable (clé META_TOKEN_ENCRYPTION_KEY changée) : la
+// connexion passe "à reconnecter".
+func (h *AdHandler) clientFor(ctx context.Context, conn *model.VendorMetaConnection, adAccountID, pageID, currency string) (*payment.MetaAdsClient, error) {
+	token, err := h.box.Decrypt(conn.AccessTokenEnc)
 	if err != nil {
-		http.Error(w, `{"error":"balance_failed"}`, http.StatusInternalServerError)
+		log.Printf("ads: jeton Meta indéchiffrable vendeur=%s: %v", conn.VendorID, err)
+		h.markReconnect(ctx, conn.VendorID)
+		return nil, errDecrypt
+	}
+	return h.meta.Client(payment.MetaAccount{AccessToken: token, AdAccountID: adAccountID, PageID: pageID, Currency: currency}), nil
+}
+
+// errDecrypt — jeton stocké indéchiffrable : le vendeur doit reconnecter.
+var errDecrypt = errors.New("jeton indéchiffrable")
+
+// handleTokenError — jeton expiré/révoqué (erreur Meta 190) : la connexion
+// passe "à reconnecter" et le vendeur est prévenu UNE fois. true si err est
+// bien une erreur de jeton.
+func (h *AdHandler) handleTokenError(ctx context.Context, vendorID string, err error) bool {
+	if errors.Is(err, errDecrypt) {
+		return true // déjà marqué par clientFor
+	}
+	if !payment.IsMetaTokenError(err) {
+		return false
+	}
+	h.markReconnect(ctx, vendorID)
+	return true
+}
+
+func (h *AdHandler) markReconnect(ctx context.Context, vendorID string) {
+	first, err := h.conns.MarkNeedsReconnect(ctx, vendorID)
+	if err != nil {
+		log.Printf("ads: marquage reconnexion vendeur=%s: %v", vendorID, err)
 		return
 	}
-	if available < 0 {
-		available = 0
+	if first {
+		h.notify(ctx, vendorID, "meta_reconnect", "Reconnectez votre compte Facebook",
+			"La connexion à votre compte Facebook a expiré ou a été retirée. Reconnectez-le pour suivre et lancer vos pubs.")
 	}
+}
+
+// Config — GET /api/vendor/ads/config : de quoi construire le formulaire.
+func (h *AdHandler) Config(w http.ResponseWriter, r *http.Request) {
 	countries := make([]map[string]string, 0, len(model.AdCountries))
 	for code, name := range model.AdCountries {
 		countries = append(countries, map[string]string{"code": code, "name": name})
 	}
 	sort.Slice(countries, func(i, j int) bool { return countries[i]["name"] < countries[j]["name"] })
 	adJSON(w, http.StatusOK, map[string]interface{}{
-		"enabled":           h.enabled(r.Context()),
-		"platforms":         []string{"meta"},
-		"commission_pct":    h.commissionPct(r.Context()),
-		"min_daily_cfa":     h.minDailyCFA(r.Context()),
-		"max_duration_days": model.AdsMaxDurationDays,
-		"max_amount_cfa":    model.AdsMaxAmountCFA,
-		"available_cfa":     available,
-		"countries":         countries,
+		"enabled":              h.enabled(r.Context()),
+		"platforms":            []string{"meta"},
+		"min_daily_cfa":        model.AdsMinDailyCFA,
+		"max_duration_days":    model.AdsMaxDurationDays,
+		"max_budget_cfa":       model.AdsMaxBudgetCFA,
+		"supported_currencies": payment.MetaSupportedCurrencies,
+		"countries":            countries,
 	})
 }
 
@@ -123,14 +139,32 @@ func (h *AdHandler) ListVendor(w http.ResponseWriter, r *http.Request) {
 	adJSON(w, http.StatusOK, map[string]interface{}{"campaigns": campaigns})
 }
 
-// Create — POST /api/vendor/ads : valide, débite le solde (transaction
-// verrouillée), puis lance la campagne chez Meta. Échec Meta = remboursement
-// immédiat du solde et message d'erreur au vendeur.
+// Create — POST /api/vendor/ads : valide, puis lance la campagne sur le
+// compte publicitaire du vendeur. Échec Meta = campagne "failed" + message
+// d'erreur au vendeur (rien n'est diffusé, donc rien n'est facturé par Meta).
 func (h *AdHandler) Create(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	vendorID := middleware.GetUserID(ctx)
 	if !h.enabled(ctx) {
 		http.Error(w, `{"error":"ads_unavailable"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	conn, err := h.conns.Get(ctx, vendorID)
+	if errors.Is(err, repository.ErrMetaConnectionNotFound) {
+		http.Error(w, `{"error":"meta_not_connected"}`, http.StatusConflict)
+		return
+	}
+	if err != nil {
+		http.Error(w, `{"error":"ad_creation_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	if conn.NeedsReconnect {
+		http.Error(w, `{"error":"meta_reconnect_required"}`, http.StatusConflict)
+		return
+	}
+	if !conn.Ready() {
+		http.Error(w, `{"error":"meta_selection_required"}`, http.StatusConflict)
 		return
 	}
 
@@ -154,15 +188,7 @@ func (h *AdHandler) Create(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"invalid_duration"}`, http.StatusBadRequest)
 		return
 	}
-	countries := []string{}
-	seen := map[string]bool{}
-	for _, c := range input.Countries {
-		c = strings.ToUpper(strings.TrimSpace(c))
-		if _, ok := model.AdCountries[c]; ok && !seen[c] {
-			seen[c] = true
-			countries = append(countries, c)
-		}
-	}
+	countries := normalizeAdCountries(input.Countries)
 	if len(countries) == 0 {
 		http.Error(w, `{"error":"countries_required"}`, http.StatusBadRequest)
 		return
@@ -176,42 +202,50 @@ func (h *AdHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pct := h.commissionPct(ctx)
-	minAmount := minAmountFor(input.DurationDays, h.minDailyCFA(ctx), pct)
-	if input.AmountCFA < minAmount {
-		adJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "ad_amount_below_minimum", "min_amount_cfa": minAmount})
+	if minBudget := minAdBudget(input.DurationDays); input.BudgetCFA < minBudget {
+		adJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "ad_budget_below_minimum", "min_budget_cfa": minBudget})
 		return
 	}
-	if input.AmountCFA > model.AdsMaxAmountCFA {
-		http.Error(w, `{"error":"ad_amount_above_maximum"}`, http.StatusBadRequest)
+	if input.BudgetCFA > model.AdsMaxBudgetCFA {
+		http.Error(w, `{"error":"ad_budget_above_maximum"}`, http.StatusBadRequest)
 		return
 	}
-	commission, adBudget := splitAmount(input.AmountCFA, pct)
+	// Devise du compte pub : vérifiée AVANT tout appel Meta et toute écriture.
+	if _, err := payment.XOFToMetaMinorUnits(input.BudgetCFA, *conn.Currency); err != nil {
+		adJSON(w, http.StatusBadRequest, map[string]interface{}{"error": "meta_currency_unsupported", "currency": *conn.Currency})
+		return
+	}
 
-	campaign, err := h.repo.CreateFromBalance(ctx, &model.AdCampaign{
+	client, err := h.clientFor(ctx, conn, *conn.AdAccountID, *conn.PageID, *conn.Currency)
+	if err != nil {
+		http.Error(w, `{"error":"meta_reconnect_required"}`, http.StatusConflict)
+		return
+	}
+
+	campaign, err := h.repo.Create(ctx, &model.AdCampaign{
 		VendorID: vendorID, ProductID: product.ID, Platform: "meta",
-		AmountCFA: input.AmountCFA, CommissionCFA: commission, AdBudgetCFA: adBudget,
+		BudgetCFA: input.BudgetCFA, AdAccountID: *conn.AdAccountID, PageID: *conn.PageID, Currency: *conn.Currency,
 		DurationDays: input.DurationDays, Countries: countries, Message: message,
 	})
-	if errors.Is(err, repository.ErrInsufficientBalance) {
-		http.Error(w, `{"error":"insufficient_balance"}`, http.StatusBadRequest)
-		return
-	}
 	if err != nil {
 		log.Printf("ads: création campagne vendeur=%s: %v", vendorID, err)
 		http.Error(w, `{"error":"ad_creation_failed"}`, http.StatusInternalServerError)
 		return
 	}
-	h.cache.Del(ctx, vendorBalanceCacheKey(vendorID))
 
 	// Lancement chez Meta : contexte détaché de la requête (un vendeur qui
 	// ferme la page ne doit pas interrompre la création à mi-chemin).
 	launchCtx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	if err := h.launch(launchCtx, campaign, product); err != nil {
-		reason := metaErrorReason(err)
+	if err := h.launch(launchCtx, client, campaign, product); err != nil {
 		log.Printf("ads: lancement Meta campagne=%s: %v", campaign.ID, err)
-		h.refund(launchCtx, campaign, model.AdStatusFailed, reason)
+		if h.handleTokenError(launchCtx, vendorID, err) {
+			_, _ = h.repo.MarkEnded(launchCtx, campaign.ID, model.AdStatusFailed, "Connexion Facebook expirée : reconnectez votre compte puis relancez la pub.")
+			http.Error(w, `{"error":"meta_reconnect_required"}`, http.StatusConflict)
+			return
+		}
+		reason := metaErrorReason(err)
+		_, _ = h.repo.MarkEnded(launchCtx, campaign.ID, model.AdStatusFailed, reason)
 		adJSON(w, http.StatusBadGateway, map[string]interface{}{"error": "ad_launch_failed", "details": reason})
 		return
 	}
@@ -223,8 +257,28 @@ func (h *AdHandler) Create(w http.ResponseWriter, r *http.Request) {
 	adJSON(w, http.StatusCreated, map[string]interface{}{"campaign": updated})
 }
 
+// normalizeAdCountries — codes ISO2 connus (model.AdCountries), majuscules,
+// sans doublon, dans l'ordre reçu.
+func normalizeAdCountries(in []string) []string {
+	out := []string{}
+	seen := map[string]bool{}
+	for _, c := range in {
+		c = strings.ToUpper(strings.TrimSpace(c))
+		if _, ok := model.AdCountries[c]; ok && !seen[c] {
+			seen[c] = true
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
+// minAdBudget — budget total minimum pour durationDays jours.
+func minAdBudget(durationDays int) int {
+	return durationDays * model.AdsMinDailyCFA
+}
+
 // launch crée la campagne chez Meta et enregistre ses identifiants.
-func (h *AdHandler) launch(ctx context.Context, c *model.AdCampaign, product *model.Product) error {
+func (h *AdHandler) launch(ctx context.Context, client *payment.MetaAdsClient, c *model.AdCampaign, product *model.Product) error {
 	// Début dans 10 minutes (Meta refuse un start_time dans le passé), fin
 	// après la durée choisie.
 	start := time.Now().Add(10 * time.Minute)
@@ -234,14 +288,14 @@ func (h *AdHandler) launch(ctx context.Context, c *model.AdCampaign, product *mo
 	if product.CoverImageKey != nil && *product.CoverImageKey != "" && h.apiURL != "" {
 		image = h.apiURL + "/api/products/" + product.ID + "/cover"
 	}
-	res, err := h.meta.CreateSponsoredAd(ctx, payment.SponsoredAdRequest{
+	res, err := client.CreateSponsoredAd(ctx, payment.SponsoredAdRequest{
 		Name:      fmt.Sprintf("DIARRA · %s · %s", truncateRunes(product.Title, 60), c.ID[:8]),
 		LinkURL:   fmt.Sprintf("%s/product?id=%s&utm_source=meta&utm_medium=paid&utm_campaign=%s", h.frontendURL, product.ID, c.ID),
 		Headline:  truncateRunes(product.Title, 40),
 		Message:   c.Message,
 		ImageURL:  image,
 		Countries: c.Countries,
-		BudgetXOF: c.AdBudgetCFA,
+		BudgetXOF: c.BudgetCFA,
 		StartTime: start,
 		EndTime:   end,
 	})
@@ -250,38 +304,15 @@ func (h *AdHandler) launch(ctx context.Context, c *model.AdCampaign, product *mo
 	}
 	if err := h.repo.MarkLaunched(ctx, c.ID, res.CampaignID, res.AdSetID, res.CreativeID, res.AdID, start, end); err != nil {
 		// La campagne tourne chez Meta mais DIARRA n'a pas pu l'enregistrer :
-		// l'appelant va rembourser le vendeur, donc on coupe la diffusion
-		// d'abord — jamais une pub qui dépense sur un montant remboursé.
-		if pauseErr := h.meta.PauseCampaign(ctx, res.CampaignID); pauseErr != nil {
+		// elle serait invisible pour le vendeur tout en dépensant son budget.
+		// On coupe la diffusion d'abord.
+		if pauseErr := client.PauseCampaign(ctx, res.CampaignID); pauseErr != nil {
 			log.Printf("ads: ALERTE campagne Meta %s active mais non enregistrée (campagne DIARRA %s) et pause impossible: %v",
 				res.CampaignID, c.ID, pauseErr)
 		}
 		return err
 	}
 	return nil
-}
-
-// refund — échec définitif : la somme revient au solde (une seule fois,
-// MarkRefunded est idempotent) et le vendeur est prévenu.
-func (h *AdHandler) refund(ctx context.Context, c *model.AdCampaign, status, reason string) {
-	done, err := h.repo.MarkRefunded(ctx, c.ID, status, reason)
-	if err != nil {
-		log.Printf("ads: remboursement campagne=%s: %v", c.ID, err)
-		return
-	}
-	if !done {
-		return
-	}
-	h.cache.Del(ctx, vendorBalanceCacheKey(c.VendorID))
-	title := "Sponsorisation refusée, montant remboursé"
-	if status == model.AdStatusFailed {
-		title = "Sponsorisation non lancée, montant remboursé"
-	}
-	body := fmt.Sprintf("%d FCFA ont été rendus à votre solde.", c.AmountCFA)
-	if reason != "" {
-		body += " Raison : " + truncateRunes(reason, 200)
-	}
-	h.notify(ctx, c.VendorID, "ad_refunded", title, body)
 }
 
 func (h *AdHandler) notify(ctx context.Context, userID, notifType, title, body string) {
@@ -294,6 +325,9 @@ func (h *AdHandler) notify(ctx context.Context, userID, notifType, title, body s
 // l'utilisateur s'il existe, sinon un message générique (jamais un détail
 // technique interne).
 func metaErrorReason(err error) string {
+	if errors.Is(err, payment.ErrMetaCurrencyUnsupported) {
+		return "La devise de votre compte publicitaire n'est pas prise en charge (FCFA, EUR ou USD uniquement)."
+	}
 	var metaErr *payment.MetaAPIError
 	if errors.As(err, &metaErr) {
 		if metaErr.UserMessage != "" {
@@ -313,13 +347,78 @@ func truncateRunes(s string, n int) string {
 	return string([]rune(s)[:n-1]) + "…"
 }
 
+// --- Arrêt -------------------------------------------------------------------
+
+// StopVendor — POST /api/vendor/ads/{id}/stop : le vendeur arrête sa pub
+// (mise en pause chez Meta, plus aucune dépense).
+func (h *AdHandler) StopVendor(w http.ResponseWriter, r *http.Request) {
+	c, err := h.repo.FindByID(r.Context(), chi.URLParam(r, "id"))
+	if err != nil || c.VendorID != middleware.GetUserID(r.Context()) {
+		http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
+		return
+	}
+	h.stop(w, r, c, "Arrêtée par vous.", false)
+}
+
+// Stop — POST /api/admin/ads/{id}/stop : un admin arrête une pub (contenu
+// problématique...), avec le jeton du vendeur.
+func (h *AdHandler) Stop(w http.ResponseWriter, r *http.Request) {
+	c, err := h.repo.FindByID(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
+		return
+	}
+	h.stop(w, r, c, "Arrêtée par un administrateur DIARRA.", true)
+}
+
+func (h *AdHandler) stop(w http.ResponseWriter, r *http.Request, c *model.AdCampaign, reason string, byAdmin bool) {
+	ctx := r.Context()
+	if c.Status != model.AdStatusActive && c.Status != model.AdStatusInReview {
+		http.Error(w, `{"error":"ad_not_running"}`, http.StatusConflict)
+		return
+	}
+	if !h.configured() || c.ExternalCampaignID == nil {
+		http.Error(w, `{"error":"ads_unavailable"}`, http.StatusServiceUnavailable)
+		return
+	}
+	conn, err := h.conns.Get(ctx, c.VendorID)
+	if err != nil {
+		http.Error(w, `{"error":"meta_not_connected"}`, http.StatusConflict)
+		return
+	}
+	if conn.NeedsReconnect {
+		http.Error(w, `{"error":"meta_reconnect_required"}`, http.StatusConflict)
+		return
+	}
+	client, err := h.clientFor(ctx, conn, c.AdAccountID, c.PageID, c.Currency)
+	if err != nil {
+		http.Error(w, `{"error":"meta_reconnect_required"}`, http.StatusConflict)
+		return
+	}
+	if err := client.PauseCampaign(ctx, *c.ExternalCampaignID); err != nil {
+		log.Printf("ads: arrêt campagne=%s: %v", c.ID, err)
+		if h.handleTokenError(ctx, c.VendorID, err) {
+			http.Error(w, `{"error":"meta_reconnect_required"}`, http.StatusConflict)
+			return
+		}
+		adJSON(w, http.StatusBadGateway, map[string]interface{}{"error": "ad_stop_failed", "details": metaErrorReason(err)})
+		return
+	}
+	_ = h.repo.SetStatus(ctx, c.ID, model.AdStatusStopped, reason)
+	if byAdmin {
+		h.notify(ctx, c.VendorID, "ad_stopped", "Votre pub a été arrêtée",
+			fmt.Sprintf("La sponsorisation de « %s » a été arrêtée par DIARRA.", c.ProductTitle))
+	}
+	updated, _ := h.repo.FindByID(ctx, c.ID)
+	adJSON(w, http.StatusOK, map[string]interface{}{"campaign": updated})
+}
+
 // --- Synchronisation périodique ---------------------------------------------
 
 // RunSyncLoop — toutes les 15 minutes : statut Meta (vérification, refus,
-// diffusion, fin), statistiques, et remboursement des campagnes restées
-// bloquées en création (serveur redémarré au mauvais moment).
+// diffusion, pause, fin) et statistiques, avec le jeton de chaque vendeur.
 func (h *AdHandler) RunSyncLoop(ctx context.Context) {
-	if h.meta == nil {
+	if !h.configured() {
 		log.Println("ads: synchronisation désactivée (Meta non configuré)")
 		return
 	}
@@ -339,7 +438,12 @@ func (h *AdHandler) syncPass(ctx context.Context) {
 	stuck, err := h.repo.ListStuckLaunching(ctx, 10*time.Minute)
 	if err == nil {
 		for _, c := range stuck {
-			h.refund(ctx, c, model.AdStatusFailed, "La création chez Meta a été interrompue.")
+			done, _ := h.repo.MarkEnded(ctx, c.ID, model.AdStatusFailed,
+				"La création chez Meta a été interrompue. Vérifiez votre gestionnaire de publicités Meta et supprimez-y la campagne si elle existe.")
+			if done {
+				h.notify(ctx, c.VendorID, "ad_failed", "Pub non lancée",
+					fmt.Sprintf("La création de la pub pour « %s » a été interrompue. Vous pouvez la relancer.", c.ProductTitle))
+			}
 		}
 	}
 
@@ -348,28 +452,59 @@ func (h *AdHandler) syncPass(ctx context.Context) {
 		log.Printf("ads: lecture des campagnes à synchroniser: %v", err)
 		return
 	}
+	// Une connexion par vendeur et par passage ; nil = vendeur à ignorer
+	// (déconnecté, jeton à renouveler).
+	conns := map[string]*model.VendorMetaConnection{}
 	for _, c := range campaigns {
+		conn, seen := conns[c.VendorID]
+		if !seen {
+			conn, err = h.conns.Get(ctx, c.VendorID)
+			if err != nil || conn.NeedsReconnect {
+				conn = nil
+			}
+			conns[c.VendorID] = conn
+		}
+		if conn == nil {
+			continue
+		}
+		client, err := h.clientFor(ctx, conn, c.AdAccountID, c.PageID, c.Currency)
+		if err != nil {
+			conns[c.VendorID] = nil
+			continue
+		}
 		callCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
-		h.syncOne(callCtx, c)
+		err = h.syncOne(callCtx, client, c)
 		cancel()
+		if err != nil && h.handleTokenError(ctx, c.VendorID, err) {
+			conns[c.VendorID] = nil
+		}
 	}
 }
 
-func (h *AdHandler) syncOne(ctx context.Context, c *model.AdCampaign) {
+// syncOne met à jour une campagne. Renvoie l'erreur Meta éventuelle (pour
+// détecter un jeton expiré) ; les autres erreurs sont seulement loguées.
+func (h *AdHandler) syncOne(ctx context.Context, client *payment.MetaAdsClient, c *model.AdCampaign) error {
 	if c.ExternalAdID == nil || c.ExternalCampaignID == nil {
-		return
+		return nil
 	}
 	if c.Status == model.AdStatusInReview || c.Status == model.AdStatusActive {
-		st, err := h.meta.GetAdStatus(ctx, *c.ExternalAdID)
+		st, err := client.GetAdStatus(ctx, *c.ExternalAdID)
 		if err != nil {
 			log.Printf("ads: statut Meta campagne=%s: %v", c.ID, err)
-			return
+			return err
 		}
+		ended := c.EndsAt != nil && time.Now().After(*c.EndsAt)
 		switch st.EffectiveStatus {
 		case "DISAPPROVED":
-			// Une pub refusée n'a rien dépensé : remboursement intégral.
-			h.refund(ctx, c, model.AdStatusRejected, st.ReviewFeedback)
-			return
+			reason := st.ReviewFeedback
+			if reason == "" {
+				reason = "Refusée par Meta (règles publicitaires)."
+			}
+			if done, _ := h.repo.MarkEnded(ctx, c.ID, model.AdStatusRejected, reason); done {
+				h.notify(ctx, c.VendorID, "ad_rejected", "Pub refusée par Meta",
+					fmt.Sprintf("Meta a refusé la pub pour « %s ». Raison : %s", c.ProductTitle, truncateRunes(reason, 200)))
+			}
+			return nil
 		case "ACTIVE":
 			if c.Status == model.AdStatusInReview {
 				_ = h.repo.SetStatus(ctx, c.ID, model.AdStatusActive, "")
@@ -379,20 +514,28 @@ func (h *AdHandler) syncOne(ctx context.Context, c *model.AdCampaign) {
 			}
 		case "WITH_ISSUES":
 			_ = h.repo.SetStatus(ctx, c.ID, c.Status, st.ReviewFeedback)
+		case "PAUSED", "CAMPAIGN_PAUSED", "ADSET_PAUSED", "ARCHIVED", "DELETED":
+			// Le vendeur a arrêté la pub directement dans son gestionnaire de
+			// publicités Meta (c'est son compte).
+			if !ended {
+				_ = h.repo.SetStatus(ctx, c.ID, model.AdStatusStopped, "Arrêtée depuis le gestionnaire de publicités Meta.")
+				c.Status = model.AdStatusStopped
+			}
 		}
-		if c.Status == model.AdStatusActive && c.EndsAt != nil && time.Now().After(*c.EndsAt) {
+		if c.Status == model.AdStatusActive && ended {
 			_ = h.repo.SetStatus(ctx, c.ID, model.AdStatusCompleted, "")
 		}
 	}
 	if c.Status == model.AdStatusInReview {
-		return // pas encore de statistiques
+		return nil // pas encore de statistiques
 	}
-	ins, err := h.meta.GetCampaignInsights(ctx, *c.ExternalCampaignID)
+	ins, err := client.GetCampaignInsights(ctx, *c.ExternalCampaignID)
 	if err != nil {
 		log.Printf("ads: statistiques Meta campagne=%s: %v", c.ID, err)
-		return
+		return err
 	}
 	_ = h.repo.UpdateStats(ctx, c.ID, ins.Impressions, ins.Reach, ins.Clicks, ins.SpendXOF)
+	return nil
 }
 
 // --- Admin ---------------------------------------------------------------------
@@ -406,38 +549,7 @@ func (h *AdHandler) ListAdmin(w http.ResponseWriter, r *http.Request) {
 	}
 	adJSON(w, http.StatusOK, map[string]interface{}{
 		"campaigns":       campaigns,
-		"meta_configured": h.meta != nil,
+		"meta_configured": h.configured(),
 		"enabled":         h.enabled(r.Context()),
-		"commission_pct":  h.commissionPct(r.Context()),
-		"min_daily_cfa":   h.minDailyCFA(r.Context()),
 	})
-}
-
-// Stop — POST /api/admin/ads/{id}/stop : met la campagne en pause chez Meta
-// (diffusion arrêtée). Pas de remboursement automatique : le budget déjà
-// dépensé ne revient pas, l'admin décide au cas par cas.
-func (h *AdHandler) Stop(w http.ResponseWriter, r *http.Request) {
-	c, err := h.repo.FindByID(r.Context(), chi.URLParam(r, "id"))
-	if err != nil {
-		http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
-		return
-	}
-	if c.Status != model.AdStatusActive && c.Status != model.AdStatusInReview {
-		http.Error(w, `{"error":"ad_not_running"}`, http.StatusConflict)
-		return
-	}
-	if h.meta == nil || c.ExternalCampaignID == nil {
-		http.Error(w, `{"error":"ads_unavailable"}`, http.StatusServiceUnavailable)
-		return
-	}
-	if err := h.meta.PauseCampaign(r.Context(), *c.ExternalCampaignID); err != nil {
-		log.Printf("ads: arrêt campagne=%s: %v", c.ID, err)
-		adJSON(w, http.StatusBadGateway, map[string]interface{}{"error": "ad_stop_failed", "details": metaErrorReason(err)})
-		return
-	}
-	_ = h.repo.SetStatus(r.Context(), c.ID, model.AdStatusStopped, "Arrêtée par un administrateur DIARRA.")
-	h.notify(r.Context(), c.VendorID, "ad_stopped", "Votre pub a été arrêtée",
-		fmt.Sprintf("La sponsorisation de « %s » a été arrêtée par DIARRA.", c.ProductTitle))
-	updated, _ := h.repo.FindByID(r.Context(), c.ID)
-	adJSON(w, http.StatusOK, map[string]interface{}{"campaign": updated})
 }

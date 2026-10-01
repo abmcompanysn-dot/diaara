@@ -21,6 +21,7 @@ import (
 	"github.com/diarra/backend/internal/payment"
 	"github.com/diarra/backend/internal/realtime"
 	"github.com/diarra/backend/internal/repository"
+	"github.com/diarra/backend/internal/secretbox"
 	"github.com/diarra/backend/internal/service"
 	"github.com/diarra/backend/internal/sms"
 	"github.com/diarra/backend/internal/storage"
@@ -336,27 +337,32 @@ func main() {
 	payoutHandler := handler.NewPayoutHandler(payoutRepo, saleRepo, productRepo, userRepo, settingsRepo, pawapay, paydunya, redisCache)
 
 	// Sponsorisation de produits sur Meta (Facebook + Instagram) — voir
-	// handler/ad_handler.go et payment/meta_ads.go. metaAds reste nil tant
-	// que le compte publicitaire DIARRA n'est pas configuré : la page
-	// vendeur affiche alors « bientôt disponible », rien d'autre n'est touché.
-	var metaAds *payment.MetaAdsClient
-	if os.Getenv("META_ADS_ACCESS_TOKEN") != "" && os.Getenv("META_AD_ACCOUNT_ID") != "" && os.Getenv("META_PAGE_ID") != "" {
-		metaAds = payment.NewMetaAdsClient(payment.MetaAdsConfig{
-			AccessToken:     os.Getenv("META_ADS_ACCESS_TOKEN"),
-			AppSecret:       os.Getenv("META_APP_SECRET"),
-			AdAccountID:     os.Getenv("META_AD_ACCOUNT_ID"),
-			PageID:          os.Getenv("META_PAGE_ID"),
-			InstagramUserID: os.Getenv("META_INSTAGRAM_USER_ID"),
-			Currency:        os.Getenv("META_AD_ACCOUNT_CURRENCY"),
-			GraphVersion:    os.Getenv("META_GRAPH_VERSION"),
-		})
+	// handler/ad_handler.go, payment/meta_ads.go et payment/meta_oauth.go.
+	// Le vendeur connecte SON compte Facebook (Facebook Login) et paie Meta
+	// lui-même ; DIARRA n'a besoin que de son app Meta (META_APP_*) et d'une
+	// clé de chiffrement des jetons vendeurs. Sans l'une ou l'autre, la page
+	// vendeur affiche « bientôt disponible », rien d'autre n'est touché.
+	var metaApp *payment.MetaApp
+	var metaTokenBox *secretbox.Box
+	if os.Getenv("META_APP_ID") != "" && os.Getenv("META_APP_SECRET") != "" && os.Getenv("META_OAUTH_REDIRECT_URL") != "" {
+		box, err := secretbox.NewFromString(os.Getenv("META_TOKEN_ENCRYPTION_KEY"))
+		if err != nil {
+			log.Printf("WARNING: META_TOKEN_ENCRYPTION_KEY absente ou invalide (32 octets en base64 ou hex attendus), sponsorisation de produits indisponible")
+		} else {
+			metaTokenBox = box
+			metaApp = payment.NewMetaApp(payment.MetaAppConfig{
+				AppID:        os.Getenv("META_APP_ID"),
+				AppSecret:    os.Getenv("META_APP_SECRET"),
+				RedirectURL:  os.Getenv("META_OAUTH_REDIRECT_URL"),
+				GraphVersion: os.Getenv("META_GRAPH_VERSION"),
+			})
+		}
 	} else {
-		log.Println("WARNING: Meta Ads non configuré, sponsorisation de produits indisponible")
+		log.Println("WARNING: app Meta non configurée (META_APP_ID/META_APP_SECRET/META_OAUTH_REDIRECT_URL), sponsorisation de produits indisponible")
 	}
-	adCampaignRepo := repository.NewAdCampaignRepo(pool)
-	payoutHandler.SetAdCampaignRepo(adCampaignRepo)
-	adHandler := handler.NewAdHandler(adCampaignRepo, productRepo, settingsRepo, notificationRepo, redisCache, metaAds,
-		os.Getenv("FRONTEND_URL"), os.Getenv("API_URL"))
+	adHandler := handler.NewAdHandler(repository.NewAdCampaignRepo(pool), repository.NewMetaConnectionRepo(pool), productRepo,
+		settingsRepo, notificationRepo, metaApp, metaTokenBox, os.Getenv("FRONTEND_URL"), os.Getenv("API_URL"),
+		os.Getenv("APP_ENV") == "production")
 
 	// Support tickets
 	ticketRepo := repository.NewTicketRepo(pool)
@@ -620,6 +626,11 @@ func main() {
 	// voir le commentaire sur FeedHandler.Sitemap pour le pourquoi.
 	r.Get("/sitemap.xml", feedHandler.Sitemap)
 
+	// Retour de Facebook Login (PUBLIC, sans JWT : c'est le navigateur qui
+	// revient de facebook.com). Sécurisé par le state signé + cookie nonce,
+	// voir handler/ad_meta_connect.go.
+	r.Get("/api/meta/oauth/callback", adHandler.OAuthCallback)
+
 	// Webhooks (pas de JWT)
 	r.Route("/api/webhooks", func(r chi.Router) {
 		r.Post("/pawapay", webhookHandler.PawaPayWebhook)
@@ -676,10 +687,17 @@ func main() {
 		r.Get("/payouts", payoutHandler.Earnings)
 		r.Get("/sales", saleHandler.ListVendor)
 		r.Post("/sales/{id}/remind", saleHandler.RemindVendor)
-		// Sponsorisation de produits sur Facebook/Instagram (payée par le solde).
+		// Sponsorisation de produits sur Facebook/Instagram, sur la page et le
+		// compte publicitaire du vendeur (il paie Meta directement).
 		r.Get("/ads/config", adHandler.Config)
 		r.Get("/ads", adHandler.ListVendor)
 		r.Post("/ads", adHandler.Create)
+		r.Post("/ads/{id}/stop", adHandler.StopVendor)
+		r.Get("/meta", adHandler.GetMeta)
+		r.Put("/meta", adHandler.SetMeta)
+		r.Delete("/meta", adHandler.DeleteMeta)
+		r.Get("/meta/connect", adHandler.Connect)
+		r.Get("/meta/assets", adHandler.Assets)
 	})
 
 	// Routes admin (authentifié + admin). Un admin sans scope assigné garde
@@ -771,7 +789,8 @@ func main() {
 			r.Delete("/donations/recipients/{id}", donationHandler.DeleteRecipient)
 			r.Post("/donations/payouts/{id}/retry", donationHandler.RetryPayout)
 
-			// Sponsorisations Meta des vendeurs (argent réel engagé) — scope finance.
+			// Sponsorisations Meta des vendeurs (sur leurs propres comptes
+			// publicitaires) : suivi + arrêt d'une pub — scope finance.
 			r.Get("/ads", adHandler.ListAdmin)
 			r.Post("/ads/{id}/stop", adHandler.Stop)
 		})
@@ -925,8 +944,8 @@ func main() {
 	// perdu) : revérifie via l'API PawaPay/PayDunya et applique paid/failed.
 	go webhookHandler.RunPayoutReconcileLoop(context.Background())
 
-	// Sponsorisations Meta : statut (vérification/refus/diffusion/fin),
-	// statistiques, remboursement des campagnes refusées ou bloquées.
+	// Sponsorisations Meta : statut (vérification/refus/diffusion/fin) et
+	// statistiques, avec le jeton de chaque vendeur.
 	go adHandler.RunSyncLoop(context.Background())
 
 	port := os.Getenv("PORT")
