@@ -1,11 +1,15 @@
 package payment
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
+	"time"
 )
 
 // yes_webinar.go — webinaires YES Business (jusqu'à 1000 spectateurs), guide
@@ -34,6 +38,11 @@ type CreateWebinarRequest struct {
 	ChatEnabled                       bool                       `json:"chat_enabled"`
 	QAEnabled                         bool                       `json:"qa_enabled"`
 	CustomRegistrationFields          []WebinarRegistrationField `json:"custom_registration_fields"`
+	// CoverImageURL — URL renvoyée par UploadWebinarCoverImage (doc YES
+	// Business 2026-10-02, §6.0). Affichée en grand sur la page d'inscription
+	// publique et la salle d'attente tant que le webinaire n'est pas en
+	// direct. Optionnel : champ vide si aucune couverture n'a été uploadée.
+	CoverImageURL string `json:"cover_image_url,omitempty"`
 }
 
 // Webinar — objet webinaire renvoyé par YES. Seuls les champs documentés
@@ -48,6 +57,7 @@ type Webinar struct {
 	AccessType               string          `json:"access_type"`
 	Status                   string          `json:"status,omitempty"`
 	RecordingURL             string          `json:"recording_url,omitempty"`
+	CoverImageURL            string          `json:"cover_image_url,omitempty"`
 	Raw                      json.RawMessage `json:"-"`
 }
 
@@ -90,6 +100,82 @@ type WebinarStats struct {
 	RegisteredCount     int     `json:"registered_count"`
 	AttendedCount       int     `json:"attended_count"`
 	AverageWatchMinutes float64 `json:"average_watch_minutes"`
+}
+
+// UploadWebinarCoverImageResponse — réponse de l'upload (doc YES Business
+// reçue le 2026-10-02, §6.0). L'URL renvoyée est à reposer telle quelle dans
+// CreateWebinarRequest.CoverImageURL.
+type UploadWebinarCoverImageResponse struct {
+	CoverImageURL string `json:"cover_image_url"`
+}
+
+// MaxWebinarCoverImageBytes — plafond documenté côté YES (6 Mo). Vérifié ici
+// en plus du handler appelant, pour ne jamais construire une requête vouée à
+// l'échec serveur.
+const MaxWebinarCoverImageBytes = 6 << 20
+
+// UploadWebinarCoverImage — POST /api/v1/yes/webinar/cover-image
+// (multipart/form-data, champ "file"). PNG/JPEG/WEBP uniquement, 6 Mo max
+// (doc YES Business 2026-10-02, §6.0) — le type réel doit être vérifié par
+// l'appelant (voir WebinarHandler.UploadCoverImage) avant d'arriver ici, le
+// sniffing de contenu n'a pas sa place dans le client HTTP.
+//
+// Signature : la doc indique "identique à nos autres appels" sans préciser
+// le cas multipart — on applique donc le même schéma que YesBusinessClient.do
+// (HMAC sur method+path+timestamp+body), body étant ici le corps multipart
+// BRUT envoyé tel quel (bornes incluses). À reconfirmer en sandbox avant mise
+// en production si YES signale un 401 sur cet endpoint précis : le format de
+// signature pourrait s'avérer spécifique au multipart côté serveur YES,
+// auquel cas ce commentaire et le corps de cette fonction devront être
+// corrigés en conséquence.
+func (c *YesBusinessClient) UploadWebinarCoverImage(ctx context.Context, filename string, contentType string, data []byte) (*UploadWebinarCoverImageResponse, error) {
+	if len(data) > MaxWebinarCoverImageBytes {
+		return nil, fmt.Errorf("%w: image de couverture webinaire trop lourde (%d octets, max %d)", ErrPaymentFailed, len(data), MaxWebinarCoverImageBytes)
+	}
+
+	var buf bytes.Buffer
+	writer := multipart.NewWriter(&buf)
+	part, err := writer.CreateFormFile("file", filename)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := part.Write(data); err != nil {
+		return nil, err
+	}
+	if err := writer.Close(); err != nil {
+		return nil, err
+	}
+	rawBody := buf.Bytes()
+
+	const path = "/api/v1/yes/webinar/cover-image"
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, c.cfg.BaseURL+path, bytes.NewReader(rawBody))
+	if err != nil {
+		return nil, err
+	}
+	httpReq.Header.Set("Content-Type", writer.FormDataContentType())
+
+	timestamp := time.Now().UTC().Format(time.RFC3339)
+	httpReq.Header.Set("X-API-Key", c.cfg.APIKey)
+	httpReq.Header.Set("X-Timestamp", timestamp)
+	httpReq.Header.Set("X-Signature", c.sign(http.MethodPost, path, timestamp, rawBody))
+
+	resp, err := c.client.Do(httpReq)
+	if err != nil {
+		return nil, &YesAPIError{StatusCode: http.StatusBadGateway, Method: http.MethodPost, Path: path, Body: err.Error()}
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, &YesAPIError{StatusCode: resp.StatusCode, Method: http.MethodPost, Path: path, Body: string(respBody)}
+	}
+	var out UploadWebinarCoverImageResponse
+	if err := json.Unmarshal(respBody, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
 }
 
 // CreateWebinar — POST /api/v1/yes/webinar/create (201). L'id renvoyé sert

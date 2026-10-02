@@ -1102,7 +1102,20 @@ export const api = {
     chat_enabled: boolean;
     qa_enabled: boolean;
     custom_registration_fields: { key: string; label: string; required: boolean }[];
+    cover_image_url?: string;
   }) => fetchApi<{ webinar: any }>('/api/admin/webinars', { method: 'POST', body: JSON.stringify(data) }),
+
+  // Image de couverture webinaire (PNG/JPEG/WEBP, 6 Mo max — doc YES Business
+  // 2026-10-02) : à uploader AVANT la création, puis reposer l'URL reçue
+  // dans adminCreateWebinar({ cover_image_url }). S'affiche en grand sur la
+  // page d'inscription publique et la salle d'attente tant que le webinaire
+  // n'est pas en direct.
+  adminUploadWebinarCoverImage: (formData: FormData) =>
+    fetchApi<{ cover_image_url: string }>('/api/admin/webinars/cover-image', {
+      method: 'POST',
+      body: formData as any,
+      headers: {},
+    }),
 
   adminStartWebinar: (id: string, enableRecording: boolean) =>
     fetchApi<{ webinar: any; host_join_link: string; registration_link: string }>(

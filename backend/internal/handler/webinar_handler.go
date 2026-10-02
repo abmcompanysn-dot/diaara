@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"log"
 	"net/http"
 	"strings"
@@ -109,6 +110,68 @@ func (h *WebinarHandler) List(w http.ResponseWriter, r *http.Request) {
 	writeWebinarJSON(w, http.StatusOK, map[string]interface{}{"webinars": webinars})
 }
 
+// maxWebinarCoverUploadBytes — limite de la lecture du champ "file" (doc YES
+// Business : 6 Mo max, voir payment.MaxWebinarCoverImageBytes). Légèrement
+// au-dessus pour laisser respirer l'overhead multipart avant le rejet exact
+// côté client YES (UploadWebinarCoverImage revérifie la taille exacte).
+const maxWebinarCoverUploadBytes = payment.MaxWebinarCoverImageBytes + (64 << 10)
+
+// UploadCoverImage — POST /api/admin/webinars/cover-image (multipart/form-data,
+// champ "file"). Sniffe le contenu réel (même principe que
+// ProductHandler.validCoverImage — jamais l'extension/Content-Type déclaré
+// par le client) avant de relayer à YES, pour ne jamais transmettre un
+// fichier qui ne soit pas réellement une image raster. Renvoie
+// {"cover_image_url": "..."} à reposer tel quel dans CreateWebinarRequest.
+func (h *WebinarHandler) UploadCoverImage(w http.ResponseWriter, r *http.Request) {
+	if !h.ready(w) {
+		return
+	}
+	r.Body = http.MaxBytesReader(w, r.Body, maxWebinarCoverUploadBytes)
+	if err := r.ParseMultipartForm(maxWebinarCoverUploadBytes); err != nil {
+		http.Error(w, `{"error":"file_too_large_or_invalid"}`, http.StatusBadRequest)
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, `{"error":"file_required"}`, http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(io.LimitReader(file, payment.MaxWebinarCoverImageBytes+1))
+	if err != nil {
+		http.Error(w, `{"error":"read_failed"}`, http.StatusInternalServerError)
+		return
+	}
+	if len(data) > payment.MaxWebinarCoverImageBytes {
+		http.Error(w, `{"error":"file_too_large"}`, http.StatusBadRequest)
+		return
+	}
+	contentType := http.DetectContentType(data)
+	if !allowedWebinarCoverImageTypes[contentType] {
+		http.Error(w, `{"error":"invalid_image_type"}`, http.StatusBadRequest)
+		return
+	}
+
+	ctx, cancel := yesCtx(r)
+	defer cancel()
+	resp, err := h.yes.UploadWebinarCoverImage(ctx, header.Filename, contentType, data)
+	if err != nil {
+		writeYesError(w, "upload-cover-image", err)
+		return
+	}
+	writeWebinarJSON(w, http.StatusOK, map[string]string{"cover_image_url": resp.CoverImageURL})
+}
+
+// allowedWebinarCoverImageTypes — PNG, JPEG ou WEBP (doc YES Business
+// 2026-10-02, §6.0) ; GIF exclu ici contrairement à
+// ProductHandler.allowedCoverImageTypes, YES n'en fait pas mention.
+var allowedWebinarCoverImageTypes = map[string]bool{
+	"image/png":  true,
+	"image/jpeg": true,
+	"image/webp": true,
+}
+
 // Create — POST /api/admin/webinars. Validation minimale côté DIARRA pour
 // renvoyer une erreur claire avant l'aller-retour YES ; YES reste l'arbitre
 // final (422 relayé).
@@ -123,6 +186,7 @@ func (h *WebinarHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	input.Title = strings.TrimSpace(input.Title)
 	input.Description = strings.TrimSpace(input.Description)
+	input.CoverImageURL = strings.TrimSpace(input.CoverImageURL)
 	if input.Title == "" {
 		http.Error(w, `{"error":"title_required"}`, http.StatusBadRequest)
 		return

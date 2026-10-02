@@ -820,6 +820,7 @@ func main() {
 		// DIARRA ne fait que créer/piloter) — même accès que le Summit.
 		r.Get("/webinars", webinarHandler.List)
 		r.Post("/webinars", webinarHandler.Create)
+		r.Post("/webinars/cover-image", webinarHandler.UploadCoverImage)
 		r.Post("/webinars/{id}/start", webinarHandler.Start)
 		r.Post("/webinars/{id}/end", webinarHandler.End)
 		r.Get("/webinars/{id}/stats", webinarHandler.Stats)

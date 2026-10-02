@@ -30,6 +30,7 @@ interface Webinar {
   access_type?: string;
   status?: string;
   recording_url?: string;
+  cover_image_url?: string;
   // Lien PUBLIC d'inscription à partager (doc YES §6.1).
   registration_link?: string;
   // Lien « Rejoindre en tant qu'hôte », valable 10 minutes : gardé en
@@ -184,6 +185,9 @@ export default function AdminWebinarsPage() {
   const [chatOn, setChatOn] = useState(true);
   const [qaOn, setQaOn] = useState(true);
   const [fields, setFields] = useState<RegField[]>([]);
+  const [coverImageUrl, setCoverImageUrl] = useState('');
+  const [coverUploading, setCoverUploading] = useState(false);
+  const [coverError, setCoverError] = useState('');
 
   useEffect(() => {
     load();
@@ -216,6 +220,26 @@ export default function AdminWebinarsPage() {
     setChatOn(true);
     setQaOn(true);
     setFields([]);
+    setCoverImageUrl('');
+    setCoverError('');
+  }
+
+  async function handleCoverSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setCoverError('');
+    setCoverUploading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const r = await api.adminUploadWebinarCoverImage(formData);
+      setCoverImageUrl(r.cover_image_url);
+    } catch (err: any) {
+      setCoverError(friendlyError(err));
+    } finally {
+      setCoverUploading(false);
+      e.target.value = '';
+    }
   }
 
   async function handleCreate(e: React.FormEvent) {
@@ -246,6 +270,7 @@ export default function AdminWebinarsPage() {
         custom_registration_fields: fields
           .filter((f) => f.label.trim())
           .map((f) => ({ key: f.key || slugKey(f.label), label: f.label.trim(), required: f.required })),
+        cover_image_url: coverImageUrl || undefined,
       });
       setMsg(`Webinaire « ${title.trim()} » créé sur Yes.abmcy.`);
       resetForm();
@@ -402,6 +427,29 @@ export default function AdminWebinarsPage() {
             <div className="space-y-1.5">
               <Label htmlFor="wb-desc">Description</Label>
               <Textarea id="wb-desc" value={description} onChange={(e) => setDescription(e.target.value)} rows={3} className="bg-white" />
+            </div>
+
+            <div className="space-y-1.5">
+              <Label htmlFor="wb-cover">Image de couverture (optionnel)</Label>
+              <p className="text-xs text-green-900/50">
+                Affichée en grand sur la page d’inscription et la salle d’attente tant que le webinaire n’est pas en direct. PNG, JPEG ou WEBP, 6 Mo max.
+              </p>
+              {coverImageUrl ? (
+                <div className="flex items-center gap-3">
+                  <img src={coverImageUrl} alt="Aperçu de la couverture" className="h-16 w-28 rounded-md object-cover border border-green-900/10" />
+                  <Button type="button" variant="outline" size="sm" onClick={() => setCoverImageUrl('')}>
+                    Retirer
+                  </Button>
+                </div>
+              ) : (
+                <Input id="wb-cover" type="file" accept="image/png,image/jpeg,image/webp" onChange={handleCoverSelect} disabled={coverUploading} className="bg-white" />
+              )}
+              {coverUploading && <p className="text-xs text-green-900/50">Envoi en cours…</p>}
+              {coverError && (
+                <p className="text-sm text-destructive" role="alert">
+                  {coverError}
+                </p>
+              )}
             </div>
 
             <div className="grid gap-4 sm:grid-cols-3">
