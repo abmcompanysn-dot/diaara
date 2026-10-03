@@ -3,11 +3,12 @@ import { ZapIcon, UserIcon, CheckIcon, BriefcaseIcon } from '@/components/icons'
 import { SummitRegistrationForm } from '@/components/summit-registration-form';
 import { SummitTickets } from '@/components/summit-tickets';
 import { SummitSponsorForm } from '@/components/summit-sponsor-form';
+import { SummitCountdown } from '@/components/summit-countdown';
 
 export const metadata = {
   title: 'DIARRA Summit — Growth Business with AI',
   description:
-    "DIARRA Summit, le 26 octobre 2026 à l'Université Cheikh Anta Diop de Dakar (UCAD) et en ligne : business, intelligence artificielle et produits numériques en Afrique. Billets et inscription.",
+    'DIARRA Summit, le 26 octobre 2026, 100% en ligne : business, intelligence artificielle et produits numériques en Afrique. Billets et inscription.',
 };
 
 const TOPICS = [
@@ -72,19 +73,16 @@ export default function SummitPage() {
         <div className="wax-pattern absolute inset-0 opacity-20" aria-hidden />
         <div className="relative max-w-4xl mx-auto px-4 py-24 text-center">
           <p className="font-mono text-sm text-green-300 uppercase tracking-widest mb-4">
-            // UCAD, Dakar &amp; en ligne &middot; 26 octobre 2026
+            // 100% en ligne &middot; 26 octobre 2026, 15h GMT
           </p>
           <h1 className="font-display text-4xl sm:text-5xl font-bold tracking-tight">
             DIARRA Summit
           </h1>
           <p className="mt-3 text-lg text-green-300 font-semibold">Faire croître son business avec l&rsquo;IA</p>
           <p className="mt-1 text-sm text-green-300/70 font-medium uppercase tracking-wide">Growth Business with AI</p>
-          <p className="mt-5 text-white/85 max-w-xl mx-auto">
-            Business, intelligence artificielle et produits numériques en Afrique.
-            Une matinée à l&rsquo;Université Cheikh Anta Diop de Dakar (UCAD), Sénégal, et diffusée en direct en ligne,
-            pour comprendre où va la digitalisation du continent — et comment l&rsquo;écosystème DIARRA, ABMCY, MAHU et
-            Yes.abmcy y participe.
-          </p>
+          <div className="mt-8">
+            <SummitCountdown />
+          </div>
           <a
             href="#billets"
             className="inline-block mt-8 px-7 h-12 leading-12 rounded-full bg-lime text-green-950 font-semibold text-sm hover:brightness-95 transition"
@@ -117,12 +115,11 @@ export default function SummitPage() {
             <div className="mt-10 rounded-2xl border border-green-900/10 bg-green-50/50 p-5">
               <div className="flex items-center gap-2 text-green-800 font-semibold text-sm mb-2">
                 <CheckIcon size={16} />
-                Sur place à l&rsquo;UCAD ou en ligne
+                100% en ligne
               </div>
               <p className="text-sm text-green-900/70">
-                Rendez-vous à l&rsquo;Université Cheikh Anta Diop de Dakar (UCAD), Sénégal. Le lien de connexion pour
-                suivre l&rsquo;événement en direct sera envoyé par email à tous les inscrits (quel que soit le billet
-                choisi) à l&rsquo;approche de l&rsquo;événement, le <strong>26 octobre 2026</strong>.
+                Le lien de connexion pour suivre l&rsquo;événement en direct sera envoyé par email à tous les inscrits
+                (quel que soit le billet choisi) à l&rsquo;approche de l&rsquo;événement, le <strong>26 octobre 2026</strong>.
               </p>
             </div>
           </div>
@@ -152,6 +149,12 @@ export default function SummitPage() {
             Une équipe DIARRA / ABMCY / MAHU / Yes.abmcy vous recontacte sous 48h pour la mise en place
             des éléments inclus dans votre formule.
           </p>
+          <div className="mt-8 rounded-2xl bg-green-950 py-6">
+            <p className="font-mono text-xs text-white/60 uppercase tracking-widest text-center mb-3">
+              Clôture des inscriptions &middot; 26 octobre 2026, 15h GMT
+            </p>
+            <SummitCountdown />
+          </div>
           <div className="mt-10">
             <SummitTickets />
           </div>

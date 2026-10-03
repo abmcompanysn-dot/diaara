@@ -4,7 +4,7 @@ import { SummitSponsorTiers } from '@/components/summit-sponsor-tiers';
 export const metadata = {
   title: 'Devenir sponsor — DIARRA Summit',
   description:
-    "Proposition de partenariat pour le DIARRA Summit — Growth Business with AI, le 26 octobre 2026 à l'Université Cheikh Anta Diop de Dakar (UCAD) et en ligne. Paliers, avantages et contact.",
+    'Proposition de partenariat pour le DIARRA Summit — Growth Business with AI, le 26 octobre 2026, 100% en ligne. Paliers, avantages et contact.',
 };
 
 const WHY = [
@@ -16,7 +16,7 @@ const WHY = [
   {
     num: '02',
     title: 'Portée panafricaine',
-    desc: 'Diffusion en ligne en plus du présentiel à l’UCAD : votre marque touche l’audience africaine francophone bien au-delà de Dakar.',
+    desc: 'Diffusion 100% en ligne : votre marque touche l’audience africaine francophone, au-delà des frontières d’un seul pays.',
   },
   {
     num: '03',
@@ -56,10 +56,7 @@ export default function SummitSponsorsPage() {
               26 octobre 2026
             </span>
             <span className="font-mono text-xs font-semibold bg-white/10 border border-white/20 text-white px-3.5 py-1.5 rounded-full">
-              UCAD, Dakar — Sénégal
-            </span>
-            <span className="font-mono text-xs font-semibold bg-white/10 border border-white/20 text-white px-3.5 py-1.5 rounded-full">
-              Présentiel + en ligne
+              100% en ligne
             </span>
           </div>
         </div>
