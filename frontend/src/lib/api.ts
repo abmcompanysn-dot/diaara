@@ -1235,6 +1235,15 @@ export const api = {
   rejectVendorMailDraft: (draftId: string) =>
     fetchApi<void>(`/api/admin/vendor-mail/drafts/${draftId}/reject`, { method: 'POST' }),
 
+  // Diffusion groupée : crée un brouillon personnalisé par destinataire pour
+  // les rôles choisis ("vendeur", "closer"). Ne crée QUE des brouillons —
+  // aucun envoi avant validation dans l'onglet "À valider".
+  broadcastVendorMail: (data: { subject: string; body: string; roles: ('vendeur' | 'closer')[] }) =>
+    fetchApi<{ created: number }>('/api/admin/vendor-mail/broadcast', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
   // Agents support (admin, tout admin)
   getSupportAgents: () =>
     fetchApi<{

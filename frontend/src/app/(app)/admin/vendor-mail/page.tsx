@@ -40,12 +40,13 @@ interface VendorOption {
   roles: string[];
 }
 
-type Tab = 'drafts' | 'threads' | 'start';
+type Tab = 'drafts' | 'threads' | 'start' | 'broadcast';
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'drafts', label: 'À valider' },
   { key: 'threads', label: 'Conversations' },
   { key: 'start', label: 'Démarrer' },
+  { key: 'broadcast', label: 'Diffuser à tous' },
 ];
 
 export default function VendorMailPage() {
@@ -70,6 +71,12 @@ export default function VendorMailPage() {
   const [startBusy, setStartBusy] = useState(false);
   const [startDone, setStartDone] = useState('');
   const [vendorSearch, setVendorSearch] = useState('');
+
+  const [broadcastSubject, setBroadcastSubject] = useState('');
+  const [broadcastBody, setBroadcastBody] = useState('');
+  const [broadcastRoles, setBroadcastRoles] = useState<('vendeur' | 'closer')[]>(['vendeur']);
+  const [broadcastBusy, setBroadcastBusy] = useState(false);
+  const [broadcastDone, setBroadcastDone] = useState('');
 
   useEffect(() => {
     load();
@@ -199,6 +206,33 @@ export default function VendorMailPage() {
     } finally {
       setStartBusy(false);
     }
+  }
+
+  async function handleBroadcast() {
+    if (!broadcastSubject.trim() || !broadcastBody.trim() || broadcastRoles.length === 0) return;
+    setBroadcastBusy(true);
+    setBroadcastDone('');
+    try {
+      const r = await api.broadcastVendorMail({
+        subject: broadcastSubject.trim(),
+        body: broadcastBody.trim(),
+        roles: broadcastRoles,
+      });
+      setBroadcastDone(`${r.created} brouillon(s) créé(s) — à valider dans l'onglet « À valider ».`);
+      setBroadcastSubject('');
+      setBroadcastBody('');
+      await load();
+    } catch (err: any) {
+      setError(friendlyError(err));
+    } finally {
+      setBroadcastBusy(false);
+    }
+  }
+
+  function toggleBroadcastRole(role: 'vendeur' | 'closer') {
+    setBroadcastRoles((prev) =>
+      prev.includes(role) ? prev.filter((r) => r !== role) : [...prev, role]
+    );
   }
 
   const filteredVendors = useMemo(() => {
@@ -366,7 +400,7 @@ export default function VendorMailPage() {
               ))}
             </div>
           )
-        ) : (
+        ) : tab === 'start' ? (
           <div className="space-y-4">
             <div>
               <label className="text-xs font-medium text-green-900/70 mb-1.5 block">Vendeur</label>
@@ -415,6 +449,74 @@ export default function VendorMailPage() {
                 disabled={startBusy || !startVendorId || !startSubject.trim() || !startBody.trim()}
               >
                 {startBusy ? 'Création…' : 'Créer le brouillon'}
+              </Button>
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <p className="text-sm text-green-900/70">
+              Crée un brouillon personnalisé pour chaque compte des rôles choisis. Utilisez{' '}
+              <code className="px-1 py-0.5 rounded bg-green-900/5 text-xs">{'{{nom}}'}</code> dans le
+              message pour insérer le nom de boutique du destinataire (retiré proprement s&rsquo;il n&rsquo;en a pas).
+            </p>
+            <div>
+              <label className="text-xs font-medium text-green-900/70 mb-1.5 block">Destinataires</label>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => toggleBroadcastRole('vendeur')}
+                  className={cn(
+                    'h-9 px-4 rounded-md text-sm font-medium border transition-colors',
+                    broadcastRoles.includes('vendeur')
+                      ? 'bg-[#0E6B46] text-white border-[#0E6B46]'
+                      : 'bg-white text-green-900/70 border-green-900/15 hover:border-green-900/30'
+                  )}
+                >
+                  Vendeurs
+                </button>
+                <button
+                  type="button"
+                  onClick={() => toggleBroadcastRole('closer')}
+                  className={cn(
+                    'h-9 px-4 rounded-md text-sm font-medium border transition-colors',
+                    broadcastRoles.includes('closer')
+                      ? 'bg-[#0E6B46] text-white border-[#0E6B46]'
+                      : 'bg-white text-green-900/70 border-green-900/15 hover:border-green-900/30'
+                  )}
+                >
+                  Affiliés (closers)
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="text-xs font-medium text-green-900/70 mb-1.5 block">Sujet</label>
+              <Input
+                value={broadcastSubject}
+                onChange={(e) => setBroadcastSubject(e.target.value)}
+                placeholder="Ex : Brunel (DIARRA) aimerait votre avis"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-medium text-green-900/70 mb-1.5 block">Message</label>
+              <Textarea
+                value={broadcastBody}
+                onChange={(e) => setBroadcastBody(e.target.value)}
+                className="min-h-40 text-sm"
+                placeholder={'Bonjour{{nom}},\n\n...'}
+              />
+            </div>
+            {broadcastDone && <p className="text-sm text-green-700">{broadcastDone}</p>}
+            <div className="flex justify-end">
+              <Button
+                onClick={handleBroadcast}
+                disabled={
+                  broadcastBusy ||
+                  !broadcastSubject.trim() ||
+                  !broadcastBody.trim() ||
+                  broadcastRoles.length === 0
+                }
+              >
+                {broadcastBusy ? 'Création des brouillons…' : 'Créer les brouillons'}
               </Button>
             </div>
           </div>

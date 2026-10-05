@@ -797,6 +797,7 @@ func main() {
 			r.Post("/vendor-mail/threads/{id}/reply", vendorMailHandler.DraftReply)
 			r.Get("/vendor-mail/drafts", vendorMailHandler.ListDrafts)
 			r.Post("/vendor-mail/start", vendorMailHandler.StartThread)
+			r.Post("/vendor-mail/broadcast", vendorMailHandler.Broadcast)
 			r.Put("/vendor-mail/drafts/{id}", vendorMailHandler.UpdateDraft)
 			r.Post("/vendor-mail/drafts/{id}/approve", vendorMailHandler.ApproveDraft)
 			r.Post("/vendor-mail/drafts/{id}/reject", vendorMailHandler.RejectDraft)

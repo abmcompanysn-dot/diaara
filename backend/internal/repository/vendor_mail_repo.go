@@ -219,6 +219,40 @@ func (r *VendorMailRepo) ListApprovedPendingSend(ctx context.Context) ([]*model.
 	return messages, rows.Err()
 }
 
+// VendorMailRecipient — un destinataire potentiel pour une diffusion
+// (ListByRole), avec son nom d'affichage préféré (shop_name, sinon
+// display_name, sinon vide).
+type VendorMailRecipient struct {
+	UserID string
+	Email  string
+	Name   string
+}
+
+// ListByRole renvoie les comptes distincts ayant ce rôle ("vendeur" ou
+// "closer"), avec email non vide — utilisé par la diffusion groupée
+// (AdminHandler ou équivalent, voir /admin/vendor-mail "Diffuser à tous").
+func (r *VendorMailRepo) ListByRole(ctx context.Context, role string) ([]VendorMailRecipient, error) {
+	rows, err := r.pool.Query(ctx, `
+		SELECT DISTINCT u.id, u.email, COALESCE(NULLIF(TRIM(u.shop_name), ''), NULLIF(TRIM(u.display_name), ''), '')
+		FROM users u
+		JOIN user_roles ur ON ur.user_id = u.id
+		WHERE ur.role = $1 AND u.email IS NOT NULL AND u.email != ''`, role)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var out []VendorMailRecipient
+	for rows.Next() {
+		var rec VendorMailRecipient
+		if err := rows.Scan(&rec.UserID, &rec.Email, &rec.Name); err != nil {
+			return nil, err
+		}
+		out = append(out, rec)
+	}
+	return out, rows.Err()
+}
+
 func (r *VendorMailRepo) GetLastUID(ctx context.Context, mailbox string) (uint32, error) {
 	var uid uint32
 	err := r.pool.QueryRow(ctx,

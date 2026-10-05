@@ -267,6 +267,72 @@ func (h *VendorMailHandler) ApproveDraft(w http.ResponseWriter, r *http.Request)
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// Broadcast — POST /api/admin/vendor-mail/broadcast : crée un brouillon
+// personnalisé pour chaque compte des rôles demandés ("vendeur", "closer").
+// Ne crée QUE des brouillons ('draft') — aucun envoi ici, voir ApproveDraft,
+// seul point qui envoie réellement un email.
+func (h *VendorMailHandler) Broadcast(w http.ResponseWriter, r *http.Request) {
+	var input model.BroadcastVendorMailInput
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, `{"error":"invalid_request"}`, http.StatusBadRequest)
+		return
+	}
+	input.Subject = strings.TrimSpace(input.Subject)
+	input.Body = strings.TrimSpace(input.Body)
+	if input.Subject == "" || input.Body == "" || len(input.Roles) == 0 {
+		http.Error(w, `{"error":"subject_body_and_roles_required"}`, http.StatusBadRequest)
+		return
+	}
+	for _, role := range input.Roles {
+		if role != "vendeur" && role != "closer" {
+			http.Error(w, `{"error":"invalid_role"}`, http.StatusBadRequest)
+			return
+		}
+	}
+
+	seen := map[string]bool{}
+	created := 0
+	for _, role := range input.Roles {
+		recipients, err := h.repo.ListByRole(r.Context(), role)
+		if err != nil {
+			http.Error(w, `{"error":"list_recipients_failed"}`, http.StatusInternalServerError)
+			return
+		}
+		for _, rec := range recipients {
+			if seen[rec.UserID] {
+				continue // un compte peut avoir plusieurs rôles — un seul message, pas un par rôle
+			}
+			seen[rec.UserID] = true
+
+			thread, err := h.repo.FindOrCreateThread(r.Context(), rec.UserID, input.Subject)
+			if err != nil {
+				log.Printf("vendor-mail broadcast: fil introuvable pour %s: %v", rec.UserID, err)
+				continue
+			}
+			if _, err := h.repo.CreateDraft(r.Context(), thread.ID, input.Subject, personalize(input.Body, rec.Name), nil); err != nil {
+				log.Printf("vendor-mail broadcast: brouillon échoué pour %s: %v", rec.UserID, err)
+				continue
+			}
+			created++
+		}
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"created": created})
+}
+
+// personalize remplace le placeholder littéral "{{nom}}" par le nom du
+// destinataire, avec un espace avant pour rester naturel ("Bonjour{{nom}},"
+// -> "Bonjour Nom,"), ou le retire proprement (double espace nettoyé) si ce
+// destinataire n'a pas de nom connu.
+func personalize(body, name string) string {
+	if name == "" {
+		result := strings.ReplaceAll(body, "{{nom}}", "")
+		return strings.ReplaceAll(result, "  ", " ")
+	}
+	return strings.ReplaceAll(body, "{{nom}}", name)
+}
+
 // RejectDraft — POST /api/admin/vendor-mail/drafts/{id}/reject : l'admin
 // écarte un brouillon sans l'envoyer.
 func (h *VendorMailHandler) RejectDraft(w http.ResponseWriter, r *http.Request) {

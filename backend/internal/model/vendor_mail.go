@@ -46,3 +46,13 @@ type StartVendorMailThreadInput struct {
 type DraftVendorMailReplyInput struct {
 	Body string `json:"body"`
 }
+
+// BroadcastVendorMailInput — crée un brouillon par destinataire pour chaque
+// rôle listé dans Roles ("vendeur", "closer"). Body peut contenir le
+// placeholder littéral "{{nom}}", remplacé par le nom (boutique/affichage)
+// du destinataire, ou retiré proprement si ce destinataire n'en a pas.
+type BroadcastVendorMailInput struct {
+	Subject string   `json:"subject"`
+	Body    string   `json:"body"`
+	Roles   []string `json:"roles"`
+}
