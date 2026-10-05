@@ -405,12 +405,13 @@ function buildLogicalOperators(): LogicalOperator[] {
 
 export const LOGICAL_OPERATORS: LogicalOperator[] = buildLogicalOperators();
 
-// Pays où le "0" de tête fait partie intégrante du numéro (réformes de
-// numérotation à 10 chiffres) : Bénin "01 xx xx xx xx" (2021) et Côte
-// d'Ivoire "01/05/07 xx xx xx xx" (2021). Ailleurs, un "0" initial est un
-// simple préfixe national à retirer avant l'indicatif. Miroir de
+// Pays où le "0" de tête fait partie intégrante du numéro : Bénin
+// "01 xx xx xx xx" (réforme 2021), Côte d'Ivoire "01/05/07 xx xx xx xx"
+// (réforme 2021), Congo-Brazzaville "05/06 xx xx xxx" (numéros mobiles à 9
+// chiffres, signalé par un vendeur le 2026-10-03). Ailleurs, un "0" initial
+// est un simple préfixe national à retirer avant l'indicatif. Miroir de
 // payment.NormalizePhone côté backend.
-const LEADING_ZERO_COUNTRIES = new Set(['BEN', 'CIV']);
+const LEADING_ZERO_COUNTRIES = new Set(['BEN', 'CIV', 'COG']);
 
 export function keepsLeadingZero(country: string): boolean {
   return LEADING_ZERO_COUNTRIES.has(country);

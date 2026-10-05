@@ -111,6 +111,14 @@ async function fetchApi<T>(endpoint: string, options: FetchOptions = {}, isRetry
     throw new ApiError(response.status, error.error || 'Request failed', error);
   }
 
+  // 204 No Content (ex: approbation/suppression) n'a pas de corps JSON à
+  // parser — response.json() lèverait "Unexpected end of JSON input" sur une
+  // requête pourtant réussie (incident du 2026-10-05 : modération d'événement
+  // renvoyant 204 côté serveur mais "Une erreur est survenue" côté UI).
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
   return response.json();
 }
 

@@ -973,8 +973,11 @@ func NormalizePhone(dialCode, phone string) (string, error) {
 	// Exceptions Bénin (229) et Côte d'Ivoire (225) : depuis les réformes de
 	// numérotation 2021 (10 chiffres), le "0" initial fait partie intégrante
 	// du numéro (pas un préfixe de tri à retirer) — ex "01 90 01 02 03" ->
-	// +229 01 90 01 02 03, "05 46 96 85 56" -> +225 05 46 96 85 56.
-	if dialCode != "229" && dialCode != "225" {
+	// +229 01 90 01 02 03, "05 46 96 85 56" -> +225 05 46 96 85 56. Congo-
+	// Brazzaville (242) : numéros mobiles à 9 chiffres commençant par 05/06,
+	// le "0" fait partie du numéro (signalé par un vendeur, 2026-10-03 —
+	// "06 XXXXXXX" tronqué à 8 chiffres si le 0 est retiré).
+	if dialCode != "229" && dialCode != "225" && dialCode != "242" {
 		digits = strings.TrimPrefix(digits, "0")
 	}
 	if len(digits) < 6 {
