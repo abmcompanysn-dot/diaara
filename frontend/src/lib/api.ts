@@ -1189,6 +1189,40 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  // Boucle de discussion email avec les vendeurs (atekossibrunel@diarra.app).
+  // Aucun envoi automatique : chaque brouillon doit être validé via
+  // approveVendorMailDraft avant de partir réellement.
+  listVendorMailThreads: () => fetchApi<{ threads: any[] }>('/api/admin/vendor-mail/threads'),
+
+  getVendorMailThread: (id: string) =>
+    fetchApi<{ thread: any; messages: any[] }>(`/api/admin/vendor-mail/threads/${id}`),
+
+  listVendorMailDrafts: () => fetchApi<{ drafts: any[] }>('/api/admin/vendor-mail/drafts'),
+
+  startVendorMailThread: (data: { vendor_id: string; subject: string; body: string }) =>
+    fetchApi<{ draft: any }>('/api/admin/vendor-mail/start', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  draftVendorMailReply: (threadId: string, body: string) =>
+    fetchApi<{ draft: any }>(`/api/admin/vendor-mail/threads/${threadId}/reply`, {
+      method: 'POST',
+      body: JSON.stringify({ body }),
+    }),
+
+  updateVendorMailDraft: (draftId: string, body: string) =>
+    fetchApi<void>(`/api/admin/vendor-mail/drafts/${draftId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ body }),
+    }),
+
+  approveVendorMailDraft: (draftId: string) =>
+    fetchApi<void>(`/api/admin/vendor-mail/drafts/${draftId}/approve`, { method: 'POST' }),
+
+  rejectVendorMailDraft: (draftId: string) =>
+    fetchApi<void>(`/api/admin/vendor-mail/drafts/${draftId}/reject`, { method: 'POST' }),
+
   // Agents support (admin, tout admin)
   getSupportAgents: () =>
     fetchApi<{

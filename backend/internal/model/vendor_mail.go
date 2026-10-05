@@ -1,0 +1,48 @@
+package model
+
+import "time"
+
+type VendorMailThread struct {
+	ID            string    `json:"id"`
+	VendorID      string    `json:"vendor_id"`
+	Subject       string    `json:"subject"`
+	LastMessageID *string   `json:"-"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+
+	// Champs de jointure pour l'affichage admin (non stockés sur cette table).
+	VendorEmail string `json:"vendor_email,omitempty"`
+	VendorShop  string `json:"vendor_shop,omitempty"`
+}
+
+type VendorMailMessage struct {
+	ID         string     `json:"id"`
+	ThreadID   string     `json:"thread_id"`
+	Direction  string     `json:"direction"` // outbound | inbound
+	Status     string     `json:"status"`    // draft | approved | sent | received | rejected
+	Subject    string     `json:"subject"`
+	Body       string     `json:"body"`
+	MessageID  *string    `json:"-"`
+	InReplyTo  *string    `json:"-"`
+	ApprovedBy *string    `json:"approved_by,omitempty"`
+	ApprovedAt *time.Time `json:"approved_at,omitempty"`
+	SentAt     *time.Time `json:"sent_at,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+}
+
+// VendorMailThreadWithMessages : un fil complet avec tous ses messages,
+// renvoyé par la page admin pour afficher la conversation.
+type VendorMailThreadWithMessages struct {
+	Thread   VendorMailThread    `json:"thread"`
+	Messages []VendorMailMessage `json:"messages"`
+}
+
+type StartVendorMailThreadInput struct {
+	VendorID string `json:"vendor_id"`
+	Subject  string `json:"subject"`
+	Body     string `json:"body"`
+}
+
+type DraftVendorMailReplyInput struct {
+	Body string `json:"body"`
+}

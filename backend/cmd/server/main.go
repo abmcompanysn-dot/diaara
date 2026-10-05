@@ -25,6 +25,7 @@ import (
 	"github.com/diarra/backend/internal/service"
 	"github.com/diarra/backend/internal/sms"
 	"github.com/diarra/backend/internal/storage"
+	"github.com/diarra/backend/internal/vendormail"
 	"github.com/go-chi/chi/v5"
 	chimw "github.com/go-chi/chi/v5/middleware"
 	chiCors "github.com/go-chi/cors"
@@ -179,6 +180,42 @@ func main() {
 		log.Printf("Emails via Mailtrap (%s)", mode)
 	default:
 		log.Println("WARNING: aucun fournisseur email (SMTP_HOST, RESEND_API_KEY ou MAILTRAP_API_KEY), emails désactivés")
+	}
+
+	// Boucle de discussion email avec les vendeurs (atekossibrunel@diarra.app,
+	// demandé le 2026-10-05) : compte SMTP/IMAP dédié, distinct du
+	// fournisseur générique ci-dessus — RIEN n'est envoyé automatiquement,
+	// voir VendorMailHandler.ApproveDraft, le seul point qui envoie un email
+	// réel, déclenché uniquement par une validation admin explicite.
+	var vendorMailSender *vendormail.Sender
+	vendorMailReaderCfg := vendormail.ReaderConfig{
+		Host:     os.Getenv("VENDOR_MAIL_IMAP_HOST"),
+		Username: os.Getenv("VENDOR_MAIL_USERNAME"),
+		Password: os.Getenv("VENDOR_MAIL_PASSWORD"),
+		Mailbox:  "INBOX",
+	}
+	vendorMailIMAPReady := vendorMailReaderCfg.Host != "" && vendorMailReaderCfg.Username != "" && vendorMailReaderCfg.Password != ""
+	if smtpHost := os.Getenv("VENDOR_MAIL_SMTP_HOST"); smtpHost != "" {
+		port := 587
+		if p := os.Getenv("VENDOR_MAIL_SMTP_PORT"); p != "" {
+			if parsed, err := strconv.Atoi(p); err == nil {
+				port = parsed
+			}
+		}
+		sender, err := vendormail.NewSender(vendormail.SenderConfig{
+			Host:        smtpHost,
+			Port:        port,
+			Username:    os.Getenv("VENDOR_MAIL_USERNAME"),
+			Password:    os.Getenv("VENDOR_MAIL_PASSWORD"),
+			FromAddress: os.Getenv("VENDOR_MAIL_FROM"),
+		})
+		if err != nil {
+			log.Fatalf("vendor-mail SMTP config invalide: %v", err)
+		}
+		vendorMailSender = sender
+		log.Printf("vendor-mail: envoi via %s:%d (from=%s)", smtpHost, port, os.Getenv("VENDOR_MAIL_FROM"))
+	} else {
+		log.Println("vendor-mail: désactivé (VENDOR_MAIL_SMTP_HOST absent)")
 	}
 
 	// Services
@@ -392,6 +429,11 @@ func main() {
 	// migration 036_summit_sponsors.sql), affichés sur /summit/sponsors.
 	summitSponsorRepo := repository.NewSummitSponsorRepo(pool)
 	summitSponsorHandler := handler.NewSummitSponsorHandler(summitSponsorRepo, storageService)
+
+	// Boucle de discussion email avec les vendeurs (voir plus haut pour la
+	// config SMTP/IMAP dédiée).
+	vendorMailRepo := repository.NewVendorMailRepo(pool)
+	vendorMailHandler := handler.NewVendorMailHandler(vendorMailRepo, userRepo, vendorMailSender, vendorMailReaderCfg, vendorMailIMAPReady)
 
 	// Administration
 	adminHandler := handler.NewAdminHandler(productRepo, saleRepo, userRepo, referralRepo, adminPermRepo, payoutRepo, settingsRepo, ticketRepo, pool, storageHealthPinger, storageService, startTime, pawapay, paydunya, paypal, notifications, redisCache, webhookHandler)
@@ -741,6 +783,19 @@ func main() {
 			r.Delete("/announcements/{id}", announcementHandler.Delete)
 			r.Post("/users/{id}/message", adminHandler.SendUserMessage)
 			r.Post("/broadcast", adminHandler.SendBroadcast)
+
+			// Boucle de discussion email avec les vendeurs
+			// (atekossibrunel@diarra.app) : aucun envoi n'est automatique,
+			// voir VendorMailHandler.ApproveDraft — seul point qui envoie
+			// réellement un email, déclenché par cette validation admin.
+			r.Get("/vendor-mail/threads", vendorMailHandler.ListThreads)
+			r.Get("/vendor-mail/threads/{id}", vendorMailHandler.GetThread)
+			r.Post("/vendor-mail/threads/{id}/reply", vendorMailHandler.DraftReply)
+			r.Get("/vendor-mail/drafts", vendorMailHandler.ListDrafts)
+			r.Post("/vendor-mail/start", vendorMailHandler.StartThread)
+			r.Put("/vendor-mail/drafts/{id}", vendorMailHandler.UpdateDraft)
+			r.Post("/vendor-mail/drafts/{id}/approve", vendorMailHandler.ApproveDraft)
+			r.Post("/vendor-mail/drafts/{id}/reject", vendorMailHandler.RejectDraft)
 		})
 
 		r.Group(func(r chi.Router) {
@@ -941,6 +996,11 @@ func main() {
 	// leur statut réel via l'API PawaPay et confirme/échoue en conséquence.
 	// Filet de sécurité si un webhook s'est perdu (incident du 2026-09-02).
 	go webhookHandler.RunDepositReconcileLoop(context.Background())
+
+	// Lecture périodique des réponses des vendeurs sur
+	// atekossibrunel@diarra.app (IMAP) — rattache chaque réponse à son fil.
+	// N'envoie jamais rien (voir VendorMailHandler.ApproveDraft).
+	go vendorMailHandler.RunFetchLoop(context.Background())
 
 	// Même filet pour les versements restés "processing" (webhook prestataire
 	// perdu) : revérifie via l'API PawaPay/PayDunya et applique paid/failed.
