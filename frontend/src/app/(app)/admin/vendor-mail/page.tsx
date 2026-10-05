@@ -21,6 +21,8 @@ interface Thread {
   vendor_shop: string;
   subject: string;
   updated_at: string;
+  has_sent: boolean;
+  has_replied: boolean;
 }
 
 interface Message {
@@ -382,6 +384,23 @@ export default function VendorMailPage() {
             <EmptyState title="Aucune conversation" description="Démarrez-en une depuis l'onglet « Démarrer »." />
           ) : (
             <div className="space-y-3">
+              <div className="flex flex-wrap gap-3 p-3 rounded-lg bg-green-50/60 border border-green-900/10 text-sm">
+                <span className="text-green-900/70">
+                  <strong className="text-green-950">{threads.length}</strong> conversation(s)
+                </span>
+                <span className="text-green-900/70">
+                  <strong className="text-green-950">{threads.filter((t) => t.has_sent).length}</strong> envoyée(s)
+                </span>
+                <span className="text-green-900/70">
+                  <strong className="text-green-950">{threads.filter((t) => t.has_replied).length}</strong> réponse(s) reçue(s)
+                </span>
+                <span className="text-green-900/70">
+                  <strong className="text-green-950">
+                    {threads.filter((t) => t.has_sent && !t.has_replied).length}
+                  </strong>{' '}
+                  en attente de réponse
+                </span>
+              </div>
               {threads.map((t) => (
                 <button
                   key={t.id}
@@ -391,9 +410,16 @@ export default function VendorMailPage() {
                 >
                   <div className="flex items-center justify-between gap-3">
                     <p className="font-semibold text-green-950 text-sm">{t.vendor_shop || t.vendor_email}</p>
-                    <span className="text-xs text-muted-foreground">
-                      {new Date(t.updated_at).toLocaleDateString('fr-FR')}
-                    </span>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {t.has_replied ? (
+                        <Badge className="bg-green-100 text-green-700 hover:bg-green-100">Répondu</Badge>
+                      ) : t.has_sent ? (
+                        <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">En attente</Badge>
+                      ) : null}
+                      <span className="text-xs text-muted-foreground">
+                        {new Date(t.updated_at).toLocaleDateString('fr-FR')}
+                      </span>
+                    </div>
                   </div>
                   <p className="text-xs text-muted-foreground mt-1">{t.subject}</p>
                 </button>

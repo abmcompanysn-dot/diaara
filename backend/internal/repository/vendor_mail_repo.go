@@ -74,10 +74,15 @@ func (r *VendorMailRepo) FindThreadByID(ctx context.Context, id string) (*model.
 
 // ListThreads renvoie tous les fils, triés par dernière activité, avec
 // l'email et la boutique du vendeur pour l'affichage admin.
+// ListThreads renvoie tous les fils avec, pour chacun, un statut calculé de
+// campagne (has_sent/has_replied) utilisé par le tableau de bord
+// /admin/vendor-mail — voir model.VendorMailThread.
 func (r *VendorMailRepo) ListThreads(ctx context.Context) ([]*model.VendorMailThread, error) {
 	rows, err := r.pool.Query(ctx,
 		`SELECT t.id, t.vendor_id, t.subject, t.last_message_id, t.created_at, t.updated_at,
-		        u.email, COALESCE(u.shop_name, '')
+		        u.email, COALESCE(u.shop_name, ''),
+		        EXISTS(SELECT 1 FROM vendor_mail_messages m WHERE m.thread_id = t.id AND m.status = 'sent'),
+		        EXISTS(SELECT 1 FROM vendor_mail_messages m WHERE m.thread_id = t.id AND m.direction = 'inbound')
 		 FROM vendor_mail_threads t
 		 JOIN users u ON u.id = t.vendor_id
 		 ORDER BY t.updated_at DESC`)
@@ -90,7 +95,7 @@ func (r *VendorMailRepo) ListThreads(ctx context.Context) ([]*model.VendorMailTh
 	for rows.Next() {
 		t := &model.VendorMailThread{}
 		if err := rows.Scan(&t.ID, &t.VendorID, &t.Subject, &t.LastMessageID, &t.CreatedAt, &t.UpdatedAt,
-			&t.VendorEmail, &t.VendorShop); err != nil {
+			&t.VendorEmail, &t.VendorShop, &t.HasSent, &t.HasReplied); err != nil {
 			return nil, err
 		}
 		threads = append(threads, t)

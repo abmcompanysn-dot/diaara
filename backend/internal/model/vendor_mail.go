@@ -13,6 +13,11 @@ type VendorMailThread struct {
 	// Champs de jointure pour l'affichage admin (non stockés sur cette table).
 	VendorEmail string `json:"vendor_email,omitempty"`
 	VendorShop  string `json:"vendor_shop,omitempty"`
+	// Statut calculé pour le tableau de bord de campagne (voir ListThreads) :
+	// HasSent = au moins un message sortant réellement envoyé (status='sent') ;
+	// HasReplied = au moins un message entrant reçu de ce vendeur.
+	HasSent    bool `json:"has_sent"`
+	HasReplied bool `json:"has_replied"`
 }
 
 type VendorMailMessage struct {
