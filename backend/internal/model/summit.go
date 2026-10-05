@@ -12,7 +12,13 @@ type SummitRegistration struct {
 	Email       string    `json:"email"`
 	PhoneNumber string    `json:"phone_number"`
 	Profile     string    `json:"profile"`
-	CreatedAt   time.Time `json:"created_at"`
+	// Status : "pending" tant que la vente liée (SaleCheckoutToken) n'est
+	// pas payée, "confirmed" une fois le paiement validé (voir
+	// WebhookHandler.ConfirmPaidSale) — ou directement "confirmed" pour les
+	// inscriptions historiques, créées avant que l'inscription soit payante.
+	Status            string    `json:"status"`
+	SaleCheckoutToken *string   `json:"-"`
+	CreatedAt         time.Time `json:"created_at"`
 }
 
 // SummitProfiles — valeurs acceptées pour SummitRegistration.Profile,

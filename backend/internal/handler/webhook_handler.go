@@ -60,6 +60,11 @@ type WebhookHandler struct {
 	// même construction que YesHandler.productImageURL). Vide = pas d'image
 	// (dégradation silencieuse, comportement inchangé).
 	apiURL string
+	// summitRepo : confirme l'inscription DIARRA Summit liée au
+	// checkout_token de la vente une fois le paiement validé — voir
+	// SetSummitRepo, confirmPaidSaleUnguarded.
+	summitRepo  *repository.SummitRepo
+	frontendURL string
 }
 
 // SetGatewayRepo branche le relais webhook agrégateur -> client externe
@@ -67,6 +72,11 @@ type WebhookHandler struct {
 // webhook PawaPay avant la résolution vers une sale/payout DIARRA).
 func (h *WebhookHandler) SetGatewayRepo(repo *repository.GatewayRepo) {
 	h.gatewayRepo = repo
+}
+
+func (h *WebhookHandler) SetSummitRepo(repo *repository.SummitRepo, frontendURL string) {
+	h.summitRepo = repo
+	h.frontendURL = frontendURL
 }
 
 // SetYesHandler branche la notification de livraison vers YES Messaging
@@ -1193,6 +1203,27 @@ func (h *WebhookHandler) confirmPaidSaleUnguarded(ctx context.Context, sale *mod
 	// que ce soit le micro-ticket ou le solde).
 	if h.yesHandler != nil {
 		go h.yesHandler.OnSaleConfirmed(context.Background(), sale)
+	}
+	// Inscription DIARRA Summit payante (voir migration 050) : si cette
+	// vente a une inscription "pending" liée (SaleHandler.Create), la
+	// confirme et envoie l'email — no-op silencieux pour toute autre vente
+	// (ConfirmByCheckoutToken renvoie nil, nil si rien n'est lié).
+	if h.summitRepo != nil && sale.CheckoutToken != nil {
+		go func() {
+			ctx := context.Background()
+			reg, err := h.summitRepo.ConfirmByCheckoutToken(ctx, *sale.CheckoutToken)
+			if err != nil {
+				log.Printf("WARNING: confirmation inscription Summit échouée pour sale=%s: %v", sale.ID, err)
+				return
+			}
+			if reg == nil || h.notifications == nil {
+				return
+			}
+			eventLink := strings.TrimSuffix(h.frontendURL, "/") + "/summit"
+			if err := h.notifications.SendSummitConfirmation(ctx, reg.Email, reg.FullName, summitEventDateLabel, eventLink); err != nil {
+				log.Printf("WARNING: email confirmation Summit échoué pour %s: %v", reg.Email, err)
+			}
+		}()
 	}
 	return nil
 }

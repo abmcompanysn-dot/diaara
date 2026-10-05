@@ -17,6 +17,7 @@ interface SummitRegistration {
   email: string;
   phone_number: string;
   profile: 'vendeur' | 'acheteur' | 'entrepreneur' | 'curieux';
+  status: 'pending' | 'confirmed';
   created_at: string;
 }
 
@@ -107,9 +108,14 @@ export default function AdminSummitPage() {
               <div key={reg.id} className="p-3 rounded-lg border border-border space-y-1">
                 <div className="flex items-center justify-between gap-3">
                   <p className="text-sm font-semibold truncate">{reg.full_name}</p>
-                  <Badge className="bg-green-100 text-green-700 shrink-0">
-                    {PROFILE_LABELS[reg.profile] || reg.profile}
-                  </Badge>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {reg.status === 'pending' && (
+                      <Badge className="bg-amber-100 text-amber-800 hover:bg-amber-100">En attente de paiement</Badge>
+                    )}
+                    <Badge className="bg-green-100 text-green-700">
+                      {PROFILE_LABELS[reg.profile] || reg.profile}
+                    </Badge>
+                  </div>
                 </div>
                 <p className="text-xs text-muted-foreground">{reg.email}</p>
                 <p className="text-xs text-muted-foreground font-mono">{reg.phone_number}</p>

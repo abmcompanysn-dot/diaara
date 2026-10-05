@@ -410,9 +410,13 @@ func main() {
 	supportContactRepo := repository.NewSupportContactRepo(pool)
 	supportContactHandler := handler.NewSupportContactHandler(supportContactRepo, notifications)
 
-	// Inscriptions publiques au DIARRA Summit (26 octobre 2026, en ligne).
+	// Inscriptions payantes au DIARRA Summit (26 octobre 2026, en ligne) —
+	// achat du Tier Essentiel via SaleHandler.Create/WebhookHandler.ConfirmPaidSale
+	// (voir migration 050, remplace l'inscription gratuite directe de 2026-08).
 	summitRepo := repository.NewSummitRepo(pool)
 	summitHandler := handler.NewSummitHandler(summitRepo, notifications, os.Getenv("FRONTEND_URL"))
+	saleHandler.SetSummitRepo(summitRepo)
+	webhookHandler.SetSummitRepo(summitRepo, os.Getenv("FRONTEND_URL"))
 
 	// Événements vendeur (1 à 3 offres payantes/gratuites par événement,
 	// voir migration 034_events.sql) — généralise le mécanisme du Summit à

@@ -127,7 +127,7 @@ export default function SummitPage() {
           <div id="inscription" className="rounded-2xl border border-green-900/10 bg-white shadow-lift p-6 sm:p-8">
             <h2 className="font-display text-xl font-bold text-green-950">Je m&rsquo;inscris</h2>
             <p className="mt-1 text-sm text-green-900/60">
-              Quelques infos et c&rsquo;est fait — la confirmation arrive par email.
+              Quelques infos, puis le paiement (5 000 FCFA) — la confirmation arrive par email.
             </p>
             <div className="mt-6">
               <SummitRegistrationForm />

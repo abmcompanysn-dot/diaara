@@ -50,15 +50,24 @@ const formatPrice = (price: number) => `${price.toLocaleString()} FCFA`;
 export default function CheckoutView() {
   const searchParams = useSearchParams();
   const productId = searchParams.get('product') || '';
+  // summit_profile : présent uniquement quand on arrive depuis le
+  // formulaire /summit (SummitRegistrationForm) — transmis tel quel à
+  // createOrder pour que le backend crée l'inscription Summit liée à cette
+  // vente (voir SaleHandler.Create côté backend).
+  const SUMMIT_PROFILES = ['vendeur', 'acheteur', 'entrepreneur', 'curieux'] as const;
+  const summitProfileParam = searchParams.get('summit_profile') || '';
+  const summitProfile = (SUMMIT_PROFILES as readonly string[]).includes(summitProfileParam)
+    ? (summitProfileParam as (typeof SUMMIT_PROFILES)[number])
+    : undefined;
   const { user } = useAuth();
 
   const [product, setProduct] = useState<Product | null>(null);
   const [loadingProduct, setLoadingProduct] = useState(true);
   const [productError, setProductError] = useState('');
 
-  const [name, setName] = useState('');
+  const [name, setName] = useState(searchParams.get('name') || '');
   const [country, setCountry] = useState('SEN');
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(searchParams.get('email') || '');
   const [customAmount, setCustomAmount] = useState('');
   const [paymentMethod, setPaymentMethod] = useState<'mobile_money' | 'card' | 'paypal'>('mobile_money');
   const [error, setError] = useState('');
@@ -219,6 +228,7 @@ export default function CheckoutView() {
         ...(isFlexible ? { amount_cfa: amountToPay } : {}),
         ...(paymentMethod === 'mobile_money' ? { phone: phoneDigits, operator } : {}),
         ...(paymentMethod === 'mobile_money' && requiresOTP[operator] ? { otp } : {}),
+        ...(summitProfile ? { summit_profile: summitProfile } : {}),
       });
       const redirectUrl = result.checkout?.redirect_url;
       if (!redirectUrl) throw new Error('redirect_url_missing');

@@ -67,6 +67,13 @@ type CreateOrderInput struct {
 	// d'Ivoire/Burkina Faso — voir payment.PayDunyaOperator.RequiresOTP).
 	// Ignoré pour tout autre opérateur.
 	OTP string `json:"otp,omitempty"`
+	// SummitProfile : présent uniquement pour l'achat du produit "DIARRA
+	// Summit — Tier Essentiel" lancé depuis /summit (voir
+	// SummitRegistrationForm côté frontend). Fait créer une inscription
+	// Summit "pending" liée à cette vente (voir SaleHandler.Create),
+	// confirmée et notifiée par email une fois le paiement validé (voir
+	// WebhookHandler.ConfirmPaidSale).
+	SummitProfile string `json:"summit_profile,omitempty"`
 }
 
 type SaleStatus string

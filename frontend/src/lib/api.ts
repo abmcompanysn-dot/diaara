@@ -463,6 +463,10 @@ export const api = {
     // sur la page hébergée PawaPay, voir checkout-view.tsx).
     phone?: string;
     operator?: string;
+    // summit_profile : présent uniquement pour l'achat du Tier Essentiel
+    // DIARRA Summit lancé depuis /summit — voir SummitRegistrationForm.
+    // Fait créer l'inscription Summit côté backend, liée à cette vente.
+    summit_profile?: 'vendeur' | 'acheteur' | 'entrepreneur' | 'curieux';
   }) =>
     // Pas de skipAuth ici : la route accepte les invités (guest checkout)
     // mais doit recevoir le token si l'acheteur est connecté, sinon le

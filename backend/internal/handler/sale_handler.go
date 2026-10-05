@@ -21,6 +21,13 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+// summitTierEssentielProductID — produit "DIARRA Summit — Tier Essentiel"
+// (voir cmd/seed_summit_tickets). CreateOrderInput.SummitProfile n'est pris
+// en compte QUE pour ce produit précis — un profil Summit envoyé pour un
+// autre produit est silencieusement ignoré plutôt que de créer une
+// inscription incohérente.
+const summitTierEssentielProductID = "ce3919cc-f2bc-423d-b552-3aa6195eae93"
+
 func uuidString() string {
 	b := make([]byte, 16)
 	_, _ = rand.Read(b)
@@ -54,6 +61,14 @@ type SaleHandler struct {
 	// flux conversationnel YES Business (micro-ticket ou solde) et renvoie
 	// le chat_url/statut de session correspondant — voir SetYesRepo.
 	yesRepo *repository.YesIntegrationRepo
+	// summitRepo : crée l'inscription "pending" liée au checkout_token
+	// quand CreateOrderInput.SummitProfile est fourni (achat du Tier
+	// Essentiel lancé depuis /summit) — voir SetSummitRepo.
+	summitRepo *repository.SummitRepo
+}
+
+func (h *SaleHandler) SetSummitRepo(repo *repository.SummitRepo) {
+	h.summitRepo = repo
 }
 
 func NewSaleHandler(
@@ -396,6 +411,25 @@ func (h *SaleHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, `{"error":"order_creation_failed"}`, http.StatusInternalServerError)
 		return
+	}
+
+	// Inscription DIARRA Summit payante (voir migration 050) : seulement
+	// pour le Tier Essentiel ET un profil valide fourni. Une inscription
+	// déjà existante pour cet email (ErrSummitAlreadyRegistered) n'empêche
+	// pas l'achat du billet — ce n'est qu'un doublon d'inscription.
+	if h.summitRepo != nil && input.ProductID == summitTierEssentielProductID && model.SummitProfiles[input.SummitProfile] {
+		buyerEmail := ""
+		if input.BuyerEmail != nil {
+			buyerEmail = *input.BuyerEmail
+		} else if buyer, err := h.userRepo.FindByID(r.Context(), userID); err == nil {
+			buyerEmail = buyer.Email
+		}
+		if buyerEmail != "" {
+			if _, err := h.summitRepo.CreatePending(r.Context(), input.BuyerName, buyerEmail, input.Phone, input.SummitProfile, checkoutToken); err != nil &&
+				!errors.Is(err, repository.ErrSummitAlreadyRegistered) {
+				log.Printf("WARNING: création inscription Summit échouée pour sale=%s: %v", created.ID, err)
+			}
+		}
 	}
 
 	// Page de paiement hébergée (PawaPay ou PayDunya selon providerName) :
