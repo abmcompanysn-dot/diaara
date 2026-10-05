@@ -669,6 +669,13 @@ export const api = {
       body: JSON.stringify(data),
     }),
 
+  adminUpdateProductCover: (id: string, formData: FormData) =>
+    fetchApi<{ product: any }>(`/api/admin/products/${id}/cover`, {
+      method: 'PUT',
+      body: formData as any,
+      headers: {},
+    }),
+
   adminListPendingEvents: () => fetchApi<{ events: any[] }>('/api/admin/events/pending'),
 
   adminModerateEvent: (id: string, data: { status: string; note?: string }) =>

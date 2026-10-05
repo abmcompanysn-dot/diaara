@@ -24,6 +24,7 @@ import (
 	"github.com/diarra/backend/internal/otp"
 	"github.com/diarra/backend/internal/payment"
 	"github.com/diarra/backend/internal/repository"
+	"github.com/diarra/backend/internal/storage"
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -430,6 +431,70 @@ func (h *AdminHandler) Moderate(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]interface{}{"product": product})
+}
+
+// UpdateCover — PUT /api/admin/products/{id}/cover : permet à un admin de
+// remplacer l'image de couverture d'un produit déjà approuvé (ex. visuel
+// généré à la hâte lors de la création, à corriger sans repasser par toute
+// la modération). Le produit garde son statut de modération actuel — pas de
+// repassage en "pending" : l'admin qui change l'image est le même rôle que
+// celui qui l'aurait validée de toute façon.
+func (h *AdminHandler) UpdateCover(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	if h.files == nil {
+		http.Error(w, `{"error":"storage_not_configured"}`, http.StatusServiceUnavailable)
+		return
+	}
+
+	product, err := h.productRepo.FindByID(r.Context(), id)
+	if err != nil {
+		http.Error(w, `{"error":"not_found"}`, http.StatusNotFound)
+		return
+	}
+
+	if err := r.ParseMultipartForm(50 << 20); err != nil { // 50MB max
+		http.Error(w, `{"error":"file_too_large"}`, http.StatusBadRequest)
+		return
+	}
+
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		http.Error(w, `{"error":"file_required"}`, http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(file)
+	if err != nil {
+		http.Error(w, `{"error":"read_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	if !validCoverImage(data) {
+		http.Error(w, `{"error":"invalid_cover_image_type"}`, http.StatusBadRequest)
+		return
+	}
+
+	coverKey := "covers/" + storage.NewFileKey(product.VendorID, header.Filename)
+	if err := h.files.Upload(r.Context(), coverKey, compressCoverImage(data)); err != nil {
+		http.Error(w, `{"error":"upload_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	updated, err := h.productRepo.Update(r.Context(), id, model.UpdateProductInput{
+		CoverImageKey: &coverKey,
+	})
+	if err != nil {
+		http.Error(w, `{"error":"update_failed"}`, http.StatusInternalServerError)
+		return
+	}
+
+	h.logActivity(middleware.GetUserID(r.Context()), "product_cover_updated", "product", id,
+		fmt.Sprintf("Image de couverture changée pour « %s »", updated.Title))
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]interface{}{"product": updated})
 }
 
 // DownloadProductFile — GET /api/admin/products/{id}/download : renvoie une

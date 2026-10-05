@@ -712,6 +712,7 @@ func main() {
 			r.Get("/products", adminHandler.ListProducts)
 			r.Get("/products/{id}/download", adminHandler.DownloadProductFile)
 			r.Put("/products/{id}/moderate", adminHandler.Moderate)
+			r.Put("/products/{id}/cover", adminHandler.UpdateCover)
 			r.Delete("/products/{id}", adminHandler.ConfirmDeletion)
 			r.Put("/products/{id}/cancel-deletion", adminHandler.CancelDeletion)
 

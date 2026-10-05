@@ -52,6 +52,7 @@ export default function AdminProductsPage() {
   const [toModerate, setToModerate] = useState<{ id: string; status: string } | null>(null);
   const [rejectNote, setRejectNote] = useState('');
   const [uploadingId, setUploadingId] = useState<string | null>(null);
+  const [coverUploadingId, setCoverUploadingId] = useState<string | null>(null);
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [toDeletionAction, setToDeletionAction] = useState<{ id: string; action: 'confirm' | 'cancel' } | null>(null);
@@ -116,6 +117,21 @@ export default function AdminProductsPage() {
       setError(friendlyError(err));
     } finally {
       setUploadingId(null);
+    }
+  };
+
+  const handleChangeCover = async (productId: string, file: File | undefined) => {
+    if (!file) return;
+    setCoverUploadingId(productId);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      await api.adminUpdateProductCover(productId, formData);
+      await loadProducts(tab);
+    } catch (err: any) {
+      setError(friendlyError(err));
+    } finally {
+      setCoverUploadingId(null);
     }
   };
 
@@ -204,8 +220,31 @@ export default function AdminProductsPage() {
                       apportée par le vendeur (ex. juste un changement de
                       photo) qu'en téléchargeant le fichier livrable, quand il
                       existait — ce qui n'a rien à voir avec la couverture. */}
-                  <div className="w-20 h-20 rounded-lg overflow-hidden shrink-0 bg-green-50">
-                    <ProductImage product={product} className="w-20 h-20" />
+                  <div className="shrink-0 space-y-1.5">
+                    <div className="w-20 h-20 rounded-lg overflow-hidden bg-green-50">
+                      <ProductImage product={product} className="w-20 h-20" />
+                    </div>
+                    <label className="block">
+                      <span className="sr-only">Changer l&rsquo;image</span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        disabled={coverUploadingId === product.id}
+                        onChange={(e) => handleChangeCover(product.id, e.target.files?.[0])}
+                        className="hidden"
+                        id={`cover-${product.id}`}
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        className="w-20 h-7 px-0 text-[11px]"
+                        disabled={coverUploadingId === product.id}
+                        onClick={() => document.getElementById(`cover-${product.id}`)?.click()}
+                      >
+                        {coverUploadingId === product.id ? '...' : 'Changer'}
+                      </Button>
+                    </label>
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-start mb-2 gap-3">
