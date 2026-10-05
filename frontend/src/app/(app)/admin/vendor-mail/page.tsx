@@ -56,6 +56,7 @@ export default function VendorMailPage() {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [editingDraft, setEditingDraft] = useState<Record<string, string>>({});
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [approvedCount, setApprovedCount] = useState(0);
 
   const [activeThread, setActiveThread] = useState<Thread | null>(null);
   const [activeMessages, setActiveMessages] = useState<Message[]>([]);
@@ -131,21 +132,35 @@ export default function VendorMailPage() {
     }
   }
 
+  // Espacement entre deux envois (ms) pour ne pas faire passer le serveur
+  // mail pour un spammeur (beaucoup de providers pénalisent les rafales).
+  const APPROVE_ALL_DELAY_MS = 3000;
+
+  function sleep(ms: number) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+  }
+
   async function handleApproveAll() {
     setBusyId('all');
     try {
-      for (const d of drafts) {
+      for (let i = 0; i < drafts.length; i++) {
+        const d = drafts[i];
         const edited = editingDraft[d.id];
         if (edited !== undefined) {
           await api.updateVendorMailDraft(d.id, edited);
         }
         await api.approveVendorMailDraft(d.id);
+        setApprovedCount(i + 1);
+        if (i < drafts.length - 1) {
+          await sleep(APPROVE_ALL_DELAY_MS);
+        }
       }
       await load();
     } catch (err: any) {
       setError(friendlyError(err));
     } finally {
       setBusyId(null);
+      setApprovedCount(0);
     }
   }
 
@@ -250,7 +265,9 @@ export default function VendorMailPage() {
             <div className="space-y-4">
               <div className="flex justify-end">
                 <Button size="sm" onClick={handleApproveAll} disabled={busyId !== null}>
-                  {busyId === 'all' ? 'Envoi en cours…' : `Valider et envoyer tout (${drafts.length})`}
+                  {busyId === 'all'
+                    ? `Envoi en cours… (${approvedCount}/${drafts.length}, ~3 s entre chaque)`
+                    : `Valider et envoyer tout (${drafts.length})`}
                 </Button>
               </div>
               {drafts.map((d) => (
