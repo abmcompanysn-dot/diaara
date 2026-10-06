@@ -218,7 +218,15 @@ func (r *ProductRepo) ListApprovedByVendor(ctx context.Context, vendorID string)
 	return products, rows.Err()
 }
 
-func (r *ProductRepo) ListApproved(ctx context.Context, category, theme, search string, limit, offset int) ([]*model.Product, error) {
+// ValidProductSorts — valeurs acceptées pour le paramètre "sort" de ListApproved
+// (voir ProductHandler.List). Toute autre valeur retombe sur "recent".
+var ValidProductSorts = map[string]bool{
+	"recent":     true,
+	"price_asc":  true,
+	"price_desc": true,
+}
+
+func (r *ProductRepo) ListApproved(ctx context.Context, category, theme, search, sort string, limit, offset int) ([]*model.Product, error) {
 	query := `SELECT ` + productColumns + ` FROM products WHERE moderation_status = 'approved'`
 	args := []interface{}{}
 	argIdx := 1
@@ -239,7 +247,15 @@ func (r *ProductRepo) ListApproved(ctx context.Context, category, theme, search 
 		argIdx++
 	}
 
-	query += ` ORDER BY created_at DESC LIMIT $` + itoa(argIdx)
+	switch sort {
+	case "price_asc":
+		query += ` ORDER BY price_cfa ASC, created_at DESC`
+	case "price_desc":
+		query += ` ORDER BY price_cfa DESC, created_at DESC`
+	default:
+		query += ` ORDER BY created_at DESC`
+	}
+	query += ` LIMIT $` + itoa(argIdx)
 	args = append(args, limit)
 	argIdx++
 	query += ` OFFSET $` + itoa(argIdx)

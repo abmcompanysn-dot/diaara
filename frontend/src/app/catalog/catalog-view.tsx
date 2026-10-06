@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useState, useRef } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { Button } from '@/components/ui/button';
@@ -95,6 +95,9 @@ function CardSkeleton({ view }: { view: ViewMode }) {
   );
 }
 
+// Nombre de produits chargés par lot (scroll infini) — voir ProductHandler.List.
+const PAGE_SIZE = 20;
+
 export default function CatalogView() {
   const [products, setProducts] = useState<Product[]>([]);
   const [search, setSearch] = useState('');
@@ -106,48 +109,68 @@ export default function CatalogView() {
   const [sort, setSort] = useState<SortKey>('recent');
   const [view, setView] = useState<ViewMode>('grid');
   const [loading, setLoading] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
+  const sentinelRef = useRef<HTMLDivElement | null>(null);
 
+  // Changer un filtre/tri recharge depuis le début (offset 0).
   useEffect(() => {
-    loadProducts();
-  }, [category, theme]);
+    loadProducts(0);
+  }, [category, theme, sort]);
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      loadProducts();
+      loadProducts(0);
     }, 300);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [search]);
 
-  const loadProducts = async () => {
-    setLoading(true);
+  const loadProducts = async (offset: number) => {
+    if (offset === 0) setLoading(true);
+    else setLoadingMore(true);
     try {
-      const params: { search?: string; category?: string; theme?: string } = {};
+      const params: { search?: string; category?: string; theme?: string; sort?: SortKey; limit?: number; offset?: number } = {
+        sort,
+        limit: PAGE_SIZE,
+        offset,
+      };
       if (search) params.search = search;
       if (category) params.category = category;
       if (theme) params.theme = theme;
       const result = await api.getProducts(params);
-      setProducts(result.products);
+      setProducts((prev) => (offset === 0 ? result.products : [...prev, ...result.products]));
+      setHasMore(result.products.length === PAGE_SIZE);
     } catch (err) {
       console.error('Failed to load products', err);
     } finally {
       setLoading(false);
+      setLoadingMore(false);
     }
   };
 
-  const sortedProducts = useMemo(() => {
-    const list = [...products];
-    if (sort === 'price_asc') list.sort((a, b) => a.price_cfa - b.price_cfa);
-    else if (sort === 'price_desc') list.sort((a, b) => b.price_cfa - a.price_cfa);
-    else
-      list.sort(
-        (a, b) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()
-      );
-    return list;
-  }, [products, sort]);
+  // Charge le lot suivant quand le repère en bas de liste entre dans le
+  // viewport — pagination par scroll plutôt que par numéros de page.
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (!sentinel || loading) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && hasMore && !loadingMore) {
+          loadProducts(products.length);
+        }
+      },
+      { rootMargin: '400px' }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, hasMore, loadingMore, products.length]);
+
+  const sortedProducts = products;
 
   return (
     <main className="min-h-screen">
@@ -326,11 +349,11 @@ export default function CatalogView() {
             description="Modifiez votre recherche ou parcourez une autre catégorie."
           />
         ) : view === 'grid' ? (
-          <div className="grid grid-cols-2 gap-2.5 sm:gap-4 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-2.5 sm:gap-4 lg:grid-cols-4 items-stretch">
             {sortedProducts.map((product) => (
               <div
                 key={product.id}
-                className="group bg-white rounded-xl overflow-hidden shadow-card hover:shadow-lift transition-all hover:-translate-y-0.5 border border-green-900/5 flex flex-col"
+                className="group bg-white rounded-xl overflow-hidden shadow-card hover:shadow-lift transition-all hover:-translate-y-0.5 border border-green-900/5 flex flex-col h-full"
               >
                 <Link href={`/product?id=${product.slug || product.id}`} className="relative block">
                   <ProductImage product={product} className="h-28 sm:h-44" />
@@ -345,11 +368,11 @@ export default function CatalogView() {
                 </Link>
                 <div className="p-2.5 sm:p-4 flex flex-col flex-1">
                   <Link href={`/product?id=${product.slug || product.id}`}>
-                    <h2 className="font-display font-bold text-[13px] sm:text-base text-green-950 group-hover:text-green-600 transition-colors line-clamp-2">
+                    <h2 className="font-display font-bold text-[13px] sm:text-base text-green-950 group-hover:text-green-600 transition-colors line-clamp-2 min-h-[2lh]">
                       {product.title}
                     </h2>
                   </Link>
-                  <p className="hidden sm:block text-xs text-green-900/50 mt-1 line-clamp-2 flex-1">
+                  <p className="hidden sm:block text-xs text-green-900/50 mt-1 line-clamp-2 min-h-[2lh] flex-1">
                     {product.description || 'Pas de description'}
                   </p>
                   <div className="flex items-center justify-between mt-2 sm:mt-3 gap-1.5 sm:gap-2">
@@ -401,6 +424,20 @@ export default function CatalogView() {
               </Link>
             ))}
           </div>
+        )}
+
+        {/* Repère observé pour charger le lot suivant (scroll infini) —
+            invisible, juste un déclencheur d'IntersectionObserver. */}
+        {!loading && sortedProducts.length > 0 && (
+          <div ref={sentinelRef} className="h-1" aria-hidden />
+        )}
+        {loadingMore && (
+          <p className="text-center text-sm text-green-900/50 py-6">Chargement…</p>
+        )}
+        {!loading && !loadingMore && !hasMore && sortedProducts.length > 0 && (
+          <p className="text-center text-xs text-green-900/40 py-6">
+            Vous avez vu tous les produits disponibles.
+          </p>
         )}
       </section>
     </main>

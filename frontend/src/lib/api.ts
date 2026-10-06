@@ -221,8 +221,15 @@ export const api = {
     }>('/api/checkout/config', { skipAuth: true }),
 
   // Products
-  getProducts: (params?: { category?: string; theme?: string; search?: string }) => {
-    const query = new URLSearchParams(params as Record<string, string>).toString();
+  getProducts: (params?: {
+    category?: string;
+    theme?: string;
+    search?: string;
+    sort?: 'recent' | 'price_asc' | 'price_desc';
+    limit?: number;
+    offset?: number;
+  }) => {
+    const query = new URLSearchParams(params as unknown as Record<string, string>).toString();
     return fetchApi<{ products: any[] }>(`/api/products${query ? `?${query}` : ''}`);
   },
 

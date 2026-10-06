@@ -92,8 +92,14 @@ func (h *ProductHandler) List(w http.ResponseWriter, r *http.Request) {
 	category := r.URL.Query().Get("category")
 	theme := r.URL.Query().Get("theme")
 	search := r.URL.Query().Get("search")
+	sort := r.URL.Query().Get("sort")
+	if !repository.ValidProductSorts[sort] {
+		sort = "recent"
+	}
 
-	limit := 50
+	// 20 par défaut : le catalogue charge par lots au scroll (infinite
+	// scroll) plutôt que tout d'un coup — voir catalog-view.tsx.
+	limit := 20
 	offset := 0
 	if v := r.URL.Query().Get("limit"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
@@ -109,12 +115,12 @@ func (h *ProductHandler) List(w http.ResponseWriter, r *http.Request) {
 	// Page la plus visitée du site : mise en cache 60s. Pas d'invalidation à
 	// l'approbation d'un nouveau produit — délai volontairement accepté pour
 	// rester simple, le catalogue n'est pas temps-réel critique.
-	cacheKey := fmt.Sprintf("catalog:%s:%s:%s:%d:%d", category, theme, search, limit, offset)
+	cacheKey := fmt.Sprintf("catalog:%s:%s:%s:%s:%d:%d", category, theme, search, sort, limit, offset)
 	var products []*model.Product
 	hit, _ := h.cache.GetJSON(r.Context(), cacheKey, &products)
 	if !hit {
 		var err error
-		products, err = h.productRepo.ListApproved(r.Context(), category, theme, search, limit, offset)
+		products, err = h.productRepo.ListApproved(r.Context(), category, theme, search, sort, limit, offset)
 		if err != nil {
 			http.Error(w, `{"error":"list_failed"}`, http.StatusInternalServerError)
 			return
