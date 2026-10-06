@@ -38,6 +38,11 @@ function formatPhoneDisplay(digits: string): string {
   return groups.join(' ');
 }
 
+// Pays triés par ordre alphabétique pour le sélecteur — PAYOUT_COUNTRIES
+// lui-même reste dans son ordre d'origine (le Sénégal en [0] sert de valeur
+// par défaut ailleurs dans le code), seul l'affichage est trié.
+const SORTED_PAYOUT_COUNTRIES = [...PAYOUT_COUNTRIES].sort((a, b) => a.name.localeCompare(b.name, 'fr'));
+
 export function PayoutMethodForm({
   initialCountry,
   initialOperator,
@@ -101,9 +106,9 @@ export function PayoutMethodForm({
             <SelectValue placeholder="Choisir le pays" />
           </SelectTrigger>
           <SelectContent>
-            {PAYOUT_COUNTRIES.map((c) => (
+            {SORTED_PAYOUT_COUNTRIES.map((c) => (
               <SelectItem key={c.code} value={c.code}>
-                {c.name}
+                {c.flag} {c.name} (+{c.dialCode})
               </SelectItem>
             ))}
           </SelectContent>
@@ -173,6 +178,15 @@ export function PayoutMethodForm({
           </p>
         )}
       </div>
+
+      {phoneValid && (
+        <div className="p-3 bg-green-50/60 border border-green-900/10 rounded text-sm text-green-900/80">
+          Numéro qui sera enregistré :{' '}
+          <span className="font-mono font-semibold">
+            +{countryConfig.dialCode} {formatPhoneDisplay(phoneDigits)}
+          </span>
+        </div>
+      )}
 
       {error && (
         <div className="p-3 bg-red-50 text-red-700 rounded text-sm" role="alert">

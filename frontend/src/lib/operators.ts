@@ -55,6 +55,7 @@ export interface PayoutCountry {
   name: string;
   dialCode: string;
   phoneLength: number;
+  flag: string; // Emoji drapeau, pour le sélecteur pays (désambiguïse le choix).
   operators: PayoutOperator[];
 }
 
@@ -64,6 +65,7 @@ export const PAYOUT_COUNTRIES: PayoutCountry[] = [
     name: 'Sénégal',
     dialCode: '221',
     phoneLength: 9,
+    flag: '🇸🇳',
     operators: [
       { label: 'Orange Money', provider: 'ORANGE_SEN', logo: 'orange-money.png' },
       { label: 'Wave', provider: 'WAVE_SEN', logo: 'wave.png' },
@@ -75,6 +77,7 @@ export const PAYOUT_COUNTRIES: PayoutCountry[] = [
     name: "Côte d'Ivoire",
     dialCode: '225',
     phoneLength: 10,
+    flag: '🇨🇮',
     operators: [
       { label: 'MTN MoMo', provider: 'MTN_MOMO_CIV', logo: 'mtn-momo.png' },
       { label: 'Orange Money', provider: 'ORANGE_CIV', logo: 'orange-money.png' },
@@ -89,6 +92,7 @@ export const PAYOUT_COUNTRIES: PayoutCountry[] = [
     // intégrante du numéro béninois (pas un préfixe à retirer) : 10 chiffres
     // au total, ex "01 90 01 02 03" -> +229 01 90 01 02 03.
     phoneLength: 10,
+    flag: '🇧🇯',
     operators: [
       { label: 'MTN MoMo', provider: 'MTN_MOMO_BEN', logo: 'mtn-momo.png' },
       { label: 'Moov Money', provider: 'MOOV_BEN', logo: 'moov-money.png' },
@@ -99,6 +103,7 @@ export const PAYOUT_COUNTRIES: PayoutCountry[] = [
     name: 'Burkina Faso',
     dialCode: '226',
     phoneLength: 8,
+    flag: '🇧🇫',
     operators: [
       { label: 'Moov Money', provider: 'MOOV_BFA', logo: 'moov-money.png' },
       { label: 'Orange Money', provider: 'ORANGE_BFA', logo: 'orange-money.png' },
@@ -109,6 +114,7 @@ export const PAYOUT_COUNTRIES: PayoutCountry[] = [
     name: 'Cameroun',
     dialCode: '237',
     phoneLength: 9,
+    flag: '🇨🇲',
     operators: [
       { label: 'MTN MoMo', provider: 'MTN_MOMO_CMR', logo: 'mtn-momo.png' },
       { label: 'Orange Money', provider: 'ORANGE_CMR', logo: 'orange-money.png' },
@@ -119,6 +125,7 @@ export const PAYOUT_COUNTRIES: PayoutCountry[] = [
     name: 'Gabon',
     dialCode: '241',
     phoneLength: 8,
+    flag: '🇬🇦',
     operators: [
       { label: 'Airtel Money', provider: 'AIRTEL_GAB', logo: 'at-money.png' },
     ],
@@ -128,6 +135,7 @@ export const PAYOUT_COUNTRIES: PayoutCountry[] = [
     name: 'Congo-Brazzaville',
     dialCode: '242',
     phoneLength: 9,
+    flag: '🇨🇬',
     operators: [
       { label: 'Airtel Money', provider: 'AIRTEL_COG', logo: 'at-money.png' },
       { label: 'MTN MoMo', provider: 'MTN_MOMO_COG', logo: 'mtn-momo.png' },
@@ -138,6 +146,7 @@ export const PAYOUT_COUNTRIES: PayoutCountry[] = [
     name: 'RD Congo',
     dialCode: '243',
     phoneLength: 9,
+    flag: '🇨🇩',
     operators: [
       { label: 'Vodacom M-Pesa', provider: 'VODACOM_MPESA_COD', logo: 'vodacom.png' },
       { label: 'Airtel Money', provider: 'AIRTEL_COD', logo: 'at-money.png' },
@@ -149,6 +158,7 @@ export const PAYOUT_COUNTRIES: PayoutCountry[] = [
     name: 'Ghana',
     dialCode: '233',
     phoneLength: 9,
+    flag: '🇬🇭',
     operators: [
       { label: 'MTN MoMo', provider: 'MTN_MOMO_GHA', logo: 'mtn-momo.png' },
       { label: 'AirtelTigo Money', provider: 'AIRTELTIGO_GHA', badgeColor: 'bg-blue-100', badgeText: 'text-blue-900' },
@@ -160,6 +170,7 @@ export const PAYOUT_COUNTRIES: PayoutCountry[] = [
     name: 'Nigeria',
     dialCode: '234',
     phoneLength: 10,
+    flag: '🇳🇬',
     operators: [
       { label: 'Airtel Money', provider: 'AIRTEL_NGA', logo: 'at-money.png' },
       { label: 'MTN MoMo', provider: 'MTN_MOMO_NGA', logo: 'mtn-momo.png' },
@@ -170,6 +181,7 @@ export const PAYOUT_COUNTRIES: PayoutCountry[] = [
     name: 'Kenya',
     dialCode: '254',
     phoneLength: 9,
+    flag: '🇰🇪',
     operators: [
       { label: 'M-Pesa', provider: 'MPESA_KEN', logo: 'safaricom-mpesa.png' },
     ],
@@ -179,6 +191,7 @@ export const PAYOUT_COUNTRIES: PayoutCountry[] = [
     name: 'Rwanda',
     dialCode: '250',
     phoneLength: 9,
+    flag: '🇷🇼',
     operators: [
       { label: 'Airtel Money', provider: 'AIRTEL_RWA', logo: 'at-money.png' },
       { label: 'MTN MoMo', provider: 'MTN_MOMO_RWA', logo: 'mtn-momo.png' },
@@ -189,6 +202,7 @@ export const PAYOUT_COUNTRIES: PayoutCountry[] = [
     name: 'Ouganda',
     dialCode: '256',
     phoneLength: 9,
+    flag: '🇺🇬',
     operators: [
       { label: 'Airtel Money', provider: 'AIRTEL_OAPI_UGA', logo: 'at-money.png' },
       { label: 'MTN MoMo', provider: 'MTN_MOMO_UGA', logo: 'mtn-momo.png' },
@@ -199,6 +213,7 @@ export const PAYOUT_COUNTRIES: PayoutCountry[] = [
     name: 'Tanzanie',
     dialCode: '255',
     phoneLength: 9,
+    flag: '🇹🇿',
     operators: [
       { label: 'Airtel Money', provider: 'AIRTEL_TZA', logo: 'at-money.png' },
       { label: 'Vodacom M-Pesa', provider: 'VODACOM_TZA', logo: 'vodacom.png' },
@@ -211,6 +226,7 @@ export const PAYOUT_COUNTRIES: PayoutCountry[] = [
     name: 'Zambie',
     dialCode: '260',
     phoneLength: 9,
+    flag: '🇿🇲',
     operators: [
       { label: 'Airtel Money', provider: 'AIRTEL_OAPI_ZMB', logo: 'at-money.png' },
       { label: 'MTN MoMo', provider: 'MTN_MOMO_ZMB', logo: 'mtn-momo.png' },
@@ -222,6 +238,7 @@ export const PAYOUT_COUNTRIES: PayoutCountry[] = [
     name: 'Malawi',
     dialCode: '265',
     phoneLength: 9,
+    flag: '🇲🇼',
     operators: [
       { label: 'Airtel Money', provider: 'AIRTEL_MWI', logo: 'at-money.png' },
       { label: 'TNM Mpamba', provider: 'TNM_MWI', logo: 'tnm.png' },
@@ -232,6 +249,7 @@ export const PAYOUT_COUNTRIES: PayoutCountry[] = [
     name: 'Mozambique',
     dialCode: '258',
     phoneLength: 9,
+    flag: '🇲🇿',
     operators: [
       { label: 'Movitel', provider: 'MOVITEL_MOZ', logo: 'movitel.png' },
       { label: 'Vodacom M-Pesa', provider: 'VODACOM_MOZ', logo: 'vodacom.png' },
@@ -242,6 +260,7 @@ export const PAYOUT_COUNTRIES: PayoutCountry[] = [
     name: 'Lesotho',
     dialCode: '266',
     phoneLength: 8,
+    flag: '🇱🇸',
     operators: [
       { label: 'M-Pesa', provider: 'MPESA_LSO', logo: 'mpesa.png' },
     ],
@@ -251,6 +270,7 @@ export const PAYOUT_COUNTRIES: PayoutCountry[] = [
     name: 'Sierra Leone',
     dialCode: '232',
     phoneLength: 8,
+    flag: '🇸🇱',
     operators: [
       { label: 'Orange Money', provider: 'ORANGE_SLE', logo: 'orange-money.png' },
     ],
@@ -260,6 +280,7 @@ export const PAYOUT_COUNTRIES: PayoutCountry[] = [
     name: 'Éthiopie',
     dialCode: '251',
     phoneLength: 9,
+    flag: '🇪🇹',
     operators: [
       { label: 'Safaricom M-Pesa', provider: 'MPESA_ETH', logo: 'safaricom-mpesa.png' },
     ],
@@ -277,6 +298,7 @@ export const PAYDUNYA_COUNTRIES: PayoutCountry[] = [
     name: 'Sénégal',
     dialCode: '221',
     phoneLength: 9,
+    flag: '🇸🇳',
     operators: [
       { label: 'Orange Money', provider: 'ORANGE_SN', logo: 'orange-money.png', pawaPayCode: 'ORANGE_SEN' },
       { label: 'Wave', provider: 'WAVE_SN', logo: 'wave.png', pawaPayCode: 'WAVE_SEN' },
@@ -290,6 +312,7 @@ export const PAYDUNYA_COUNTRIES: PayoutCountry[] = [
     name: 'Bénin',
     dialCode: '229',
     phoneLength: 10,
+    flag: '🇧🇯',
     operators: [
       { label: 'MTN MoMo', provider: 'MTN_BJ', logo: 'mtn-momo.png', pawaPayCode: 'MTN_MOMO_BEN' },
       { label: 'Moov Money', provider: 'MOOV_BJ', logo: 'moov-money.png', pawaPayCode: 'MOOV_BEN' },
@@ -301,6 +324,7 @@ export const PAYDUNYA_COUNTRIES: PayoutCountry[] = [
     name: "Côte d'Ivoire",
     dialCode: '225',
     phoneLength: 10,
+    flag: '🇨🇮',
     operators: [
       // Orange CI exige un code OTP (composer #144*82# puis option 2) —
       // voir requires_otp dans api.getCheckoutConfig(), le formulaire
@@ -318,6 +342,7 @@ export const PAYDUNYA_COUNTRIES: PayoutCountry[] = [
     name: 'Togo',
     dialCode: '228',
     phoneLength: 8,
+    flag: '🇹🇬',
     operators: [
       { label: 'T-Money', provider: 'TMONEY_TG', badgeColor: 'bg-yellow-100', badgeText: 'text-yellow-900' },
       { label: 'Moov Money', provider: 'MOOV_TG', logo: 'moov-money.png' },
@@ -328,6 +353,7 @@ export const PAYDUNYA_COUNTRIES: PayoutCountry[] = [
     name: 'Mali',
     dialCode: '223',
     phoneLength: 8,
+    flag: '🇲🇱',
     operators: [
       // Moov Mali retiré : pas activé sur notre compte marchand PayDunya
       // (relevé 2026-09-25), voir backend/internal/payment/paydunya_operators.go.
@@ -339,6 +365,7 @@ export const PAYDUNYA_COUNTRIES: PayoutCountry[] = [
     name: 'Burkina Faso',
     dialCode: '226',
     phoneLength: 8,
+    flag: '🇧🇫',
     operators: [
       // Orange BFA exige un code OTP reçu par SMS — voir requires_otp dans
       // api.getCheckoutConfig(), même traitement qu'Orange CI ci-dessus.
@@ -351,6 +378,7 @@ export const PAYDUNYA_COUNTRIES: PayoutCountry[] = [
     name: 'Cameroun',
     dialCode: '237',
     phoneLength: 9,
+    flag: '🇨🇲',
     operators: [
       { label: 'MTN MoMo', provider: 'MTN_CM', logo: 'mtn-momo.png', pawaPayCode: 'MTN_MOMO_CMR' },
     ],
