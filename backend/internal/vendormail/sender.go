@@ -57,7 +57,10 @@ func NewSender(cfg SenderConfig) (*Sender, error) {
 // renvoie son Message-ID (à stocker pour chaîner une éventuelle réponse via
 // In-Reply-To/References). La personnalisation (nom du vendeur) est déjà
 // dans textBody — voir le gabarit de brouillon généré par VendorMailHandler.
-func (s *Sender) Send(ctx context.Context, to, subject, textBody string, inReplyTo *string) (string, error) {
+// bannerURL (optionnelle) remplace le bandeau "DIARRA" par défaut par une
+// image — campagne ponctuelle (ex: Octobre Rose), URL absolue stable
+// (servie en statique par le frontend, pas une URL signée expirante).
+func (s *Sender) Send(ctx context.Context, to, subject, textBody string, inReplyTo *string, bannerURL string) (string, error) {
 	m := mail.NewMsg()
 	if err := m.From(s.from); err != nil {
 		return "", fmt.Errorf("vendormail: from: %w", err)
@@ -67,7 +70,7 @@ func (s *Sender) Send(ctx context.Context, to, subject, textBody string, inReply
 	}
 	m.Subject(subject)
 	m.SetBodyString(mail.TypeTextPlain, textBody)
-	m.AddAlternativeString(mail.TypeTextHTML, renderHTML(textBody))
+	m.AddAlternativeString(mail.TypeTextHTML, renderHTML(textBody, bannerURL))
 	m.SetMessageID()
 
 	if inReplyTo != nil && *inReplyTo != "" {
@@ -85,8 +88,9 @@ func (s *Sender) Send(ctx context.Context, to, subject, textBody string, inReply
 // dans un gabarit HTML DIARRA minimal. Les sauts de ligne du texte source
 // deviennent des paragraphes ; aucun markup n'est interprété (texte
 // entièrement échappé) pour qu'un brouillon édité en texte simple reste
-// fidèle une fois rendu en HTML.
-func renderHTML(textBody string) string {
+// fidèle une fois rendu en HTML. bannerURL vide = bandeau texte "DIARRA"
+// par défaut ; sinon ce bandeau est remplacé par cette image.
+func renderHTML(textBody, bannerURL string) string {
 	var bodyHTML strings.Builder
 	for _, para := range strings.Split(strings.TrimSpace(textBody), "\n\n") {
 		para = strings.TrimSpace(para)
@@ -97,6 +101,16 @@ func renderHTML(textBody string) string {
 		bodyHTML.WriteString(fmt.Sprintf(`<p style="margin:0 0 14px;font-family:Arial,Helvetica,sans-serif;font-size:15px;line-height:1.7;color:#0a3225;">%s</p>`, escaped))
 	}
 
+	banner := `<tr><td style="background:linear-gradient(135deg,#0e4431 0%,#0f7a50 55%,#10a05f 100%);border-radius:16px 16px 0 0;padding:24px 28px;">
+<span style="display:block;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:700;color:#ffffff;">DIARRA</span>
+<span style="display:block;font-family:Consolas,'Courier New',monospace;font-size:11px;color:#c9f22e;margin-top:6px;">// un message de l'équipe</span>
+</td></tr>`
+	if bannerURL != "" {
+		banner = fmt.Sprintf(`<tr><td style="border-radius:16px 16px 0 0;overflow:hidden;line-height:0;">
+<img src="%s" alt="DIARRA" width="560" style="display:block;width:100%%;height:auto;border:0;">
+</td></tr>`, html.EscapeString(bannerURL))
+	}
+
 	return fmt.Sprintf(`<!DOCTYPE html>
 <html lang="fr">
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head>
@@ -104,10 +118,7 @@ func renderHTML(textBody string) string {
 <table role="presentation" width="100%%" cellpadding="0" cellspacing="0" style="background-color:#f2f7f4;">
 <tr><td align="center" style="padding:32px 16px;">
 <table role="presentation" cellpadding="0" cellspacing="0" style="max-width:560px;width:100%%;">
-<tr><td style="background:linear-gradient(135deg,#0e4431 0%%,#0f7a50 55%%,#10a05f 100%%);border-radius:16px 16px 0 0;padding:24px 28px;">
-<span style="display:block;font-family:Arial,Helvetica,sans-serif;font-size:16px;font-weight:700;color:#ffffff;">DIARRA</span>
-<span style="display:block;font-family:Consolas,'Courier New',monospace;font-size:11px;color:#c9f22e;margin-top:6px;">// un message de l'équipe</span>
-</td></tr>
+%s
 <tr><td style="background-color:#ffffff;border-radius:0 0 16px 16px;padding:28px;">
 %s
 </td></tr>
@@ -120,5 +131,5 @@ Message personnel de l&rsquo;équipe DIARRA. Vous pouvez y répondre directement
 </td></tr>
 </table>
 </body>
-</html>`, bodyHTML.String())
+</html>`, banner, bodyHTML.String())
 }

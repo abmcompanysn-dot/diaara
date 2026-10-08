@@ -69,7 +69,10 @@ export const PAYOUT_COUNTRIES: PayoutCountry[] = [
     operators: [
       { label: 'Orange Money', provider: 'ORANGE_SEN', logo: 'orange-money.png' },
       { label: 'Wave', provider: 'WAVE_SEN', logo: 'wave.png' },
-      { label: 'Free Money', provider: 'FREE_SEN', badgeColor: 'bg-white border border-green-900/15', badgeText: 'text-green-950' },
+      // Free Sénégal a été rebaptisé Yas (marque "Mixx by Yas") début 2026 —
+      // le provider PawaPay FREE_SEN, lui, n'a pas changé (identifiant
+      // technique, ne jamais le renommer).
+      { label: 'Yas', provider: 'FREE_SEN', logo: 'mixx-yas.png' },
     ],
   },
   {
@@ -302,7 +305,7 @@ export const PAYDUNYA_COUNTRIES: PayoutCountry[] = [
     operators: [
       { label: 'Orange Money', provider: 'ORANGE_SN', logo: 'orange-money.png', pawaPayCode: 'ORANGE_SEN' },
       { label: 'Wave', provider: 'WAVE_SN', logo: 'wave.png', pawaPayCode: 'WAVE_SEN' },
-      { label: 'Free Money', provider: 'FREE_SN', badgeColor: 'bg-white border border-green-900/15', badgeText: 'text-green-950', pawaPayCode: 'FREE_SEN' },
+      { label: 'Yas', provider: 'FREE_SN', logo: 'mixx-yas.png', pawaPayCode: 'FREE_SEN' },
       { label: 'Expresso', provider: 'EXPRESSO_SN', badgeColor: 'bg-red-100', badgeText: 'text-red-900' },
       { label: 'Djamo', provider: 'DJAMO_SN', badgeColor: 'bg-purple-100', badgeText: 'text-purple-900' },
     ],

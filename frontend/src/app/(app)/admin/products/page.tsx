@@ -56,6 +56,7 @@ export default function AdminProductsPage() {
   const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [toDeletionAction, setToDeletionAction] = useState<{ id: string; action: 'confirm' | 'cancel' } | null>(null);
+  const [search, setSearch] = useState('');
 
   useEffect(() => {
     loadProducts(tab);
@@ -157,7 +158,13 @@ export default function AdminProductsPage() {
     }
   };
 
-  const displayedProducts = tab === 'deletion' ? products.filter((p) => p.deletion_requested) : products;
+  const displayedProducts = (tab === 'deletion' ? products.filter((p) => p.deletion_requested) : products).filter(
+    (p) => {
+      const q = search.trim().toLowerCase();
+      if (!q) return true;
+      return p.title.toLowerCase().includes(q) || (p.vendor_email || '').toLowerCase().includes(q);
+    }
+  );
 
   return (
     <main>
@@ -190,6 +197,14 @@ export default function AdminProductsPage() {
             </button>
           ))}
         </div>
+
+        <Input
+          type="search"
+          placeholder="Rechercher par nom de produit ou email vendeur…"
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="mb-6 bg-white"
+        />
 
         {error && (
           <div className="mb-4 p-3 bg-destructive/10 text-destructive rounded text-sm" role="alert">

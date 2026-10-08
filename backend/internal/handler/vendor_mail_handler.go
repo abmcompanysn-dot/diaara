@@ -253,7 +253,11 @@ func (h *VendorMailHandler) ApproveDraft(w http.ResponseWriter, r *http.Request)
 
 	sentCtx, cancel := context.WithTimeout(r.Context(), 20*time.Second)
 	defer cancel()
-	messageID, err := h.sender.Send(sentCtx, vendor.Email, draft.Subject, draft.Body, draft.InReplyTo)
+	bannerURL := ""
+	if draft.BannerURL != nil {
+		bannerURL = *draft.BannerURL
+	}
+	messageID, err := h.sender.Send(sentCtx, vendor.Email, draft.Subject, draft.Body, draft.InReplyTo, bannerURL)
 	if err != nil {
 		log.Printf("vendor-mail: envoi échoué pour le brouillon %s: %v", id, err)
 		http.Error(w, `{"error":"send_failed"}`, http.StatusBadGateway)

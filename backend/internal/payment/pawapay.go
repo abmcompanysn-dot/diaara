@@ -776,7 +776,9 @@ var XOFOperators = []Operator{
 	// Sénégal
 	{Label: "Orange Money", Provider: "ORANGE_SEN", Country: "SEN", DialCode: "221"},
 	{Label: "Wave", Provider: "WAVE_SEN", Country: "SEN", DialCode: "221"},
-	{Label: "Free Money", Provider: "FREE_SEN", Country: "SEN", DialCode: "221"},
+	// Free Sénégal a été rebaptisé Yas début 2026 — le Provider FREE_SEN
+	// (identifiant technique PawaPay) ne change pas.
+	{Label: "Yas", Provider: "FREE_SEN", Country: "SEN", DialCode: "221"},
 	// Côte d'Ivoire
 	{Label: "MTN MoMo", Provider: "MTN_MOMO_CIV", Country: "CIV", DialCode: "225"},
 	{Label: "Orange Money", Provider: "ORANGE_CIV", Country: "CIV", DialCode: "225"},

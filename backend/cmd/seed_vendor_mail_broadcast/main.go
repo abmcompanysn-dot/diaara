@@ -1,46 +1,39 @@
 // Commande ponctuelle : crée un brouillon de message dans la boucle
-// vendor-mail pour chaque vendeur actif (demandé le 2026-10-05, approuvé
-// explicitement par l'utilisateur après clarification sur le principe de
-// validation — voir JOURNAL-MODIFICATIONS.md). Ne crée que des BROUILLONS
-// ('draft') : aucun email ne part ici, tout reste à valider dans
-// /admin/vendor-mail ("Valider et envoyer tout", espacé de 3s par envoi).
+// vendor-mail pour chaque vendeur actif (campagne Octobre Rose, demandée le
+// 2026-10-08). Ne crée que des BROUILLONS ('draft') : aucun email ne part
+// ici, tout reste à valider dans /admin/vendor-mail ("Valider et envoyer
+// tout", espacé de 3s par envoi). Pas de personnalisation par nom (demande
+// explicite) — bodyFor n'a donc pas de paramètre, contrairement aux
+// campagnes précédentes utilisant ce même script.
 //
 // Usage : DATABASE_URL=... go run ./cmd/seed_vendor_mail_broadcast
 package main
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"os"
-	"strings"
 
 	"github.com/diarra/backend/internal/repository"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const subject = "Brunel (DIARRA) aimerait votre avis — 2 minutes suffisent"
+const subject = "Octobre Rose — un mot de l'équipe DIARRA"
+const bannerURL = "https://diarra.app/brand/octobre-rose-banner.png"
 
-func bodyFor(greetingName string) string {
-	return fmt.Sprintf(`Bonjour%s,
+const body = `Bonjour,
 
-Je m'appelle Brunel Atekossi, responsable technique et opérations chez DIARRA.
+Octobre, c'est le mois de la sensibilisation au cancer du sein — Octobre Rose. Je voulais prendre un instant pour en parler avec vous, au-delà du business qui nous réunit d'habitude.
 
-Je prends le temps d'écrire directement aux vendeurs de la plateforme pour une raison simple : nous voulons construire DIARRA avec vous, pas seulement pour vous. Les meilleures améliorations qu'on a pu apporter récemment viennent de remarques comme les vôtres — par exemple, un vendeur du Congo-Brazzaville nous a signalé un bug qui empêchait d'enregistrer correctement son numéro Mobile Money, et c'est corrigé depuis.
+Le dépistage précoce change tout : détecté tôt, ce cancer se soigne dans l'immense majorité des cas. Si vous avez une mère, une sœur, une épouse, une amie — ou vous-même — n'attendez pas un symptôme pour consulter. Un simple examen peut sauver une vie. Prenez ce mois pour vous renseigner, en parler autour de vous, ou simplement prendre rendez-vous.
 
-J'aimerais savoir, très concrètement :
-- Qu'est-ce qui fonctionne bien pour vous sur DIARRA aujourd'hui ?
-- Qu'est-ce qui vous bloque, vous ralentit, ou vous agace ?
-- Y a-t-il une fonctionnalité qui vous manque et qui changerait vraiment les choses pour votre activité ?
+Si vous le souhaitez, vous pouvez aussi publier gratuitement un ebook ou un guide sur DIARRA ce mois-ci (santé, bien-être, ou tout autre sujet qui vous tient à cœur) — un geste simple pour la communauté, sans frais ni commission sur un produit à 0 FCFA.
 
-Pas besoin d'un message long ou formel — même deux lignes nous aident à prioriser le bon travail.
+Chez DIARRA, vous faites partie d'une communauté de plus de 150 vendeurs à travers plusieurs pays d'Afrique. Cette communauté, c'est aussi des personnes, pas seulement des transactions. Prenez soin de vous et de vos proches.
 
-Merci pour votre confiance et pour ce que vous construisez sur DIARRA.
-
-Bien cordialement,
-Brunel Atekossi
-Responsable technique & opérations — DIARRA`, greetingName)
-}
+Bien à vous,
+Brunel Atekossi Mahuzonsou
+Équipe DIARRA`
 
 func main() {
 	ctx := context.Background()
@@ -55,7 +48,7 @@ func main() {
 	defer pool.Close()
 
 	rows, err := pool.Query(ctx, `
-		SELECT DISTINCT u.id, u.email, u.shop_name, u.display_name
+		SELECT DISTINCT u.id, u.email
 		FROM users u
 		JOIN user_roles ur ON ur.user_id = u.id
 		WHERE ur.role = 'vendeur' AND u.email IS NOT NULL AND u.email != ''`)
@@ -63,13 +56,12 @@ func main() {
 		log.Fatalf("query vendors: %v", err)
 	}
 	type vendor struct {
-		id, email             string
-		shopName, displayName *string
+		id, email string
 	}
 	var vendors []vendor
 	for rows.Next() {
 		var v vendor
-		if err := rows.Scan(&v.id, &v.email, &v.shopName, &v.displayName); err != nil {
+		if err := rows.Scan(&v.id, &v.email); err != nil {
 			log.Fatalf("scan: %v", err)
 		}
 		vendors = append(vendors, v)
@@ -84,20 +76,13 @@ func main() {
 
 	created, skipped := 0, 0
 	for _, v := range vendors {
-		name := ""
-		if v.shopName != nil && strings.TrimSpace(*v.shopName) != "" {
-			name = " " + strings.TrimSpace(*v.shopName)
-		} else if v.displayName != nil && strings.TrimSpace(*v.displayName) != "" {
-			name = " " + strings.TrimSpace(*v.displayName)
-		}
-
 		thread, err := mailRepo.FindOrCreateThread(ctx, v.id, subject)
 		if err != nil {
 			log.Printf("WARNING: fil introuvable pour %s (%s): %v", v.id, v.email, err)
 			skipped++
 			continue
 		}
-		if _, err := mailRepo.CreateDraft(ctx, thread.ID, subject, bodyFor(name), nil); err != nil {
+		if _, err := mailRepo.CreateDraftWithBanner(ctx, thread.ID, subject, body, bannerURL); err != nil {
 			log.Printf("WARNING: brouillon échoué pour %s (%s): %v", v.id, v.email, err)
 			skipped++
 			continue

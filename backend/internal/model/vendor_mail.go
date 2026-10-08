@@ -21,14 +21,18 @@ type VendorMailThread struct {
 }
 
 type VendorMailMessage struct {
-	ID         string     `json:"id"`
-	ThreadID   string     `json:"thread_id"`
-	Direction  string     `json:"direction"` // outbound | inbound
-	Status     string     `json:"status"`    // draft | approved | sent | received | rejected
-	Subject    string     `json:"subject"`
-	Body       string     `json:"body"`
-	MessageID  *string    `json:"-"`
-	InReplyTo  *string    `json:"-"`
+	ID        string  `json:"id"`
+	ThreadID  string  `json:"thread_id"`
+	Direction string  `json:"direction"` // outbound | inbound
+	Status    string  `json:"status"`    // draft | approved | sent | received | rejected
+	Subject   string  `json:"subject"`
+	Body      string  `json:"body"`
+	MessageID *string `json:"-"`
+	InReplyTo *string `json:"-"`
+	// BannerURL : image remplaçant le bandeau "DIARRA" par défaut dans
+	// l'email HTML (campagne ponctuelle, ex: Octobre Rose). nil = bandeau
+	// texte par défaut.
+	BannerURL  *string    `json:"banner_url,omitempty"`
 	ApprovedBy *string    `json:"approved_by,omitempty"`
 	ApprovedAt *time.Time `json:"approved_at,omitempty"`
 	SentAt     *time.Time `json:"sent_at,omitempty"`

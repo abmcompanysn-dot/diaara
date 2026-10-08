@@ -33,12 +33,12 @@ func scanVendorMailThread(row pgx.Row) (*model.VendorMailThread, error) {
 	return t, nil
 }
 
-const vendorMailMessageColumns = `id, thread_id, direction, status, subject, body, message_id, in_reply_to, approved_by, approved_at, sent_at, created_at`
+const vendorMailMessageColumns = `id, thread_id, direction, status, subject, body, message_id, in_reply_to, banner_url, approved_by, approved_at, sent_at, created_at`
 
 func scanVendorMailMessage(row pgx.Row) (*model.VendorMailMessage, error) {
 	m := &model.VendorMailMessage{}
 	err := row.Scan(&m.ID, &m.ThreadID, &m.Direction, &m.Status, &m.Subject, &m.Body,
-		&m.MessageID, &m.InReplyTo, &m.ApprovedBy, &m.ApprovedAt, &m.SentAt, &m.CreatedAt)
+		&m.MessageID, &m.InReplyTo, &m.BannerURL, &m.ApprovedBy, &m.ApprovedAt, &m.SentAt, &m.CreatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -159,6 +159,16 @@ func (r *VendorMailRepo) CreateDraft(ctx context.Context, threadID, subject, bod
 		 VALUES ($1, 'outbound', 'draft', $2, $3, $4)
 		 RETURNING `+vendorMailMessageColumns,
 		threadID, subject, body, inReplyTo))
+}
+
+// CreateDraftWithBanner — même chose que CreateDraft, avec une image de
+// bandeau pour l'email HTML (campagne ponctuelle, voir migration 051).
+func (r *VendorMailRepo) CreateDraftWithBanner(ctx context.Context, threadID, subject, body, bannerURL string) (*model.VendorMailMessage, error) {
+	return scanVendorMailMessage(r.pool.QueryRow(ctx,
+		`INSERT INTO vendor_mail_messages (thread_id, direction, status, subject, body, banner_url)
+		 VALUES ($1, 'outbound', 'draft', $2, $3, $4)
+		 RETURNING `+vendorMailMessageColumns,
+		threadID, subject, body, bannerURL))
 }
 
 func (r *VendorMailRepo) CreateInbound(ctx context.Context, threadID, subject, body, messageID string, inReplyTo *string) (*model.VendorMailMessage, error) {

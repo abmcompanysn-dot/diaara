@@ -61,7 +61,9 @@ var PayDunyaOperators = []PayDunyaOperator{
 		},
 	},
 	{
-		Label: "Free Money", Provider: "FREE_SN", Country: "SEN", DialCode: "221", PawaPayCode: "FREE_SEN",
+		// Free Sénégal a été rebaptisé Yas début 2026 — Provider/Endpoint/
+		// WithdrawMode (identifiants techniques PayDunya) ne changent pas.
+		Label: "Yas", Provider: "FREE_SN", Country: "SEN", DialCode: "221", PawaPayCode: "FREE_SEN",
 		Endpoint: "free-money-senegal", TokenField: "payment_token", WithdrawMode: "free-money-senegal",
 		BuildPayload: func(name, email, phone, token, _ string) map[string]interface{} {
 			return map[string]interface{}{"customer_name": name, "customer_email": email, "phone_number": phone, "payment_token": token}
